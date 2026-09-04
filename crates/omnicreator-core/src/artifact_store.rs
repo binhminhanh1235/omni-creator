@@ -312,7 +312,10 @@ mod tests {
             ),
             Err(Error::PathEscape(_))
         ));
-        assert_eq!(state.get_job(&job.job_id).unwrap().status, StepStatus::Ready);
+        assert_eq!(
+            state.get_job(&job.job_id).unwrap().status,
+            StepStatus::Ready
+        );
     }
 
     #[test]
