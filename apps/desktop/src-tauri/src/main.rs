@@ -177,10 +177,7 @@ fn list_projects(state: State<'_, DesktopState>) -> Result<AppSnapshot, String> 
 }
 
 #[tauri::command]
-fn create_project(
-    state: State<'_, DesktopState>,
-    title: String,
-) -> Result<AppSnapshot, String> {
+fn create_project(state: State<'_, DesktopState>, title: String) -> Result<AppSnapshot, String> {
     if title.trim().is_empty() {
         return Err("Project title must not be empty.".to_owned());
     }
@@ -219,9 +216,7 @@ fn delete_project(
 }
 
 #[tauri::command]
-fn prepare_device_handoff(
-    state: State<'_, DesktopState>,
-) -> Result<AppSnapshot, String> {
+fn prepare_device_handoff(state: State<'_, DesktopState>) -> Result<AppSnapshot, String> {
     let active = {
         let mut guard = state.active.lock().map_err(lock_error)?;
         guard
@@ -277,9 +272,7 @@ fn open_path(
     };
 
     let binding = MachineBinding::for_workspace(&workspace, &device_id);
-    binding
-        .save(binding_path(app)?)
-        .map_err(error_string)?;
+    binding.save(binding_path(app)?).map_err(error_string)?;
 
     if read_only {
         validate_read_only(&workspace)?;
@@ -312,7 +305,9 @@ fn open_path(
 fn prepare_writable_session(session: &WorkspaceSession) -> Result<(), String> {
     let workspace = session.workspace();
     let sqlite_path = workspace.sqlite_path();
-    let handoff_path = workspace.data_root().join(".omnicreator/handoff/latest.json");
+    let handoff_path = workspace
+        .data_root()
+        .join(".omnicreator/handoff/latest.json");
 
     if sqlite_path.exists() || handoff_path.exists() {
         workspace.recover_if_needed().map_err(error_string)?;
