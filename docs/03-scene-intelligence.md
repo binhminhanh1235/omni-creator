@@ -102,7 +102,7 @@ A provider-normalized `VisualCandidate` contains:
 - stable candidate and provider/source identifiers
 - an opaque `selection_ref` used only after selection
 - generic image/video metadata
-- source page metadata
+- source page and creator attribution metadata
 - one or more preview URLs
 - no local full-asset path
 
