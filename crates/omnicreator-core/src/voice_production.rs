@@ -83,15 +83,9 @@ impl SegmentTtsProductionInputV1 {
             &self.normalization_version,
         )?;
         require_identifier("segment TTS voice_id", &self.voice.voice_id)?;
-        require_identifier(
-            "segment TTS voice_version",
-            &self.voice.voice_version,
-        )?;
+        require_identifier("segment TTS voice_version", &self.voice.voice_version)?;
         require_identifier("segment TTS model_id", &self.model.model_id)?;
-        require_identifier(
-            "segment TTS model_version",
-            &self.model.model_version,
-        )?;
+        require_identifier("segment TTS model_version", &self.model.model_version)?;
         require_identifier(
             "segment TTS settings_fingerprint",
             &self.settings_fingerprint,
@@ -243,9 +237,7 @@ impl SegmentTtsPreparationV1 {
             plugin_id: normalized_option(self.execution.plugin_id.as_deref()),
             provider_id: normalized_option(self.execution.provider_id.as_deref()),
             model_id: normalized_option(Some(&self.production_input.model.model_id)),
-            model_version: normalized_option(Some(
-                &self.production_input.model.model_version,
-            )),
+            model_version: normalized_option(Some(&self.production_input.model.model_version)),
             settings_fingerprint: normalized_option(Some(
                 &self.production_input.settings_fingerprint,
             )),
