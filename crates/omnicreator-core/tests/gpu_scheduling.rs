@@ -87,9 +87,7 @@ fn preparation(job_id: &str) -> GpuJobPreparationV1 {
     }
 }
 
-fn codes(
-    decision: &omnicreator_core::GpuQueueEligibilityV1,
-) -> Vec<GpuNotReadyReasonCodeV1> {
+fn codes(decision: &omnicreator_core::GpuQueueEligibilityV1) -> Vec<GpuNotReadyReasonCodeV1> {
     decision.reasons.iter().map(|reason| reason.code).collect()
 }
 
@@ -121,7 +119,10 @@ fn fully_prepared_job_is_gpu_ready_and_selection_is_deterministic() {
     assert_eq!(first.status, GpuQueueEligibilityStatusV1::GpuReady);
     assert!(first.reasons.is_empty());
     assert_eq!(first.selection.as_ref().unwrap().device_id, "gpu0");
-    assert_eq!(first.selection.as_ref().unwrap().provider_id, "kaggle-session");
+    assert_eq!(
+        first.selection.as_ref().unwrap().provider_id,
+        "kaggle-session"
+    );
 }
 
 #[test]
@@ -152,8 +153,7 @@ fn unresolved_or_mutable_input_is_not_gpu_ready() {
     prep.input_resolved = false;
     prep.input_immutable = false;
 
-    let decision =
-        evaluate_gpu_queue(&job, &facts(), &prep, &[provider_snapshot()], &[]).unwrap();
+    let decision = evaluate_gpu_queue(&job, &facts(), &prep, &[provider_snapshot()], &[]).unwrap();
 
     assert!(codes(&decision).contains(&GpuNotReadyReasonCodeV1::InputNotResolved));
     assert!(codes(&decision).contains(&GpuNotReadyReasonCodeV1::InputNotImmutable));
@@ -170,8 +170,7 @@ fn missing_execution_metadata_reports_all_not_ready_reasons() {
     prep.settings_fingerprint = None;
     prep.output_uri = None;
 
-    let decision =
-        evaluate_gpu_queue(&job, &facts(), &prep, &[provider_snapshot()], &[]).unwrap();
+    let decision = evaluate_gpu_queue(&job, &facts(), &prep, &[provider_snapshot()], &[]).unwrap();
     let actual = codes(&decision);
 
     for expected in [
@@ -193,22 +192,15 @@ fn cache_not_checked_and_cache_hit_never_enter_gpu_queue() {
 
     let mut not_checked = facts();
     not_checked.cache_lookup = CacheLookupV1::NotChecked;
-    let decision = evaluate_gpu_queue(
-        &job,
-        &not_checked,
-        &prep,
-        &[provider_snapshot()],
-        &[],
-    )
-    .unwrap();
+    let decision =
+        evaluate_gpu_queue(&job, &not_checked, &prep, &[provider_snapshot()], &[]).unwrap();
     assert!(codes(&decision).contains(&GpuNotReadyReasonCodeV1::CacheNotChecked));
 
     let mut hit = facts();
     hit.cache_lookup = CacheLookupV1::Hit {
         artifact_id: "artifact-local".to_owned(),
     };
-    let decision =
-        evaluate_gpu_queue(&job, &hit, &prep, &[provider_snapshot()], &[]).unwrap();
+    let decision = evaluate_gpu_queue(&job, &hit, &prep, &[provider_snapshot()], &[]).unwrap();
     assert!(codes(&decision).contains(&GpuNotReadyReasonCodeV1::CacheHit));
     assert!(decision.selection.is_none());
 }
@@ -222,14 +214,8 @@ fn approval_lock_and_preflight_are_hard_gates_when_required() {
     let mut readiness = facts();
     readiness.production_locked = false;
 
-    let decision = evaluate_gpu_queue(
-        &job,
-        &readiness,
-        &prep,
-        &[provider_snapshot()],
-        &[],
-    )
-    .unwrap();
+    let decision =
+        evaluate_gpu_queue(&job, &readiness, &prep, &[provider_snapshot()], &[]).unwrap();
 
     let actual = codes(&decision);
     assert!(actual.contains(&GpuNotReadyReasonCodeV1::ApprovalPending));
@@ -285,14 +271,8 @@ fn two_t4_devices_schedule_two_independent_parallel_jobs() {
     let providers = vec![provider];
 
     let job1 = logical_job("job-1");
-    let first = evaluate_gpu_queue(
-        &job1,
-        &facts(),
-        &preparation(&job1.job_id),
-        &providers,
-        &[],
-    )
-    .unwrap();
+    let first =
+        evaluate_gpu_queue(&job1, &facts(), &preparation(&job1.job_id), &providers, &[]).unwrap();
     assert_eq!(first.selection.as_ref().unwrap().device_id, "gpu0");
 
     let running = vec![running_from_ready(&job1.job_id, &first)];
@@ -317,8 +297,7 @@ fn scheduler_never_pools_memory_across_two_t4_devices() {
     let mut prep = preparation(&job.job_id);
     prep.requirements.min_vram_mb = Some(20_000);
 
-    let decision =
-        evaluate_gpu_queue(&job, &facts(), &prep, &[provider_snapshot()], &[]).unwrap();
+    let decision = evaluate_gpu_queue(&job, &facts(), &prep, &[provider_snapshot()], &[]).unwrap();
 
     assert!(codes(&decision).contains(&GpuNotReadyReasonCodeV1::InsufficientVram));
     assert!(decision.selection.is_none());
@@ -367,8 +346,7 @@ fn model_group_affinity_is_enforced() {
     let mut prep = preparation(&job.job_id);
     prep.requirements.model_group = Some("unknown-model-group".to_owned());
 
-    let decision =
-        evaluate_gpu_queue(&job, &facts(), &prep, &[provider_snapshot()], &[]).unwrap();
+    let decision = evaluate_gpu_queue(&job, &facts(), &prep, &[provider_snapshot()], &[]).unwrap();
 
     assert!(codes(&decision).contains(&GpuNotReadyReasonCodeV1::ModelGroupUnsupported));
 }
@@ -413,8 +391,7 @@ fn workflow_step_must_be_ready_or_retryable_to_enter_gpu_queue() {
         let mut readiness = facts();
         readiness.workflow_step_status = Some(status);
 
-        let decision =
-            evaluate_gpu_queue(&job, &readiness, &prep, &providers, &[]).unwrap();
+        let decision = evaluate_gpu_queue(&job, &readiness, &prep, &providers, &[]).unwrap();
 
         assert_eq!(decision.status, GpuQueueEligibilityStatusV1::NotReady);
         assert!(
@@ -428,8 +405,7 @@ fn workflow_step_must_be_ready_or_retryable_to_enter_gpu_queue() {
         let mut readiness = facts();
         readiness.workflow_step_status = Some(status);
 
-        let decision =
-            evaluate_gpu_queue(&job, &readiness, &prep, &providers, &[]).unwrap();
+        let decision = evaluate_gpu_queue(&job, &readiness, &prep, &providers, &[]).unwrap();
 
         assert!(
             decision.is_gpu_ready(),
@@ -451,8 +427,7 @@ fn unhealthy_stale_and_lost_sessions_cannot_claim_new_gpu_jobs() {
         let mut provider = provider_snapshot();
         provider.state = state;
 
-        let decision =
-            evaluate_gpu_queue(&job, &facts(), &prep, &[provider], &[]).unwrap();
+        let decision = evaluate_gpu_queue(&job, &facts(), &prep, &[provider], &[]).unwrap();
 
         assert_eq!(decision.status, GpuQueueEligibilityStatusV1::NotReady);
         assert!(codes(&decision).contains(&GpuNotReadyReasonCodeV1::ProviderNotReady));
@@ -490,8 +465,7 @@ fn ready_reconnect_session_wins_over_stale_session_for_same_provider() {
 fn missing_selected_provider_is_not_gpu_ready() {
     let job = logical_job("job-1");
 
-    let decision =
-        evaluate_gpu_queue(&job, &facts(), &preparation(&job.job_id), &[], &[]).unwrap();
+    let decision = evaluate_gpu_queue(&job, &facts(), &preparation(&job.job_id), &[], &[]).unwrap();
 
     assert!(codes(&decision).contains(&GpuNotReadyReasonCodeV1::ProviderUnavailable));
     assert!(decision
@@ -506,14 +480,8 @@ fn stale_provider_cannot_claim_new_gpu_job() {
     let mut provider = provider_snapshot();
     provider.state = ComputeProviderConnectionState::Stale;
 
-    let decision = evaluate_gpu_queue(
-        &job,
-        &facts(),
-        &preparation(&job.job_id),
-        &[provider],
-        &[],
-    )
-    .unwrap();
+    let decision =
+        evaluate_gpu_queue(&job, &facts(), &preparation(&job.job_id), &[provider], &[]).unwrap();
 
     assert!(codes(&decision).contains(&GpuNotReadyReasonCodeV1::ProviderNotReady));
 }
