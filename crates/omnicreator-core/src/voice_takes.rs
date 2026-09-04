@@ -67,10 +67,7 @@ impl StateStore {
             "INSERT INTO voice_retake_requests(job_id,input_hash,requested_at) VALUES (?1,?2,?3)",
             params![&job.job_id, &job.input_hash, Utc::now().to_rfc3339()],
         )?;
-        transaction.execute(
-            "UPDATE jobs SET status='READY' WHERE id=?1",
-            [&job.job_id],
-        )?;
+        transaction.execute("UPDATE jobs SET status='READY' WHERE id=?1", [&job.job_id])?;
         transaction.commit()?;
         self.get_job(job_id)
     }
@@ -130,9 +127,8 @@ impl StateStore {
             [&job.job_id],
             |row| row.get(0),
         )?;
-        let take_index = u32::try_from(next_index).map_err(|_| {
-            Error::InvalidContract("voice take index exceeds u32 range".to_owned())
-        })?;
+        let take_index = u32::try_from(next_index)
+            .map_err(|_| Error::InvalidContract("voice take index exceeds u32 range".to_owned()))?;
 
         transaction.execute(
             "INSERT INTO attempts(id,job_id,worker,started_at,finished_at,runtime_seconds,status,error_code) \
@@ -356,7 +352,9 @@ pub fn voice_take_output_uri_v1(base: &LogicalUri, take_index: u32) -> Result<Lo
     let stem = base_path
         .file_stem()
         .and_then(|value| value.to_str())
-        .ok_or_else(|| Error::InvalidContract("voice output URI has no valid file stem".to_owned()))?;
+        .ok_or_else(|| {
+            Error::InvalidContract("voice output URI has no valid file stem".to_owned())
+        })?;
     let extension = base_path
         .extension()
         .and_then(|value| value.to_str())
@@ -435,7 +433,6 @@ fn require_identifier(label: &str, value: &str) -> Result<()> {
     Ok(())
 }
 
-
 pub fn dispatch_remote_voice_take_v1(
     state_store: &mut StateStore,
     executor: &mut impl ComputeProviderExecution,
@@ -500,10 +497,8 @@ pub fn dispatch_remote_voice_take_v1(
     let output_uri = match voice_take_output_uri_v1(base_output_uri, started.take_index) {
         Ok(output_uri) => output_uri,
         Err(error) => {
-            let _ = state_store.finish_attempt_failure(
-                &started.attempt.attempt_id,
-                "VOICE_TAKE_OUTPUT_URI_ERROR",
-            );
+            let _ = state_store
+                .finish_attempt_failure(&started.attempt.attempt_id, "VOICE_TAKE_OUTPUT_URI_ERROR");
             return Err(error);
         }
     };
@@ -538,28 +533,21 @@ pub fn dispatch_remote_voice_take_v1(
         runtime_observation_eligible: true,
     };
     if let Err(error) = state_store.record_compute_attempt_runtime_context_v1(&runtime_context) {
-        let _ = state_store.finish_attempt_failure(
-            &started.attempt.attempt_id,
-            "LOCAL_RUNTIME_CONTEXT_ERROR",
-        );
+        let _ = state_store
+            .finish_attempt_failure(&started.attempt.attempt_id, "LOCAL_RUNTIME_CONTEXT_ERROR");
         return Err(error);
     }
 
     let acknowledgement = match executor.dispatch_job(&dispatch) {
         Ok(acknowledgement) => acknowledgement,
         Err(error) => {
-            state_store.finish_attempt_failure(
-                &started.attempt.attempt_id,
-                "PROVIDER_UNAVAILABLE",
-            )?;
+            state_store
+                .finish_attempt_failure(&started.attempt.attempt_id, "PROVIDER_UNAVAILABLE")?;
             return Err(error);
         }
     };
     if let Err(error) = acknowledgement.validate_for(&dispatch) {
-        state_store.finish_attempt_failure(
-            &started.attempt.attempt_id,
-            "PROVIDER_UNAVAILABLE",
-        )?;
+        state_store.finish_attempt_failure(&started.attempt.attempt_id, "PROVIDER_UNAVAILABLE")?;
         return Err(error);
     }
 
