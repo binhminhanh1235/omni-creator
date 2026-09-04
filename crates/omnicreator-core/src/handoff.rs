@@ -214,7 +214,7 @@ fn rotate_snapshots(backup_dir: &Path, retain: usize, current: &Path) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::StateStore;
+    use crate::{MachineBinding, StateStore};
 
     #[test]
     fn clean_handoff_can_recover_a_corrupted_working_database() {
@@ -248,6 +248,56 @@ mod tests {
         assert_eq!(
             restored.get_project(&project.id).unwrap().title,
             "Recover Me"
+        );
+    }
+
+    #[test]
+    fn portable_handoff_survives_move_rebind_and_recovery() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("machine-a/OmniCreatorData");
+        let target = temp.path().join("machine-b/OmniCreatorData");
+        let binding_path = temp.path().join("machine-b/config/binding.json");
+
+        let mut workspace = Workspace::create(&source).unwrap();
+        let workspace_id = workspace.manifest().workspace_id.clone();
+
+        let writer = workspace.acquire_writer("device-a").unwrap();
+        let sqlite_path = writer.sqlite_path();
+        let store = StateStore::open(&sqlite_path).unwrap();
+        let project = store.create_project("Portable Recovery").unwrap();
+        let handoff = writer.prepare_handoff(&store, 3).unwrap();
+        drop(store);
+        drop(workspace);
+
+        fs::create_dir_all(target.parent().unwrap()).unwrap();
+        fs::rename(&source, &target).unwrap();
+
+        let rebound_workspace = Workspace::open(&target).unwrap();
+        let binding = MachineBinding::for_workspace(&rebound_workspace, "device-b");
+        binding.save(&binding_path).unwrap();
+
+        let reopened = MachineBinding::load(&binding_path)
+            .unwrap()
+            .open_workspace()
+            .unwrap();
+        assert_eq!(reopened.manifest().workspace_id, workspace_id);
+        assert_eq!(
+            reopened.validate_latest_handoff().unwrap().revision,
+            handoff.revision
+        );
+
+        fs::write(reopened.sqlite_path(), b"corrupted after device move").unwrap();
+        assert_eq!(
+            reopened.recover_if_needed().unwrap(),
+            RecoveryOutcome::Recovered {
+                revision: handoff.revision
+            }
+        );
+
+        let restored = StateStore::open(reopened.sqlite_path()).unwrap();
+        assert_eq!(
+            restored.get_project(&project.id).unwrap().title,
+            "Portable Recovery"
         );
     }
 
