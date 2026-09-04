@@ -71,6 +71,7 @@ pub struct Job {
     pub status: StepStatus,
     pub input_hash: String,
     pub selected_attempt: Option<String>,
+    pub selected_artifact: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -88,10 +89,12 @@ pub struct Attempt {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Artifact {
     pub artifact_id: String,
+    pub project_id: Option<String>,
     pub artifact_type: String,
     pub uri: LogicalUri,
     pub sha256: String,
     pub size_bytes: u64,
+    pub input_hash: Option<String>,
     pub producer_job: Option<String>,
     pub created_at: DateTime<Utc>,
     #[serde(default)]

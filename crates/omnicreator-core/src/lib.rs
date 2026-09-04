@@ -1,16 +1,20 @@
+pub mod artifact_store;
 pub mod binding;
 pub mod error;
 mod fs_util;
 pub mod handoff;
+pub mod hashing;
 pub mod model;
 pub mod path_resolver;
 pub mod protocol;
 pub mod state;
 pub mod workspace;
 
+pub use artifact_store::ArtifactStore;
 pub use binding::MachineBinding;
 pub use error::{Error, Result};
 pub use handoff::{HandoffManifest, RecoveryOutcome};
+pub use hashing::deterministic_input_hash;
 pub use model::*;
 pub use path_resolver::{LogicalUri, PathResolver};
 pub use state::StateStore;
