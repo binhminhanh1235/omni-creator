@@ -21,6 +21,7 @@ pub use hashing::deterministic_input_hash;
 pub use ir::*;
 pub use model::*;
 pub use path_resolver::{LogicalUri, PathResolver};
+pub use protocol::*;
 pub use session::WorkspaceSession;
 pub use state::StateStore;
 pub use workspace::{Workspace, WorkspaceManifest, WorkspaceWriter, WriterLease};
