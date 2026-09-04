@@ -229,13 +229,13 @@ impl SelectedVisualOutput {
             target_uri,
             artifact_type: self.artifact_type().to_owned(),
             metadata: serde_json::json!({
-                "source_provider": self.source_provider,
-                "source_asset_id": self.source_asset_id,
-                "selection_ref": self.selection_ref,
+                "source_provider": self.source_provider.clone(),
+                "source_asset_id": self.source_asset_id.clone(),
+                "selection_ref": self.selection_ref.clone(),
                 "width": self.width,
                 "height": self.height,
                 "duration": self.duration,
-                "provenance": self.provenance,
+                "provenance": self.provenance.clone(),
             }),
         })
     }
