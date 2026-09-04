@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -321,6 +321,24 @@ pub struct ComputeProviderCapabilitiesV1 {
 }
 
 impl ComputeProviderCapabilitiesV1 {
+    pub fn from_json_v1(raw: &str) -> Result<Self> {
+        let decoded: Self = serde_json::from_str(raw)?;
+        decoded.normalized_v1()
+    }
+
+    pub fn normalized_v1(&self) -> Result<Self> {
+        let mut normalized = self.clone();
+        let mut model_groups = BTreeSet::new();
+        for model_group in &self.model_groups {
+            let model_group = model_group.trim();
+            require_non_empty("compute model_group", model_group)?;
+            model_groups.insert(model_group.to_owned());
+        }
+        normalized.model_groups = model_groups.into_iter().collect();
+        normalized.validate_v1()?;
+        Ok(normalized)
+    }
+
     pub fn validate_v1(&self) -> Result<()> {
         validate_schema(
             &self.schema,
@@ -328,7 +346,7 @@ impl ComputeProviderCapabilitiesV1 {
             COMPUTE_CAPABILITIES_SCHEMA,
             COMPUTE_CAPABILITIES_SCHEMA_VERSION,
         )?;
-        require_non_empty("compute provider_id", &self.provider_id)?;
+        require_identifier("compute provider_id", &self.provider_id)?;
         if self
             .max_parallel_jobs
             .is_some_and(|max_parallel_jobs| max_parallel_jobs == 0)
@@ -337,9 +355,22 @@ impl ComputeProviderCapabilitiesV1 {
                 "max_parallel_jobs must be positive when present".to_owned(),
             ));
         }
+
+        let mut device_ids = BTreeSet::new();
         for device in &self.devices {
             device.validate_v1()?;
+            if !device_ids.insert(device.id.as_str()) {
+                return Err(Error::InvalidContract(format!(
+                    "duplicate compute device id: {}",
+                    device.id
+                )));
+            }
         }
+
+        for model_group in &self.model_groups {
+            require_non_empty("compute model_group", model_group)?;
+        }
+
         Ok(())
     }
 }
@@ -353,9 +384,18 @@ pub struct ComputeDeviceV1 {
 }
 
 impl ComputeDeviceV1 {
-    fn validate_v1(&self) -> Result<()> {
-        require_non_empty("compute device id", &self.id)?;
-        require_non_empty("compute device_type", &self.device_type)
+    pub fn validate_v1(&self) -> Result<()> {
+        require_identifier("compute device id", &self.id)?;
+        require_identifier("compute device_type", &self.device_type)?;
+        if self.memory_mb.is_some_and(|memory_mb| memory_mb == 0) {
+            return Err(Error::InvalidContract(
+                "compute device memory_mb must be positive when present".to_owned(),
+            ));
+        }
+        if let Some(model) = self.model.as_deref() {
+            require_non_empty("compute device model", model)?;
+        }
+        Ok(())
     }
 }
 
@@ -381,6 +421,21 @@ pub(crate) fn validate_schema(
 fn require_non_empty(label: &str, value: &str) -> Result<()> {
     if value.trim().is_empty() {
         return Err(Error::InvalidContract(format!("{label} must not be empty")));
+    }
+    Ok(())
+}
+
+fn require_identifier(label: &str, value: &str) -> Result<()> {
+    require_non_empty(label, value)?;
+    if value.trim() != value {
+        return Err(Error::InvalidContract(format!(
+            "{label} must not contain surrounding whitespace"
+        )));
+    }
+    if value.chars().any(char::is_control) {
+        return Err(Error::InvalidContract(format!(
+            "{label} must not contain control characters"
+        )));
     }
     Ok(())
 }
