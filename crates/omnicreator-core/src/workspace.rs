@@ -9,9 +9,7 @@ use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{
-    fs_util::atomic_write_json, handoff::HandoffManifest, Error, Result, StateStore,
-};
+use crate::{fs_util::atomic_write_json, handoff::HandoffManifest, Error, Result, StateStore};
 
 pub const WORKSPACE_SCHEMA: &str = "omnicreator.workspace";
 pub const WORKSPACE_SCHEMA_VERSION: u32 = 1;
