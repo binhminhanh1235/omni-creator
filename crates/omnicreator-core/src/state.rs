@@ -81,6 +81,52 @@ CREATE INDEX IF NOT EXISTS idx_dependencies_downstream ON dependencies(downstrea
 CREATE INDEX IF NOT EXISTS idx_attempts_job ON attempts(job_id);
 "#;
 
+const MIGRATION_V4: &str = r#"
+CREATE TABLE IF NOT EXISTS compute_attempt_contexts (
+    attempt_id TEXT PRIMARY KEY REFERENCES attempts(id) ON DELETE CASCADE,
+    provider_id TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    plugin_id TEXT NOT NULL,
+    model_id TEXT NOT NULL,
+    model_version TEXT NOT NULL,
+    runtime_observation_eligible INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS compute_runtime_samples (
+    attempt_id TEXT PRIMARY KEY REFERENCES attempts(id) ON DELETE CASCADE,
+    provider_id TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    plugin_id TEXT NOT NULL,
+    model_id TEXT NOT NULL,
+    model_version TEXT NOT NULL,
+    runtime_seconds REAL NOT NULL,
+    observed_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS compute_runtime_estimates (
+    provider_id TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    plugin_id TEXT NOT NULL,
+    model_id TEXT NOT NULL,
+    model_version TEXT NOT NULL,
+    sample_count INTEGER NOT NULL,
+    total_runtime_seconds REAL NOT NULL,
+    mean_runtime_seconds REAL NOT NULL,
+    ema_runtime_seconds REAL NOT NULL,
+    last_runtime_seconds REAL NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY(provider_id,device_id,plugin_id,model_id,model_version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_compute_runtime_samples_key
+ON compute_runtime_samples(provider_id,device_id,plugin_id,model_id,model_version,observed_at);
+
+CREATE INDEX IF NOT EXISTS idx_compute_attempt_contexts_key
+ON compute_attempt_contexts(provider_id,device_id,plugin_id,model_id,model_version);
+"#;
+
 pub struct StateStore {
     pub(crate) connection: Connection,
 }
@@ -123,6 +169,7 @@ impl StateStore {
         self.apply_migration(1, MIGRATION_V1)?;
         self.apply_migration(2, MIGRATION_V2)?;
         self.apply_migration(3, MIGRATION_V3)?;
+        self.apply_migration(4, MIGRATION_V4)?;
         Ok(())
     }
 
