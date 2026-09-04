@@ -302,7 +302,6 @@ impl LlmGatewayRouteTrace {
     }
 }
 
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct StructuredOutputOptions {
     pub contract: String,
@@ -404,8 +403,7 @@ impl LlmGatewayClient {
             .post(&url)
             .set("Authorization", &authorization)
             .set("Content-Type", "application/json");
-        let (value, route_id) =
-            decode_http_response_with_route(request.send_string(&payload))?;
+        let (value, route_id) = decode_http_response_with_route(request.send_string(&payload))?;
         Ok(LlmRoutedChatResult {
             route_id,
             chat: parse_chat_result(value)?,
@@ -432,9 +430,7 @@ impl LlmGatewayClient {
             }),
         )?;
         let trace: LlmGatewayRouteTrace = serde_json::from_value(response).map_err(|error| {
-            Error::InvalidLlmGatewayResponse(format!(
-                "invalid route explain response: {error}"
-            ))
+            Error::InvalidLlmGatewayResponse(format!("invalid route explain response: {error}"))
         })?;
 
         if trace
@@ -590,7 +586,10 @@ fn validate_raw_chat_body(body: &Value) -> Result<()> {
         Error::InvalidLlmGatewayConfig("raw chat body must be a JSON object".to_owned())
     })?;
 
-    let model = object.get("model").and_then(Value::as_str).unwrap_or_default();
+    let model = object
+        .get("model")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
     if model.trim().is_empty() {
         return Err(Error::InvalidLlmGatewayConfig(
             "raw chat model must not be empty".to_owned(),
@@ -611,9 +610,7 @@ fn validate_raw_chat_body(body: &Value) -> Result<()> {
         .get("messages")
         .and_then(Value::as_array)
         .ok_or_else(|| {
-            Error::InvalidLlmGatewayConfig(
-                "raw chat messages must be a non-empty array".to_owned(),
-            )
+            Error::InvalidLlmGatewayConfig("raw chat messages must be a non-empty array".to_owned())
         })?;
     if messages.is_empty() {
         return Err(Error::InvalidLlmGatewayConfig(
@@ -714,7 +711,10 @@ fn parse_models(value: Value) -> Result<Vec<LlmGatewayModel>> {
     Ok(models)
 }
 
-pub(crate) fn decode_structured_output<T, F>(content: &str, validate: &F) -> std::result::Result<T, String>
+pub(crate) fn decode_structured_output<T, F>(
+    content: &str,
+    validate: &F,
+) -> std::result::Result<T, String>
 where
     T: DeserializeOwned,
     F: Fn(&T) -> Result<()>,
@@ -935,7 +935,9 @@ mod tests {
         assert_eq!(trace.transport_for_route("gemini-browser"), Some("browser"));
         assert_eq!(trace.transport_for_route("openrouter-vision"), Some("api"));
         assert_eq!(
-            trace.selected_candidate().map(|candidate| candidate.route_id.as_str()),
+            trace
+                .selected_candidate()
+                .map(|candidate| candidate.route_id.as_str()),
             Some("openrouter-vision")
         );
     }
