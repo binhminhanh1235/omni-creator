@@ -12,6 +12,16 @@ pub enum Error {
     InvalidWorkspace(String),
     #[error("workspace already exists at {0}")]
     WorkspaceAlreadyExists(PathBuf),
+    #[error("workspace is busy: {0}")]
+    WorkspaceBusy(String),
+    #[error("invalid machine binding: {0}")]
+    InvalidMachineBinding(String),
+    #[error("machine binding points to a different workspace: expected {expected}, found {actual}")]
+    WorkspaceBindingMismatch { expected: String, actual: String },
+    #[error("invalid handoff: {0}")]
+    InvalidHandoff(String),
+    #[error("path is not valid UTF-8: {0}")]
+    InvalidPathEncoding(PathBuf),
     #[error("invalid logical URI: {0}")]
     InvalidLogicalUri(String),
     #[error("logical path escapes its allowed root: {0}")]
