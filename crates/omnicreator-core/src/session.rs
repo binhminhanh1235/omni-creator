@@ -6,9 +6,7 @@ use uuid::Uuid;
 use crate::{
     fs_util::atomic_write_json,
     handoff::HandoffManifest,
-    workspace::{
-        validate_lease, WriterLease, WRITER_LEASE_SCHEMA, WRITER_LEASE_SCHEMA_VERSION,
-    },
+    workspace::{validate_lease, WriterLease, WRITER_LEASE_SCHEMA, WRITER_LEASE_SCHEMA_VERSION},
     Error, Result, StateStore, Workspace,
 };
 
@@ -154,7 +152,8 @@ mod tests {
         let root = temp.path().join("data");
         Workspace::create(&root).unwrap();
 
-        let session = WorkspaceSession::acquire(Workspace::open(&root).unwrap(), "device-a").unwrap();
+        let session =
+            WorkspaceSession::acquire(Workspace::open(&root).unwrap(), "device-a").unwrap();
 
         assert!(matches!(
             WorkspaceSession::acquire(Workspace::open(&root).unwrap(), "device-b"),
