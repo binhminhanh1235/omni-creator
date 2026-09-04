@@ -5,7 +5,9 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Error, LogicalUri, PluginOutputPromotion, Result, SceneIntentV1};
+use crate::{
+    artifact_store::PluginOutputPromotion, Error, LogicalUri, Result, SceneIntentV1,
+};
 
 pub const DEFAULT_SEMANTIC_RELEVANCE_WEIGHT: f64 = 0.35;
 pub const DEFAULT_EMOTIONAL_RELEVANCE_WEIGHT: f64 = 0.20;
