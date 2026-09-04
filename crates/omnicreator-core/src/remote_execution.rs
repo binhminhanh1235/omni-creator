@@ -31,7 +31,7 @@ impl RemoteComputeJobSpecV1 {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ComputeJobDispatchV1 {
     pub schema: String,
     pub version: u32,
