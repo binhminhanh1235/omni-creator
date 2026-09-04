@@ -1,0 +1,12 @@
+{
+  "schema": "omnicreator.attempt",
+  "schema_version": 1,
+  "attempt_id": "attempt_02",
+  "job_id": "job_01827",
+  "worker": "kaggle-gpu1",
+  "started_at": "2026-09-04T01:00:00Z",
+  "finished_at": "2026-09-04T01:00:42.700Z",
+  "runtime_seconds": 42.7,
+  "status": "SUCCEEDED",
+  "error_code": null
+}

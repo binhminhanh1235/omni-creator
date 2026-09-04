@@ -1,0 +1,9 @@
+{
+  "api_version": 1,
+  "event": "progress",
+  "request_id": "req_123",
+  "progress": {
+    "percent": 42,
+    "message": "Generating frame 84/200"
+  }
+}

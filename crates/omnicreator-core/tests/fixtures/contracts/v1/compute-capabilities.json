@@ -1,0 +1,21 @@
+{
+  "schema": "omnicreator.compute-capabilities",
+  "schema_version": 1,
+  "provider_id": "kaggle-session",
+  "devices": [
+    {
+      "id": "gpu0",
+      "device_type": "gpu",
+      "model": "NVIDIA T4",
+      "memory_mb": 15360
+    },
+    {
+      "id": "gpu1",
+      "device_type": "gpu",
+      "model": "NVIDIA T4",
+      "memory_mb": 15360
+    }
+  ],
+  "model_groups": ["omnivoice-v3.2", "flux-schnell"],
+  "max_parallel_jobs": 2
+}

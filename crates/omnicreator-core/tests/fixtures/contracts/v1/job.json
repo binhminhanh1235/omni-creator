@@ -1,0 +1,12 @@
+{
+  "schema": "omnicreator.job",
+  "schema_version": 1,
+  "job_id": "job_01827",
+  "project_id": "prj_fixture",
+  "step": "tts",
+  "unit": "S04",
+  "status": "SUCCEEDED",
+  "input_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "selected_attempt": "attempt_02",
+  "selected_artifact": "AUDIO_221"
+}
