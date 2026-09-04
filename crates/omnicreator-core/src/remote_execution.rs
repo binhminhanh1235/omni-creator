@@ -114,7 +114,10 @@ pub struct ComputeJobDispatchAckV1 {
 
 impl ComputeJobDispatchAckV1 {
     pub fn validate_for(&self, dispatch: &ComputeJobDispatchV1) -> Result<()> {
-        require_identifier("dispatch acknowledgement remote_job_ref", &self.remote_job_ref)?;
+        require_identifier(
+            "dispatch acknowledgement remote_job_ref",
+            &self.remote_job_ref,
+        )?;
         if self.job_id != dispatch.job_id || self.attempt_id != dispatch.attempt_id {
             return Err(Error::InvalidContract(
                 "dispatch acknowledgement does not match job/attempt identity".to_owned(),
@@ -125,8 +128,7 @@ impl ComputeJobDispatchAckV1 {
 }
 
 pub trait ComputeProviderExecution {
-    fn dispatch_job(&mut self, dispatch: &ComputeJobDispatchV1)
-        -> Result<ComputeJobDispatchAckV1>;
+    fn dispatch_job(&mut self, dispatch: &ComputeJobDispatchV1) -> Result<ComputeJobDispatchAckV1>;
 
     fn read_journal(
         &mut self,
@@ -172,7 +174,9 @@ impl ComputeRemoteArtifactV1 {
 pub enum ComputeRemoteJournalEventV1 {
     Accepted,
     Running,
-    ArtifactReady { artifact: ComputeRemoteArtifactV1 },
+    ArtifactReady {
+        artifact: ComputeRemoteArtifactV1,
+    },
     Failed {
         error_code: String,
         message: Option<String>,
@@ -353,7 +357,11 @@ pub fn dispatch_remote_job(
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE", tag = "status", content = "artifact")]
+#[serde(
+    rename_all = "SCREAMING_SNAKE_CASE",
+    tag = "status",
+    content = "artifact"
+)]
 pub enum RemoteArtifactSyncOutcomeV1 {
     Committed(Artifact),
     AlreadyCommitted(Artifact),
@@ -481,9 +489,7 @@ impl ArtifactStore {
         }
 
         let artifact_id = job.selected_artifact.as_deref().ok_or_else(|| {
-            Error::InvalidArtifact(
-                "SUCCEEDED remote job has no selected_artifact_id".to_owned(),
-            )
+            Error::InvalidArtifact("SUCCEEDED remote job has no selected_artifact_id".to_owned())
         })?;
         let artifact = state_store.get_artifact(artifact_id)?;
         ensure_delivery_matches_artifact(entry, remote_artifact, &artifact)?;
@@ -583,8 +589,7 @@ impl ArtifactStore {
             metadata,
         };
 
-        if let Err(error) =
-            state_store.commit_remote_artifact_success(&entry.attempt_id, &artifact)
+        if let Err(error) = state_store.commit_remote_artifact_success(&entry.attempt_id, &artifact)
         {
             let _ = fs::remove_file(&destination);
             return Err(error);
@@ -604,9 +609,7 @@ pub fn sync_remote_artifact(
 ) -> Result<RemoteArtifactSyncOutcomeV1> {
     entry.validate_v1()?;
     let artifact = entry.artifact_ready().ok_or_else(|| {
-        Error::InvalidContract(
-            "remote sync requires an ARTIFACT_READY journal entry".to_owned(),
-        )
+        Error::InvalidContract("remote sync requires an ARTIFACT_READY journal entry".to_owned())
     })?;
 
     if let Some(existing) = artifact_store.committed_remote_artifact(state_store, entry)? {
@@ -631,12 +634,8 @@ pub fn sync_remote_artifact(
         return Err(error);
     }
 
-    let result = artifact_store.promote_remote_artifact(
-        state_store,
-        entry,
-        &staging_path,
-        metadata,
-    );
+    let result =
+        artifact_store.promote_remote_artifact(state_store, entry, &staging_path, metadata);
     let _ = fs::remove_file(&staging_path);
     result
 }
@@ -682,12 +681,7 @@ fn copy_and_sync(source: &Path, destination: &Path) -> Result<()> {
 }
 
 fn validate_sha256(value: &str) -> Result<()> {
-    if value.len() != 64
-        || !value
-            .as_bytes()
-            .iter()
-            .all(|byte| byte.is_ascii_hexdigit())
-    {
+    if value.len() != 64 || !value.as_bytes().iter().all(|byte| byte.is_ascii_hexdigit()) {
         return Err(Error::InvalidContract(
             "remote artifact sha256 must be a 64-character hex digest".to_owned(),
         ));
