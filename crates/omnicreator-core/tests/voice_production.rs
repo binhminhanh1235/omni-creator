@@ -144,7 +144,10 @@ fn input_hash_is_stable_across_equivalent_whitespace_and_rule_order() {
     let mut second = production_input("Love stays truthful.");
     second.pronunciation_rules.reverse();
 
-    assert_eq!(first.input_hash_v1().unwrap(), second.input_hash_v1().unwrap());
+    assert_eq!(
+        first.input_hash_v1().unwrap(),
+        second.input_hash_v1().unwrap()
+    );
 }
 
 #[test]
@@ -202,10 +205,12 @@ fn conflicting_pronunciation_and_unlocked_inputs_are_typed_preflight_blockers() 
     let mut prep = preparation("Love stays truthful.");
     prep.locks.normalization_locked = false;
     prep.locks.pronunciation_locked = false;
-    prep.production_input.pronunciation_rules.push(PronunciationRuleV1 {
-        written: "proverbs".to_owned(),
-        pronunciation: "PROH-verbs".to_owned(),
-    });
+    prep.production_input
+        .pronunciation_rules
+        .push(PronunciationRuleV1 {
+            written: "proverbs".to_owned(),
+            pronunciation: "PROH-verbs".to_owned(),
+        });
 
     let preflight = prep.preflight_v1().unwrap();
     assert_eq!(preflight.status, SegmentTtsPreflightStatusV1::Blocked);
@@ -346,9 +351,7 @@ fn source_edit_invalidates_only_affected_segment_and_downstream_steps() {
     let mut state = StateStore::open(workspace.sqlite_path()).unwrap();
     let project = state.create_project("Voice invalidation").unwrap();
 
-    let old_hash = preparation("Love stays truthful.")
-        .input_hash_v1()
-        .unwrap();
+    let old_hash = preparation("Love stays truthful.").input_hash_v1().unwrap();
     let new_hash = preparation("Love stays truthful even under pressure.")
         .input_hash_v1()
         .unwrap();
@@ -391,7 +394,9 @@ fn source_edit_invalidates_only_affected_segment_and_downstream_steps() {
         )
         .unwrap();
 
-    state.add_dependency(&voice_prep.step_id, &tts.step_id).unwrap();
+    state
+        .add_dependency(&voice_prep.step_id, &tts.step_id)
+        .unwrap();
     state.add_dependency(&tts.step_id, &timing.step_id).unwrap();
 
     let impact = state
@@ -403,7 +408,10 @@ fn source_edit_invalidates_only_affected_segment_and_downstream_steps() {
         state.get_step(&voice_prep.step_id).unwrap().status,
         StepStatus::Stale
     );
-    assert_eq!(state.get_step(&tts.step_id).unwrap().status, StepStatus::Stale);
+    assert_eq!(
+        state.get_step(&tts.step_id).unwrap().status,
+        StepStatus::Stale
+    );
     assert_eq!(
         state.get_step(&timing.step_id).unwrap().status,
         StepStatus::Stale
