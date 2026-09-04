@@ -4,8 +4,10 @@ use omnicreator_core::{
     dispatch_remote_job, parse_remote_journal_jsonl, sync_remote_artifact, ArtifactStore,
     ComputeDeviceSelectionV1, ComputeJobDispatchAckV1, ComputeJobDispatchV1,
     ComputeProviderExecution, ComputeRemoteArtifactV1, ComputeRemoteJournalEntryV1,
-    ComputeRemoteJournalEventV1, Error, LogicalUri, RemoteArtifactSyncOutcomeV1,
-    RemoteComputeJobSpecV1, StateStore, StepStatus, Workspace, REMOTE_JOURNAL_SCHEMA_V1,
+    ComputeRemoteJournalEventV1, ComputeRequirements, GpuJobPreparationV1,
+    GpuQueueEligibilityStatusV1, GpuQueueEligibilityV1, LogicalUri,
+    RemoteArtifactSyncOutcomeV1, RemoteComputeJobSpecV1, ResourceRequirement, StateStore,
+    StepStatus, Workspace, REMOTE_JOURNAL_SCHEMA_V1,
 };
 use sha2::{Digest, Sha256};
 
@@ -67,20 +69,50 @@ fn selection() -> ComputeDeviceSelectionV1 {
     }
 }
 
-fn spec(job_id: &str, input_hash: &str) -> RemoteComputeJobSpecV1 {
+fn spec(job_id: &str) -> RemoteComputeJobSpecV1 {
     RemoteComputeJobSpecV1 {
         job_id: job_id.to_owned(),
-        input_hash: input_hash.to_owned(),
-        plugin_id: "omnivoice".to_owned(),
         operation: "tts.generate".to_owned(),
-        model_id: "omnivoice-v3".to_owned(),
-        model_version: "3.2".to_owned(),
-        settings_fingerprint: "settings-v1".to_owned(),
-        output_uri: LogicalUri::parse("project://audio/S01.wav").unwrap(),
         plugin_payload: serde_json::json!({
             "segment_id": "S01",
             "voice": "warm-narrator-v4"
         }),
+    }
+}
+
+fn preparation(job_id: &str) -> GpuJobPreparationV1 {
+    GpuJobPreparationV1 {
+        job_id: job_id.to_owned(),
+        input_resolved: true,
+        input_immutable: true,
+        plugin_id: Some("omnivoice".to_owned()),
+        provider_id: Some("compute-provider".to_owned()),
+        model_id: Some("omnivoice-v3".to_owned()),
+        model_version: Some("3.2".to_owned()),
+        settings_fingerprint: Some("settings-v1".to_owned()),
+        output_uri: Some(LogicalUri::parse("project://audio/S01.wav").unwrap()),
+        approval_required: false,
+        approval_complete: true,
+        production_lock_required: false,
+        preflight_required: false,
+        preflight_complete: true,
+        gpu_execution_requested: true,
+        requirements: ComputeRequirements {
+            gpu: ResourceRequirement::Required,
+            min_vram_mb: Some(12_288),
+            model_group: Some("omnivoice-v3.2".to_owned()),
+            parallelizable: true,
+            cost_metric: Some("seconds".to_owned()),
+        },
+    }
+}
+
+fn gpu_ready(job_id: &str) -> GpuQueueEligibilityV1 {
+    GpuQueueEligibilityV1 {
+        job_id: job_id.to_owned(),
+        status: GpuQueueEligibilityStatusV1::GpuReady,
+        reasons: Vec::new(),
+        selection: Some(selection()),
     }
 }
 
@@ -170,8 +202,9 @@ fn provider_neutral_dispatch_starts_attempt_and_preserves_logical_job_identity()
     let started = dispatch_remote_job(
         &mut state,
         &mut executor,
-        &selection(),
-        &spec(&job.job_id, &job.input_hash),
+        &gpu_ready(&job.job_id),
+        &preparation(&job.job_id),
+        &spec(&job.job_id),
     )
     .unwrap();
 
@@ -192,6 +225,37 @@ fn provider_neutral_dispatch_starts_attempt_and_preserves_logical_job_identity()
 }
 
 #[test]
+fn remote_dispatch_refuses_non_gpu_ready_decision_without_creating_attempt() {
+    let temp = tempfile::tempdir().unwrap();
+    let workspace = Workspace::create(temp.path().join("data")).unwrap();
+    let mut state = StateStore::open(workspace.sqlite_path()).unwrap();
+    let project = state.create_project("Remote Dispatch Gate").unwrap();
+    let job = state
+        .create_job(&project.id, "tts", "S01", "input-hash-001")
+        .unwrap();
+    let mut executor = FakeExecutor::default();
+    let not_ready = GpuQueueEligibilityV1 {
+        job_id: job.job_id.clone(),
+        status: GpuQueueEligibilityStatusV1::NotReady,
+        reasons: Vec::new(),
+        selection: None,
+    };
+
+    assert!(dispatch_remote_job(
+        &mut state,
+        &mut executor,
+        &not_ready,
+        &preparation(&job.job_id),
+        &spec(&job.job_id),
+    )
+    .is_err());
+
+    assert_eq!(state.get_job(&job.job_id).unwrap().status, StepStatus::Ready);
+    assert!(state.list_attempts(&job.job_id).unwrap().is_empty());
+    assert!(executor.dispatched.is_empty());
+}
+
+#[test]
 fn failed_remote_dispatch_keeps_attempt_history_and_marks_job_retryable() {
     let temp = tempfile::tempdir().unwrap();
     let workspace = Workspace::create(temp.path().join("data")).unwrap();
@@ -208,8 +272,9 @@ fn failed_remote_dispatch_keeps_attempt_history_and_marks_job_retryable() {
     assert!(dispatch_remote_job(
         &mut state,
         &mut executor,
-        &selection(),
-        &spec(&job.job_id, &job.input_hash),
+        &gpu_ready(&job.job_id),
+        &preparation(&job.job_id),
+        &spec(&job.job_id),
     )
     .is_err());
 
@@ -244,8 +309,9 @@ fn remote_artifact_is_transferred_verified_and_committed_atomically() {
     let started = dispatch_remote_job(
         &mut state,
         &mut executor,
-        &selection(),
-        &spec(&job.job_id, &job.input_hash),
+        &gpu_ready(&job.job_id),
+        &preparation(&job.job_id),
+        &spec(&job.job_id),
     )
     .unwrap();
     let entry = artifact_entry(&job.job_id, &started.attempt_id, &job.input_hash, &bytes);
@@ -327,8 +393,9 @@ fn corrupted_transfer_never_marks_attempt_or_job_succeeded() {
     let started = dispatch_remote_job(
         &mut state,
         &mut executor,
-        &selection(),
-        &spec(&job.job_id, &job.input_hash),
+        &gpu_ready(&job.job_id),
+        &preparation(&job.job_id),
+        &spec(&job.job_id),
     )
     .unwrap();
     let entry = artifact_entry(&job.job_id, &started.attempt_id, &job.input_hash, expected);
@@ -381,8 +448,9 @@ fn conflicting_duplicate_delivery_is_rejected_without_refetch() {
     let started = dispatch_remote_job(
         &mut state,
         &mut executor,
-        &selection(),
-        &spec(&job.job_id, &job.input_hash),
+        &gpu_ready(&job.job_id),
+        &preparation(&job.job_id),
+        &spec(&job.job_id),
     )
     .unwrap();
     let entry = artifact_entry(&job.job_id, &started.attempt_id, &job.input_hash, &bytes);
