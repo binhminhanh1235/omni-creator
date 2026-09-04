@@ -5,8 +5,7 @@ use serde_json::Value;
 
 use crate::{
     llmgateway::decode_structured_output, Error, LlmGatewayClient, RankedVisualCandidate, Result,
-    SceneIntentV1, VisualCandidate, VisualCandidatePreview,
-    VisualPreviewKind,
+    SceneIntentV1, VisualCandidate, VisualCandidatePreview, VisualPreviewKind,
 };
 
 pub const VISUAL_VISION_CONTRACT: &str = "omnicreator.visual-vision-evaluation.v1";
