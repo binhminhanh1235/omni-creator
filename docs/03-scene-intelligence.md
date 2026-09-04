@@ -144,6 +144,29 @@ download selected full asset only
 
 This minimizes bandwidth and local clutter.
 
+### Selected asset fetch contract
+
+Search and download remain separate operations.
+
+`visual.resolve` returns preview-only candidates with an opaque `selection_ref`.
+After the user or core selects one candidate, `visual.fetch_selected` receives only that
+selection reference plus an optional quality hint.
+
+For Pexels Runtime v1:
+
+- `pexels:video:<id>` is resolved through the Pexels video-by-id endpoint only after selection.
+- `pexels:image:<id>` is resolved through the Pexels photo-by-id endpoint only after selection.
+- video `quality_mode: "standard"` prefers the smallest downloadable MP4 whose short side is at least 1080 pixels; if no such source exists, it uses the largest available MP4.
+- video `quality_mode: "high"` selects the largest downloadable MP4 and is intended for hero shots or heavy crop/reframe workflows.
+- selected still images use the original Pexels image source.
+- download first lands in the isolated job `temp/` directory and is atomically moved into `output/` only after the transfer completes.
+- plugin response returns a relative workspace path plus provider/source/contributor provenance, never a trusted final artifact.
+- core validates the returned relative path, verifies the regular file, hashes it, and promotes it through the existing artifact-store boundary.
+
+The current Pexels adapter declares API access plus the direct media hosts used by the documented
+photo/video resources. Runtime v1 surfaces those declarations for review; OS-level network
+sandboxing remains a later hardening step.
+
 ## Search query generation
 
 The LLM should produce multiple concrete visual queries, not spiritual abstractions.
