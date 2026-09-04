@@ -9,9 +9,11 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    fs_util::sha256_file, Artifact, ArtifactStore, ComputeProviderConnectionState, Error,
-    FailureDisposition, GpuJobPreparationV1, GpuQueueEligibilityV1, LogicalUri, PathResolver,
-    Result, StateStore, StepStatus,
+    fs_util::sha256_file,
+    runtime_estimates::record_runtime_observation_transaction_v1,
+    Artifact, ArtifactStore, ComputeAttemptRuntimeContextV1, ComputeProviderConnectionState,
+    Error, FailureDisposition, GpuJobPreparationV1, GpuQueueEligibilityV1, LogicalUri,
+    PathResolver, Result, StateStore, StepStatus,
 };
 
 pub const REMOTE_EXECUTION_SCHEMA_V1: &str = "omnicreator.compute.remote-execution";
@@ -350,6 +352,22 @@ pub fn dispatch_remote_job(
     };
     dispatch.validate_v1()?;
 
+    let runtime_context = ComputeAttemptRuntimeContextV1 {
+        attempt_id: attempt.attempt_id.clone(),
+        provider_id: dispatch.provider_id.clone(),
+        session_id: dispatch.session_id.clone(),
+        device_id: dispatch.device_id.clone(),
+        plugin_id: dispatch.plugin_id.clone(),
+        model_id: dispatch.model_id.clone(),
+        model_version: dispatch.model_version.clone(),
+        runtime_observation_eligible: true,
+    };
+    if let Err(error) = state_store.record_compute_attempt_runtime_context_v1(&runtime_context) {
+        let _ = state_store
+            .finish_attempt_failure(&attempt.attempt_id, "LOCAL_RUNTIME_CONTEXT_ERROR");
+        return Err(error);
+    }
+
     let acknowledgement = match executor.dispatch_job(&dispatch) {
         Ok(acknowledgement) => acknowledgement,
         Err(error) => {
@@ -436,11 +454,12 @@ impl StateStore {
         })?;
         let metadata_json = serde_json::to_string(&artifact.metadata)?;
         let finished_at = Utc::now();
-        let runtime_millis = finished_at
+        let runtime_micros = finished_at
             .signed_duration_since(attempt.started_at)
-            .num_milliseconds()
-            .max(0);
-        let runtime_seconds = runtime_millis as f64 / 1000.0;
+            .num_microseconds()
+            .unwrap_or(i64::MAX)
+            .max(1);
+        let runtime_seconds = runtime_micros as f64 / 1_000_000.0;
 
         let transaction = self.connection.transaction()?;
         transaction.execute(
@@ -474,6 +493,12 @@ impl StateStore {
              SET status='SUCCEEDED',selected_attempt_id=?1,selected_artifact_id=?2 \
              WHERE id=?3 AND status IN ('RUNNING','RETRYABLE')",
             params![&attempt.attempt_id, &artifact.artifact_id, &job.job_id],
+        )?;
+        record_runtime_observation_transaction_v1(
+            &transaction,
+            &attempt.attempt_id,
+            runtime_seconds,
+            finished_at,
         )?;
         transaction.commit()?;
         Ok(())
