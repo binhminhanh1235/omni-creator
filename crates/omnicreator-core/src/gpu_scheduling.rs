@@ -276,11 +276,7 @@ pub fn evaluate_gpu_queue(
             GpuNotReadyReasonCodeV1::WorkflowStepMissing,
             "No workflow step matches this job's project/step/unit identity.",
         ),
-        Some(status)
-            if !matches!(
-                status,
-                StepStatus::Ready | StepStatus::Retryable | StepStatus::Succeeded
-            ) =>
+        Some(status) if !matches!(status, StepStatus::Ready | StepStatus::Retryable) =>
         {
             push_reason(
                 &mut reasons,
