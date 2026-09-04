@@ -652,7 +652,10 @@ fn reconnect_recovers_remote_artifact_after_local_restart_before_regenerating() 
     assert!(artifacts.verify_artifact(&artifact).unwrap());
     assert_eq!(state.list_attempts(&job.job_id).unwrap().len(), 1);
     assert!(
-        state.get_runtime_estimate_v1(&runtime_key()).unwrap().is_none(),
+        state
+            .get_runtime_estimate_v1(&runtime_key())
+            .unwrap()
+            .is_none(),
         "restart/reconnect downtime must not pollute runtime estimates"
     );
     assert_eq!(
