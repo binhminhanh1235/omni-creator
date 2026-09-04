@@ -151,6 +151,17 @@ CREATE INDEX IF NOT EXISTS idx_voice_takes_input_hash
 ON voice_takes(input_hash,artifact_id);
 "#;
 
+const MIGRATION_V6: &str = r#"
+CREATE TABLE IF NOT EXISTS voice_take_timing_artifacts (
+    attempt_id TEXT PRIMARY KEY REFERENCES voice_takes(attempt_id) ON DELETE CASCADE,
+    artifact_id TEXT NOT NULL UNIQUE REFERENCES artifacts(id),
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_voice_take_timing_artifacts_artifact
+ON voice_take_timing_artifacts(artifact_id);
+"#;
+
 pub struct StateStore {
     pub(crate) connection: Connection,
 }
@@ -195,6 +206,7 @@ impl StateStore {
         self.apply_migration(3, MIGRATION_V3)?;
         self.apply_migration(4, MIGRATION_V4)?;
         self.apply_migration(5, MIGRATION_V5)?;
+        self.apply_migration(6, MIGRATION_V6)?;
         Ok(())
     }
 
