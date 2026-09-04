@@ -276,8 +276,7 @@ pub fn evaluate_gpu_queue(
             GpuNotReadyReasonCodeV1::WorkflowStepMissing,
             "No workflow step matches this job's project/step/unit identity.",
         ),
-        Some(status) if !matches!(status, StepStatus::Ready | StepStatus::Retryable) =>
-        {
+        Some(status) if !matches!(status, StepStatus::Ready | StepStatus::Retryable) => {
             push_reason(
                 &mut reasons,
                 GpuNotReadyReasonCodeV1::WorkflowStepNotReady,
@@ -367,9 +366,7 @@ pub fn evaluate_gpu_queue(
         CacheLookupV1::Hit { artifact_id } => push_reason(
             &mut reasons,
             GpuNotReadyReasonCodeV1::CacheHit,
-            format!(
-                "A verified local artifact already satisfies this input hash: {artifact_id}."
-            ),
+            format!("A verified local artifact already satisfies this input hash: {artifact_id}."),
         ),
         CacheLookupV1::Miss => {}
     }
@@ -419,10 +416,7 @@ pub fn evaluate_gpu_queue(
     }
 
     let plugin_id = preparation.plugin_id.as_deref().expect("validated above");
-    let provider_id = preparation
-        .provider_id
-        .as_deref()
-        .expect("validated above");
+    let provider_id = preparation.provider_id.as_deref().expect("validated above");
     let model_id = preparation.model_id.as_deref().expect("validated above");
     let parallelism_group = scheduling_group(
         plugin_id,
@@ -547,9 +541,7 @@ pub fn evaluate_gpu_queue(
     let vram_compatible = all_gpu_devices
         .iter()
         .copied()
-        .filter(|device| {
-            min_vram == 0 || device.memory_mb.is_some_and(|memory| memory >= min_vram)
-        })
+        .filter(|device| min_vram == 0 || device.memory_mb.is_some_and(|memory| memory >= min_vram))
         .collect::<Vec<_>>();
 
     if vram_compatible.is_empty() {
@@ -646,10 +638,7 @@ fn not_ready(job: &Job, mut reasons: Vec<GpuNotReadyReasonV1>) -> GpuQueueEligib
     }
 }
 
-fn reason(
-    code: GpuNotReadyReasonCodeV1,
-    message: impl Into<String>,
-) -> GpuNotReadyReasonV1 {
+fn reason(code: GpuNotReadyReasonCodeV1, message: impl Into<String>) -> GpuNotReadyReasonV1 {
     GpuNotReadyReasonV1 {
         code,
         message: message.into(),
