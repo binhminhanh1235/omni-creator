@@ -215,7 +215,11 @@ fn choose_review_preview(candidate: &VisualCandidate) -> Option<VisualCandidateP
         VisualPreviewKind::Image,
         VisualPreviewKind::Video,
     ] {
-        if let Some(preview) = candidate.previews.iter().find(|preview| preview.kind == kind) {
+        if let Some(preview) = candidate
+            .previews
+            .iter()
+            .find(|preview| preview.kind == kind)
+        {
             return Some(preview.clone());
         }
     }
@@ -245,12 +249,7 @@ fn deterministic_rationale(score: &VisualCandidateScore) -> String {
         ("editability", score.editability),
         ("freshness", score.freshness),
     ];
-    strengths.sort_by(|left, right| {
-        right
-            .1
-            .total_cmp(&left.1)
-            .then_with(|| left.0.cmp(right.0))
-    });
+    strengths.sort_by(|left, right| right.1.total_cmp(&left.1).then_with(|| left.0.cmp(right.0)));
 
     let first = strengths[0].0;
     let second = strengths[1].0;
