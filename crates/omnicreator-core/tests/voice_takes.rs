@@ -4,11 +4,11 @@ use omnicreator_core::{
     dispatch_remote_voice_take_v1, sync_remote_artifact, ArtifactStore, ComputeDeviceSelectionV1,
     ComputeJobDispatchAckV1, ComputeJobDispatchV1, ComputeProviderExecution,
     ComputeRemoteArtifactV1, ComputeRemoteJournalEntryV1, ComputeRemoteJournalEventV1,
-    ComputeRequirements, GpuJobPreparationV1, GpuQueueEligibilityStatusV1,
-    GpuQueueEligibilityV1, LogicalUri, RemoteArtifactSyncOutcomeV1, RemoteComputeJobSpecV1,
-    ResourceRequirement, SegmentTtsProductionInputV1, SegmentV1, StateStore, StepStatus,
-    VoiceDirectionV1, VoiceIdentityV1, VoiceModelIdentityV1, Workspace, REMOTE_JOURNAL_SCHEMA_V1,
-    SEGMENT_SCHEMA, SEGMENT_SCHEMA_VERSION,
+    ComputeRequirements, GpuJobPreparationV1, GpuQueueEligibilityStatusV1, GpuQueueEligibilityV1,
+    LogicalUri, RemoteArtifactSyncOutcomeV1, RemoteComputeJobSpecV1, ResourceRequirement,
+    SegmentTtsProductionInputV1, SegmentV1, StateStore, StepStatus, VoiceDirectionV1,
+    VoiceIdentityV1, VoiceModelIdentityV1, Workspace, REMOTE_JOURNAL_SCHEMA_V1, SEGMENT_SCHEMA,
+    SEGMENT_SCHEMA_VERSION,
 };
 use sha2::{Digest, Sha256};
 
@@ -401,7 +401,11 @@ fn duplicate_delivery_uses_attempt_artifact_not_selected_take() {
     ));
     assert_eq!(executor.transfer_calls, transfers_before_duplicate);
     assert_eq!(
-        state.get_job(&job.job_id).unwrap().selected_attempt.as_deref(),
+        state
+            .get_job(&job.job_id)
+            .unwrap()
+            .selected_attempt
+            .as_deref(),
         Some(first.attempt_id.as_str())
     );
 }
@@ -582,7 +586,10 @@ fn voice_retake_readiness_bypasses_cache_and_completed_step_without_mutating_it(
     let facts = state.voice_gpu_readiness_facts_v1(&retake_job).unwrap();
 
     assert_eq!(facts.workflow_step_status, Some(StepStatus::Ready));
-    assert!(matches!(facts.cache_lookup, omnicreator_core::CacheLookupV1::Miss));
+    assert!(matches!(
+        facts.cache_lookup,
+        omnicreator_core::CacheLookupV1::Miss
+    ));
     assert_eq!(
         state.get_step(&step.step_id).unwrap().status,
         StepStatus::Succeeded
