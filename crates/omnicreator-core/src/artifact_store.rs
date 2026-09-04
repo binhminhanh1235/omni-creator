@@ -12,6 +12,14 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
+pub struct PluginOutputPromotion {
+    pub relative_output: String,
+    pub target_uri: LogicalUri,
+    pub artifact_type: String,
+    pub metadata: serde_json::Value,
+}
+
+#[derive(Debug, Clone)]
 pub struct ArtifactStore {
     resolver: PathResolver,
 }
@@ -120,19 +128,16 @@ impl ArtifactStore {
         state_store: &mut StateStore,
         job_id: &str,
         workspace: &PluginJobWorkspace,
-        relative_output: &str,
-        target_uri: LogicalUri,
-        artifact_type: impl Into<String>,
-        metadata: serde_json::Value,
+        promotion: PluginOutputPromotion,
     ) -> Result<Artifact> {
-        let verified = workspace.verify_output_file(relative_output)?;
+        let verified = workspace.verify_output_file(&promotion.relative_output)?;
         self.promote_job_output(
             state_store,
             job_id,
             verified.path(),
-            target_uri,
-            artifact_type,
-            metadata,
+            promotion.target_uri,
+            promotion.artifact_type,
+            promotion.metadata,
         )
     }
 
@@ -270,10 +275,12 @@ mod tests {
                 &mut state,
                 &job.job_id,
                 &plugin_workspace,
-                "scene/frame.png",
-                LogicalUri::parse("project://visual/SC01.png").unwrap(),
-                "image",
-                serde_json::json!({"provider": "fixture-plugin"}),
+                PluginOutputPromotion {
+                    relative_output: "scene/frame.png".to_owned(),
+                    target_uri: LogicalUri::parse("project://visual/SC01.png").unwrap(),
+                    artifact_type: "image".to_owned(),
+                    metadata: serde_json::json!({"provider": "fixture-plugin"}),
+                },
             )
             .unwrap();
 
@@ -305,10 +312,12 @@ mod tests {
                 &mut state,
                 &job.job_id,
                 &plugin_workspace,
-                "../outside.png",
-                LogicalUri::parse("project://visual/SC02.png").unwrap(),
-                "image",
-                serde_json::Value::Null,
+                PluginOutputPromotion {
+                    relative_output: "../outside.png".to_owned(),
+                    target_uri: LogicalUri::parse("project://visual/SC02.png").unwrap(),
+                    artifact_type: "image".to_owned(),
+                    metadata: serde_json::Value::Null,
+                },
             ),
             Err(Error::PathEscape(_))
         ));
