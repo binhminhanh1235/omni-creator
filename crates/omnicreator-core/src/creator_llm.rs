@@ -1,16 +1,74 @@
 use std::collections::BTreeSet;
 
+use serde::de::DeserializeOwned;
 use serde_json::json;
 
 use crate::{
-    Error, LlmGatewayClient, LlmGatewayTask, LlmMessage, Result, SceneIntentV1, SegmentV1,
-    StructuredOutputOptions, SCENE_INTENT_SCHEMA, SCENE_INTENT_SCHEMA_VERSION,
+    Error, LlmChatRequest, LlmChatResult, LlmGatewayClient, LlmGatewayTask, LlmMessage, Result,
+    SceneIntentV1, SegmentV1, StructuredOutputOptions, SCENE_INTENT_SCHEMA,
+    SCENE_INTENT_SCHEMA_VERSION,
 };
 
 pub const DEFAULT_SCENE_ASPECT_RATIO: &str = "16:9";
 pub const MIN_SCENE_SEARCH_QUERIES: usize = 3;
 pub const MAX_SCENE_SEARCH_QUERIES: usize = 6;
 pub const MIN_SCENE_VISUAL_IDEAS: usize = 2;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CreatorContentOptions {
+    pub model: Option<String>,
+    pub task: LlmGatewayTask,
+    pub temperature: Option<f64>,
+    pub max_tokens: Option<u32>,
+}
+
+impl Default for CreatorContentOptions {
+    fn default() -> Self {
+        Self {
+            model: None,
+            task: LlmGatewayTask::General,
+            temperature: Some(0.4),
+            max_tokens: Some(2_400),
+        }
+    }
+}
+
+impl CreatorContentOptions {
+    pub fn validate(&self) -> Result<()> {
+        validate_optional_model(&self.model, "content task")?;
+        validate_temperature(self.temperature, "content task")?;
+        validate_max_tokens(self.max_tokens, "content task")
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreatorQualityOptions {
+    pub model: Option<String>,
+    pub max_attempts: u8,
+    pub max_tokens: Option<u32>,
+}
+
+impl Default for CreatorQualityOptions {
+    fn default() -> Self {
+        Self {
+            model: None,
+            max_attempts: 3,
+            max_tokens: Some(1_600),
+        }
+    }
+}
+
+impl CreatorQualityOptions {
+    pub fn validate(&self) -> Result<()> {
+        validate_optional_model(&self.model, "quality evaluation")?;
+        if !(1..=4).contains(&self.max_attempts) {
+            return Err(Error::InvalidContract(
+                "quality evaluation max_attempts must be between 1 and 4".to_owned(),
+            ));
+        }
+        validate_max_tokens(self.max_tokens, "quality evaluation")
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SceneIntentGenerationOptions {
@@ -76,6 +134,35 @@ impl SceneIntentGenerationOptions {
 }
 
 impl LlmGatewayClient {
+    pub fn run_content_task(
+        &self,
+        instruction: &str,
+        input: &str,
+        options: &CreatorContentOptions,
+    ) -> Result<LlmChatResult> {
+        options.validate()?;
+        let request = build_content_request(self, instruction, input, options)?;
+        self.chat(&request)
+    }
+
+    pub fn evaluate_quality<T, F>(
+        &self,
+        instruction: &str,
+        subject: &str,
+        contract: &str,
+        options: &CreatorQualityOptions,
+        validate: F,
+    ) -> Result<T>
+    where
+        T: DeserializeOwned,
+        F: Fn(&T) -> Result<()>,
+    {
+        options.validate()?;
+        let messages = build_quality_messages(instruction, subject)?;
+        let structured = structured_quality_options(contract, options)?;
+        self.chat_structured(messages, &structured, validate)
+    }
+
     pub fn generate_scene_intent(
         &self,
         segment: &SegmentV1,
@@ -97,6 +184,99 @@ impl LlmGatewayClient {
             validate_generated_scene_intent(scene, segment, scene_id, options)
         })
     }
+}
+
+fn build_content_request(
+    client: &LlmGatewayClient,
+    instruction: &str,
+    input: &str,
+    options: &CreatorContentOptions,
+) -> Result<LlmChatRequest> {
+    require_creator_text("content task instruction", instruction)?;
+    require_creator_text("content task input", input)?;
+    options.validate()?;
+
+    let model = options
+        .model
+        .clone()
+        .unwrap_or_else(|| client.config().default_model.clone());
+    let mut request = LlmChatRequest::new(
+        model,
+        vec![
+            LlmMessage::system(instruction.trim()),
+            LlmMessage::user(input.trim()),
+        ],
+    );
+    request.llmgateway_task = options.task;
+    request.temperature = options.temperature;
+    request.max_tokens = options.max_tokens;
+    Ok(request)
+}
+
+fn build_quality_messages(instruction: &str, subject: &str) -> Result<Vec<LlmMessage>> {
+    require_creator_text("quality evaluation instruction", instruction)?;
+    require_creator_text("quality evaluation subject", subject)?;
+
+    Ok(vec![
+        LlmMessage::system(
+            "You are OmniCreator Quality Intelligence. Evaluate creator content against the supplied criteria. Be specific, evidence-based, and provider-neutral. Never choose or report LLM providers, accounts, browser sessions, or physical routes.",
+        ),
+        LlmMessage::user(format!(
+            "Evaluation criteria:\n{}\n\nContent to evaluate:\n{}\n\nReturn only the JSON required by the requested contract.",
+            instruction.trim(),
+            subject.trim()
+        )),
+    ])
+}
+
+fn structured_quality_options(
+    contract: &str,
+    options: &CreatorQualityOptions,
+) -> Result<StructuredOutputOptions> {
+    require_creator_text("quality evaluation contract", contract)?;
+    options.validate()?;
+
+    let mut structured = StructuredOutputOptions::new(contract.trim());
+    structured.model = options.model.clone();
+    structured.task = LlmGatewayTask::Reasoning;
+    structured.temperature = Some(0.0);
+    structured.max_tokens = options.max_tokens;
+    structured.max_attempts = options.max_attempts;
+    Ok(structured)
+}
+
+fn validate_optional_model(model: &Option<String>, label: &str) -> Result<()> {
+    if model.as_ref().is_some_and(|model| model.trim().is_empty()) {
+        return Err(Error::InvalidContract(format!(
+            "{label} model must not be empty when present"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_temperature(temperature: Option<f64>, label: &str) -> Result<()> {
+    if temperature.is_some_and(|value| !value.is_finite()) {
+        return Err(Error::InvalidContract(format!(
+            "{label} temperature must be finite"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_max_tokens(max_tokens: Option<u32>, label: &str) -> Result<()> {
+    if max_tokens.is_some_and(|value| value == 0) {
+        return Err(Error::InvalidContract(format!(
+            "{label} max_tokens must be positive when present"
+        )));
+    }
+    Ok(())
+}
+
+fn require_creator_text(label: &str, value: &str) -> Result<()> {
+    if value.trim().is_empty() {
+        return Err(Error::InvalidContract(format!("{label} must not be empty")));
+    }
+    Ok(())
 }
 
 pub fn validate_generated_scene_intent(
@@ -241,6 +421,86 @@ mod tests {
     use crate::{VoiceDirectionV1, SEGMENT_SCHEMA, SEGMENT_SCHEMA_VERSION};
 
     use super::*;
+
+    #[test]
+    fn content_helper_defaults_to_general_gateway_routing() {
+        let options = CreatorContentOptions::default();
+        options.validate().unwrap();
+
+        assert!(options.model.is_none());
+        assert_eq!(options.task, LlmGatewayTask::General);
+        assert_eq!(options.temperature, Some(0.4));
+        assert_eq!(options.max_tokens, Some(2_400));
+    }
+
+    #[test]
+    fn content_request_preserves_explicit_task_hint_without_provider_fields() {
+        let client = LlmGatewayClient::new(crate::LlmGatewayConfig::default()).unwrap();
+        let options = CreatorContentOptions {
+            task: LlmGatewayTask::LongContext,
+            temperature: Some(0.25),
+            max_tokens: Some(3_200),
+            ..Default::default()
+        };
+
+        let request = build_content_request(
+            &client,
+            "Improve this script without changing its meaning.",
+            "A long-form narration draft.",
+            &options,
+        )
+        .unwrap();
+        let value = serde_json::to_value(&request).unwrap();
+
+        assert_eq!(request.llmgateway_task, LlmGatewayTask::LongContext);
+        assert_eq!(request.temperature, Some(0.25));
+        assert_eq!(request.max_tokens, Some(3_200));
+        assert!(value.get("llmgateway_task").is_some());
+        assert!(value.get("provider").is_none());
+        assert!(value.get("account").is_none());
+        assert!(value.get("browser_session").is_none());
+    }
+
+    #[test]
+    fn content_helper_rejects_empty_instruction_before_transport() {
+        let client = LlmGatewayClient::new(crate::LlmGatewayConfig::default()).unwrap();
+
+        let error =
+            build_content_request(&client, "   ", "content", &CreatorContentOptions::default())
+                .unwrap_err();
+
+        assert!(error.to_string().contains("instruction must not be empty"));
+    }
+
+    #[test]
+    fn quality_helper_forces_reasoning_and_deterministic_structured_output() {
+        let options = CreatorQualityOptions::default();
+        let structured =
+            structured_quality_options("omnicreator.quality-test.v1", &options).unwrap();
+
+        assert_eq!(structured.task, LlmGatewayTask::Reasoning);
+        assert_eq!(structured.temperature, Some(0.0));
+        assert_eq!(structured.max_attempts, 3);
+        assert_eq!(structured.max_tokens, Some(1_600));
+    }
+
+    #[test]
+    fn quality_prompt_is_provider_neutral_and_json_only() {
+        let messages = build_quality_messages(
+            "Score semantic fidelity and explain material issues.",
+            "Narration draft",
+        )
+        .unwrap();
+        let text = messages
+            .iter()
+            .map(|message| message.content.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(text.contains("provider-neutral"));
+        assert!(text.contains("Never choose or report LLM providers"));
+        assert!(text.contains("Return only the JSON"));
+    }
 
     fn segment() -> SegmentV1 {
         SegmentV1 {
