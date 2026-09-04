@@ -315,7 +315,9 @@ pub fn dispatch_remote_job(
         preparation.settings_fingerprint.as_deref(),
     )?;
     let output_uri = preparation.output_uri.as_ref().ok_or_else(|| {
-        Error::InvalidContract("GPU preparation output_uri must be known before dispatch".to_owned())
+        Error::InvalidContract(
+            "GPU preparation output_uri must be known before dispatch".to_owned(),
+        )
     })?;
     if provider_id != selection.provider_id {
         return Err(Error::InvalidContract(
