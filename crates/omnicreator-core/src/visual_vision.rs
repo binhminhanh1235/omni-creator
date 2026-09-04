@@ -174,8 +174,7 @@ pub fn evaluate_ranked_visual_previews(
         .model
         .clone()
         .unwrap_or_else(|| client.config().default_model.clone());
-    let (body, candidate_ids) =
-        build_visual_vision_request(scene, ranked, &model, options)?;
+    let (body, candidate_ids) = build_visual_vision_request(scene, ranked, &model, options)?;
 
     if candidate_ids.is_empty() {
         return Ok(VisualVisionOutcome::Skipped {
@@ -217,15 +216,15 @@ pub fn evaluate_ranked_visual_previews(
         });
     }
 
-    let result = decode_structured_output::<VisualVisionEvaluationSet, _>(
-        &routed.chat.content,
-        &|result| result.validate_for_candidates(&candidate_ids),
-    )
-    .map_err(|reason| Error::InvalidStructuredOutput {
-        contract: VISUAL_VISION_CONTRACT.to_owned(),
-        attempts: 1,
-        reason,
-    })?;
+    let result =
+        decode_structured_output::<VisualVisionEvaluationSet, _>(&routed.chat.content, &|result| {
+            result.validate_for_candidates(&candidate_ids)
+        })
+        .map_err(|reason| Error::InvalidStructuredOutput {
+            contract: VISUAL_VISION_CONTRACT.to_owned(),
+            attempts: 1,
+            reason,
+        })?;
 
     Ok(VisualVisionOutcome::Applied {
         model,
@@ -321,7 +320,11 @@ fn visual_vision_prompt(scene: &SceneIntentV1) -> String {
 
 fn vision_preview(candidate: &VisualCandidate) -> Option<VisualCandidatePreview> {
     for kind in [VisualPreviewKind::Thumbnail, VisualPreviewKind::Image] {
-        if let Some(preview) = candidate.previews.iter().find(|preview| preview.kind == kind) {
+        if let Some(preview) = candidate
+            .previews
+            .iter()
+            .find(|preview| preview.kind == kind)
+        {
             return Some(preview.clone());
         }
     }
@@ -430,10 +433,7 @@ mod tests {
     #[test]
     fn evaluation_contract_requires_every_candidate_exactly_once() {
         let result = VisualVisionEvaluationSet {
-            evaluations: vec![
-                evaluation("A", 0.8),
-                evaluation("B", 0.7),
-            ],
+            evaluations: vec![evaluation("A", 0.8), evaluation("B", 0.7)],
         };
         result
             .validate_for_candidates(&["A".to_owned(), "B".to_owned()])
