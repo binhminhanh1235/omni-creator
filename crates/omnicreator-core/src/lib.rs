@@ -25,6 +25,7 @@ pub mod visual_review;
 pub mod visual_vision;
 pub mod voice_burst;
 pub mod voice_production;
+pub mod voice_takes;
 pub mod workflow;
 pub mod workspace;
 
@@ -54,4 +55,5 @@ pub use visual_review::*;
 pub use visual_vision::*;
 pub use voice_burst::*;
 pub use voice_production::*;
+pub use voice_takes::*;
 pub use workspace::{Workspace, WorkspaceManifest, WorkspaceWriter, WriterLease};
