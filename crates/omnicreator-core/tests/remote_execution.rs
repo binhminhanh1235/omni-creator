@@ -658,13 +658,12 @@ fn reconnect_recovers_remote_artifact_after_local_restart_before_regenerating() 
             .is_none(),
         "restart/reconnect downtime must not pollute runtime estimates"
     );
-    assert_eq!(
-        state
+    assert!(
+        !state
             .get_compute_attempt_runtime_context_v1(&started.attempt_id)
             .unwrap()
             .unwrap()
-            .runtime_observation_eligible,
-        false
+            .runtime_observation_eligible
     );
 }
 
