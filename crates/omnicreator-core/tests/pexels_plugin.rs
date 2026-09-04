@@ -1,13 +1,10 @@
 use std::path::PathBuf;
 
-use omnicreator_core::{
-    load_plugin_settings_ui, scan_plugin_roots, PluginSettingVisibility,
-};
+use omnicreator_core::{load_plugin_settings_ui, scan_plugin_roots, PluginSettingVisibility};
 
 #[test]
 fn repository_pexels_plugin_is_discoverable_and_settings_are_valid() {
-    let plugin_root =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins");
+    let plugin_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins");
 
     let report = scan_plugin_roots(&[plugin_root]);
     assert!(
