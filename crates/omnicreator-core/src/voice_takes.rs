@@ -17,6 +17,7 @@ pub struct VoiceTakeV1 {
     pub take_index: u32,
     pub attempt: Attempt,
     pub artifact: Option<Artifact>,
+    pub timing_artifact: Option<Artifact>,
     pub selected: bool,
 }
 
@@ -294,6 +295,18 @@ impl StateStore {
             .as_deref()
             .map(|id| self.get_artifact(id))
             .transpose()?;
+        let timing_artifact_id: Option<String> = self
+            .connection
+            .query_row(
+                "SELECT artifact_id FROM voice_take_timing_artifacts WHERE attempt_id=?1",
+                [&attempt_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let timing_artifact = timing_artifact_id
+            .as_deref()
+            .map(|id| self.get_artifact(id))
+            .transpose()?;
         let selected = job.selected_attempt.as_deref() == Some(attempt_id.as_str())
             && match (&job.selected_artifact, &artifact) {
                 (Some(selected_artifact), Some(artifact)) => {
@@ -305,6 +318,7 @@ impl StateStore {
             take_index,
             attempt,
             artifact,
+            timing_artifact,
             selected,
         })
     }
