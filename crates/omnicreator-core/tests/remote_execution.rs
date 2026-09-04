@@ -7,8 +7,8 @@ use omnicreator_core::{
     ComputeProviderExecution, ComputeRemoteArtifactV1, ComputeRemoteJournalEntryV1,
     ComputeRemoteJournalEventV1, ComputeRequirements, Error, FailureDisposition,
     GpuJobPreparationV1, GpuQueueEligibilityStatusV1, GpuQueueEligibilityV1, LogicalUri,
-    RemoteArtifactSyncOutcomeV1, RemoteComputeJobSpecV1, RemoteRetryActionV1,
-    ResourceRequirement, StateStore, StepStatus, Workspace, REMOTE_JOURNAL_SCHEMA_V1,
+    RemoteArtifactSyncOutcomeV1, RemoteComputeJobSpecV1, RemoteRetryActionV1, ResourceRequirement,
+    StateStore, StepStatus, Workspace, REMOTE_JOURNAL_SCHEMA_V1,
 };
 use sha2::{Digest, Sha256};
 
@@ -525,7 +525,6 @@ fn conflicting_duplicate_delivery_is_rejected_without_refetch() {
     assert_eq!(executor.transfer_calls, 1);
 }
 
-
 #[test]
 fn retry_policy_is_error_aware_for_remote_failures() {
     let cases = [
@@ -673,7 +672,10 @@ fn reconnect_restores_same_retryable_attempt_when_remote_worker_is_still_running
     .unwrap();
 
     assert_eq!(summary.attempts_restored_running, 1);
-    assert_eq!(state.get_job(&job.job_id).unwrap().status, StepStatus::Running);
+    assert_eq!(
+        state.get_job(&job.job_id).unwrap().status,
+        StepStatus::Running
+    );
     let attempt = state.get_attempt(&started.attempt_id).unwrap();
     assert_eq!(attempt.status, StepStatus::Running);
     assert!(attempt.error_code.is_none());
@@ -717,7 +719,11 @@ fn ready_reconnect_requeues_running_attempt_missing_from_full_remote_journal() {
         StepStatus::Retryable
     );
     assert_eq!(
-        state.get_attempt(&started.attempt_id).unwrap().error_code.as_deref(),
+        state
+            .get_attempt(&started.attempt_id)
+            .unwrap()
+            .error_code
+            .as_deref(),
         Some("WORKER_LOST")
     );
 }
@@ -864,7 +870,10 @@ fn fatal_remote_failure_requires_input_or_configuration_change() {
     .unwrap();
 
     assert_eq!(summary.attempts_marked_fatal, 1);
-    assert_eq!(state.get_job(&job.job_id).unwrap().status, StepStatus::Fatal);
+    assert_eq!(
+        state.get_job(&job.job_id).unwrap().status,
+        StepStatus::Fatal
+    );
     assert_eq!(
         state.get_attempt(&started.attempt_id).unwrap().status,
         StepStatus::Fatal
@@ -876,7 +885,9 @@ fn artifact_ready_wins_over_later_failure_during_reconciliation() {
     let temp = tempfile::tempdir().unwrap();
     let workspace = Workspace::create(temp.path().join("data")).unwrap();
     let mut state = StateStore::open(workspace.sqlite_path()).unwrap();
-    let project = state.create_project("Artifact First Reconciliation").unwrap();
+    let project = state
+        .create_project("Artifact First Reconciliation")
+        .unwrap();
     let job = state
         .create_job(&project.id, "tts", "S01", "input-hash-001")
         .unwrap();
@@ -931,4 +942,3 @@ fn artifact_ready_wins_over_later_failure_during_reconciliation() {
         StepStatus::Succeeded
     );
 }
-
