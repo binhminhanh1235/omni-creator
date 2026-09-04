@@ -84,7 +84,6 @@ fn repository_pexels_plugin_is_discoverable_and_settings_are_valid() {
     assert_eq!(media_type.visibility, PluginSettingVisibility::Basic);
 }
 
-
 #[test]
 fn selected_pexels_output_is_verified_and_promoted_by_core() {
     let temp = tempfile::tempdir().unwrap();
