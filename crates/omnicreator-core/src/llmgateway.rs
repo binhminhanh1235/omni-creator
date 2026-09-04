@@ -657,7 +657,7 @@ fn parse_models(value: Value) -> Result<Vec<LlmGatewayModel>> {
     Ok(models)
 }
 
-fn decode_structured_output<T, F>(content: &str, validate: &F) -> std::result::Result<T, String>
+pub(crate) fn decode_structured_output<T, F>(content: &str, validate: &F) -> std::result::Result<T, String>
 where
     T: DeserializeOwned,
     F: Fn(&T) -> Result<()>,
