@@ -61,10 +61,7 @@ pub struct VoiceBurstPlanV1 {
 
 impl VoiceBurstPlanV1 {
     pub fn scheduled_job_count(&self) -> usize {
-        self.waves
-            .iter()
-            .map(|wave| wave.assignments.len())
-            .sum()
+        self.waves.iter().map(|wave| wave.assignments.len()).sum()
     }
 }
 
