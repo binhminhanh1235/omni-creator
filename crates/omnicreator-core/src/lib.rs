@@ -1,5 +1,6 @@
 pub mod artifact_store;
 pub mod binding;
+pub mod creator_llm;
 pub mod error;
 mod fs_util;
 pub mod handoff;
@@ -16,6 +17,7 @@ pub mod workspace;
 
 pub use artifact_store::ArtifactStore;
 pub use binding::MachineBinding;
+pub use creator_llm::*;
 pub use error::{Error, Result};
 pub use handoff::{HandoffManifest, RecoveryOutcome};
 pub use hashing::deterministic_input_hash;
