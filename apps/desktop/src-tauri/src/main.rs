@@ -255,10 +255,7 @@ fn open_path(
     create_if_missing: bool,
     read_only: bool,
 ) -> Result<AppSnapshot, String> {
-    {
-        let mut guard = state.active.lock().map_err(lock_error)?;
-        *guard = None;
-    }
+    clean_active_for_switch(state)?;
 
     let manifest_path = data_root.join(".omnicreator/workspace.json");
     let workspace = if manifest_path.exists() {
@@ -445,6 +442,26 @@ fn handoff_snapshot(data_root: String, handoff: HandoffManifest) -> AppSnapshot 
         data_root,
         revision: handoff.revision,
         snapshot_sha256: handoff.snapshot_sha256,
+    }
+}
+
+fn clean_active_for_switch(state: &State<'_, DesktopState>) -> Result<(), String> {
+    let active = {
+        let mut guard = state.active.lock().map_err(lock_error)?;
+        guard.take()
+    };
+
+    let Some(active) = active else {
+        return Ok(());
+    };
+
+    match active {
+        ActiveWorkspace::ReadOnly(_) => Ok(()),
+        ActiveWorkspace::Writable(session) => {
+            let store = StateStore::open(session.sqlite_path()).map_err(error_string)?;
+            session.prepare_handoff(&store, 3).map_err(error_string)?;
+            Ok(())
+        }
     }
 }
 
