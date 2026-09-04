@@ -5,8 +5,8 @@ use omnicreator_core::{
     ComputeProviderSessionIdentityV1, ComputeProviderSessionV1, GpuNotReadyReasonCodeV1,
     GpuReadinessFactsV1, Job, LogicalUri, SegmentTtsExecutionTargetV1, SegmentTtsLockStateV1,
     SegmentTtsPreparationV1, SegmentTtsProductionInputV1, SegmentV1, StepStatus,
-    VoiceBurstCandidateV1, VoiceDirectionV1, VoiceIdentityV1, VoiceModelIdentityV1,
-    SEGMENT_SCHEMA, SEGMENT_SCHEMA_VERSION,
+    VoiceBurstCandidateV1, VoiceDirectionV1, VoiceIdentityV1, VoiceModelIdentityV1, SEGMENT_SCHEMA,
+    SEGMENT_SCHEMA_VERSION,
 };
 
 fn fixed_time() -> DateTime<Utc> {
@@ -21,10 +21,7 @@ fn provider_snapshot(max_parallel_jobs: u32) -> ComputeProviderSchedulingSnapsho
     ))
     .unwrap();
     capabilities.provider_id = "compute-provider".to_owned();
-    capabilities.model_groups = vec![
-        "voice-model-a".to_owned(),
-        "voice-model-b".to_owned(),
-    ];
+    capabilities.model_groups = vec!["voice-model-a".to_owned(), "voice-model-b".to_owned()];
     capabilities.max_parallel_jobs = Some(max_parallel_jobs);
 
     ComputeProviderSchedulingSnapshotV1 {
@@ -208,10 +205,7 @@ fn burst_plan_is_deterministic_and_groups_model_voice_affinity() {
     assert_eq!(wave0.assignments[1].selection.device_id, "gpu1");
 
     assert_eq!(first.waves[1].assignments[0].job_id, "job-03");
-    assert_eq!(
-        first.waves[1].assignments[0].affinity.voice_id,
-        "voice-b"
-    );
+    assert_eq!(first.waves[1].assignments[0].affinity.voice_id, "voice-b");
 }
 
 #[test]
@@ -243,10 +237,7 @@ fn provider_capacity_one_serializes_segments_into_deterministic_waves() {
 
     assert_eq!(plan.scheduled_job_count(), 3);
     assert_eq!(plan.waves.len(), 3);
-    assert!(plan
-        .waves
-        .iter()
-        .all(|wave| wave.assignments.len() == 1));
+    assert!(plan.waves.iter().all(|wave| wave.assignments.len() == 1));
     assert_eq!(plan.waves[0].assignments[0].job_id, "job-01");
     assert_eq!(plan.waves[1].assignments[0].job_id, "job-02");
     assert_eq!(plan.waves[2].assignments[0].job_id, "job-03");
@@ -268,8 +259,7 @@ fn unsupported_model_group_is_blocked_without_poisoning_supported_jobs() {
         true,
     );
 
-    let plan =
-        plan_voice_burst_v1(&[unsupported, supported], &[provider_snapshot(2)]).unwrap();
+    let plan = plan_voice_burst_v1(&[unsupported, supported], &[provider_snapshot(2)]).unwrap();
 
     assert_eq!(plan.scheduled_job_count(), 1);
     assert_eq!(plan.blocked.len(), 1);
