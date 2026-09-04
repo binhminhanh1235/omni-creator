@@ -86,6 +86,16 @@ pub struct StateStore {
 }
 
 impl StateStore {
+    pub fn open_read_only(path: impl AsRef<Path>) -> Result<Self> {
+        let connection = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        connection.execute_batch(
+            "PRAGMA foreign_keys = ON;\n\
+             PRAGMA query_only = ON;",
+        )?;
+        integrity_check_connection(&connection)?;
+        Ok(Self { connection })
+    }
+
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         if let Some(parent) = path.as_ref().parent() {
             std::fs::create_dir_all(parent)?;
@@ -521,6 +531,19 @@ mod tests {
         let reopened_store = StateStore::open(reopened.sqlite_path()).unwrap();
         let loaded = reopened_store.get_project(&project.id).unwrap();
         assert_eq!(loaded.title, "Portable Project");
+    }
+
+    #[test]
+    fn read_only_store_can_list_projects_but_cannot_mutate() {
+        let temp = tempfile::tempdir().unwrap();
+        let workspace = Workspace::create(temp.path().join("data")).unwrap();
+        let writable = StateStore::open(workspace.sqlite_path()).unwrap();
+        writable.create_project("Read Only").unwrap();
+        drop(writable);
+
+        let read_only = StateStore::open_read_only(workspace.sqlite_path()).unwrap();
+        assert_eq!(read_only.list_projects().unwrap().len(), 1);
+        assert!(read_only.create_project("Forbidden").is_err());
     }
 
     #[test]
