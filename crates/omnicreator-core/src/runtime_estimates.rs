@@ -61,7 +61,10 @@ impl RuntimeEstimateKeyV1 {
             ("runtime estimate device_id", self.device_id.as_str()),
             ("runtime estimate plugin_id", self.plugin_id.as_str()),
             ("runtime estimate model_id", self.model_id.as_str()),
-            ("runtime estimate model_version", self.model_version.as_str()),
+            (
+                "runtime estimate model_version",
+                self.model_version.as_str(),
+            ),
         ] {
             require_identifier(label, value)?;
         }
