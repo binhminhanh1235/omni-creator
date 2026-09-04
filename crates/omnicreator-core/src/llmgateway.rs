@@ -1,8 +1,4 @@
-use std::{
-    env, fs,
-    path::Path,
-    time::Duration,
-};
+use std::{env, fs, path::Path, time::Duration};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -105,9 +101,7 @@ impl LlmGatewayConfig {
         let value = env::var(&self.api_key_env)
             .map_err(|_| Error::MissingLlmGatewayCredential(self.api_key_env.clone()))?;
         if value.trim().is_empty() {
-            return Err(Error::MissingLlmGatewayCredential(
-                self.api_key_env.clone(),
-            ));
+            return Err(Error::MissingLlmGatewayCredential(self.api_key_env.clone()));
         }
         Ok(value)
     }
@@ -197,7 +191,12 @@ impl LlmChatRequest {
                 "streaming is not supported by this adapter yet".to_owned(),
             ));
         }
-        if self.messages.is_empty() || self.messages.iter().any(|message| message.content.trim().is_empty()) {
+        if self.messages.is_empty()
+            || self
+                .messages
+                .iter()
+                .any(|message| message.content.trim().is_empty())
+        {
             return Err(Error::InvalidLlmGatewayConfig(
                 "chat messages must contain non-empty content".to_owned(),
             ));
@@ -343,9 +342,7 @@ fn decode_http_response(
             let body = response.into_string().unwrap_or_default();
             Err(parse_gateway_error(status, &body))
         }
-        Err(ureq::Error::Transport(error)) => {
-            Err(Error::LlmGatewayTransport(error.to_string()))
-        }
+        Err(ureq::Error::Transport(error)) => Err(Error::LlmGatewayTransport(error.to_string())),
     }
 }
 
