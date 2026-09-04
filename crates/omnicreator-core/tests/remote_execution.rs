@@ -4,7 +4,7 @@ use omnicreator_core::{
     dispatch_remote_job, parse_remote_journal_jsonl, sync_remote_artifact, ArtifactStore,
     ComputeDeviceSelectionV1, ComputeJobDispatchAckV1, ComputeJobDispatchV1,
     ComputeProviderExecution, ComputeRemoteArtifactV1, ComputeRemoteJournalEntryV1,
-    ComputeRemoteJournalEventV1, ComputeRequirements, GpuJobPreparationV1,
+    ComputeRemoteJournalEventV1, ComputeRequirements, Error, GpuJobPreparationV1,
     GpuQueueEligibilityStatusV1, GpuQueueEligibilityV1, LogicalUri, RemoteArtifactSyncOutcomeV1,
     RemoteComputeJobSpecV1, ResourceRequirement, StateStore, StepStatus, Workspace,
     REMOTE_JOURNAL_SCHEMA_V1,
