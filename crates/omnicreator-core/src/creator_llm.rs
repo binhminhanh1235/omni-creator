@@ -145,8 +145,7 @@ pub fn validate_generated_scene_intent(
             "generated scene must contain at least {MIN_SCENE_VISUAL_IDEAS} visual ideas"
         )));
     }
-    if !(MIN_SCENE_SEARCH_QUERIES..=MAX_SCENE_SEARCH_QUERIES)
-        .contains(&scene.search_queries.len())
+    if !(MIN_SCENE_SEARCH_QUERIES..=MAX_SCENE_SEARCH_QUERIES).contains(&scene.search_queries.len())
     {
         return Err(Error::InvalidContract(format!(
             "generated scene must contain between {MIN_SCENE_SEARCH_QUERIES} and {MAX_SCENE_SEARCH_QUERIES} search queries"
@@ -239,9 +238,7 @@ fn structured_scene_options(options: &SceneIntentGenerationOptions) -> Structure
 mod tests {
     use std::collections::BTreeMap;
 
-    use crate::{
-        SEGMENT_SCHEMA, SEGMENT_SCHEMA_VERSION, VoiceDirectionV1,
-    };
+    use crate::{VoiceDirectionV1, SEGMENT_SCHEMA, SEGMENT_SCHEMA_VERSION};
 
     use super::*;
 
@@ -297,9 +294,12 @@ mod tests {
 
     #[test]
     fn scene_prompt_requires_multiple_concrete_queries_and_no_provider_routing() {
-        let messages =
-            build_scene_intent_messages(&segment(), "SC17", &SceneIntentGenerationOptions::default())
-                .unwrap();
+        let messages = build_scene_intent_messages(
+            &segment(),
+            "SC17",
+            &SceneIntentGenerationOptions::default(),
+        )
+        .unwrap();
         let text = messages
             .iter()
             .map(|message| message.content.as_str())
@@ -359,8 +359,8 @@ mod tests {
         let mut options = SceneIntentGenerationOptions::default();
         options.avoid = vec!["church silhouette".to_owned()];
 
-        let error =
-            validate_generated_scene_intent(&valid_scene(), &segment(), "SC17", &options).unwrap_err();
+        let error = validate_generated_scene_intent(&valid_scene(), &segment(), "SC17", &options)
+            .unwrap_err();
 
         assert!(error.to_string().contains("church silhouette"));
     }
