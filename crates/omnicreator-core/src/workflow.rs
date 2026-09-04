@@ -3,7 +3,7 @@ use rusqlite::{params, types::Type, OptionalExtension};
 use uuid::Uuid;
 
 use crate::{
-    state::parse_step_status, Attempt, Error, FailureDisposition, InvalidationImpact, Job,
+    state::parse_step_status, Attempt, Error, FailureDisposition, InvalidationImpact,
     ProjectDisplayStatus, ReconciliationSummary, Result, StateStore, StepStatus, WorkflowStep,
 };
 
