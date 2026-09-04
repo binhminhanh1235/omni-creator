@@ -458,7 +458,8 @@ mod tests {
         fs::create_dir_all(&outside).unwrap();
         fs::write(outside.join("secret.txt"), b"secret").unwrap();
 
-        let workspace = PluginJobWorkspace::create(temp.path().join("runtime"), "job_link").unwrap();
+        let workspace =
+            PluginJobWorkspace::create(temp.path().join("runtime"), "job_link").unwrap();
         symlink(&outside, workspace.output_dir().join("escape")).unwrap();
 
         assert!(matches!(
