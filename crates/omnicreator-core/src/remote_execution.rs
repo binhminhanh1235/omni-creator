@@ -9,8 +9,9 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    fs_util::sha256_file, Artifact, ArtifactStore, Error, GpuJobPreparationV1,
-    GpuQueueEligibilityV1, LogicalUri, PathResolver, Result, StateStore, StepStatus,
+    fs_util::sha256_file, Artifact, ArtifactStore, ComputeProviderConnectionState, Error,
+    FailureDisposition, GpuJobPreparationV1, GpuQueueEligibilityV1, LogicalUri, PathResolver,
+    Result, StateStore, StepStatus,
 };
 
 pub const REMOTE_EXECUTION_SCHEMA_V1: &str = "omnicreator.compute.remote-execution";
@@ -869,6 +870,388 @@ pub fn reconcile_remote_session(
     }
 
     Ok(summary)
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum RemoteRetryActionV1 {
+    AutomaticRetry,
+    Requeue,
+    RestartWorkerThenRetry,
+    RetryWithSupportedFallback,
+    RequiresUserAction,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RemoteRetryPolicyV1 {
+    pub disposition: FailureDisposition,
+    pub action: RemoteRetryActionV1,
+    pub message: String,
+}
+
+pub fn remote_retry_policy_v1(error_code: &str) -> RemoteRetryPolicyV1 {
+    let disposition = FailureDisposition::from_error_code(error_code);
+    let (action, message) = match error_code {
+        "NETWORK_TIMEOUT" => (
+            RemoteRetryActionV1::AutomaticRetry,
+            "Network interruption is retryable; retry the same logical job.".to_owned(),
+        ),
+        "WORKER_LOST" => (
+            RemoteRetryActionV1::Requeue,
+            "The remote worker disappeared; requeue unfinished work.".to_owned(),
+        ),
+        "MODEL_LOAD_ERROR" => (
+            RemoteRetryActionV1::RestartWorkerThenRetry,
+            "Restart or reload the worker model before retrying.".to_owned(),
+        ),
+        "CUDA_OOM" => (
+            RemoteRetryActionV1::RetryWithSupportedFallback,
+            "Retry only with a scheduler-supported lower-memory fallback strategy.".to_owned(),
+        ),
+        _ if disposition == FailureDisposition::Retryable => (
+            RemoteRetryActionV1::Requeue,
+            "The failure is retryable; preserve attempt history and requeue the logical job."
+                .to_owned(),
+        ),
+        _ => (
+            RemoteRetryActionV1::RequiresUserAction,
+            "The failure is fatal until configuration or input changes.".to_owned(),
+        ),
+    };
+    RemoteRetryPolicyV1 {
+        disposition,
+        action,
+        message,
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct RemoteReconciliationSummaryV1 {
+    pub local_attempts_considered: usize,
+    pub journal_entries_read: usize,
+    pub artifacts_recovered: usize,
+    pub artifacts_already_committed: usize,
+    pub attempts_restored_running: usize,
+    pub attempts_still_running: usize,
+    pub attempts_marked_retryable: usize,
+    pub attempts_marked_fatal: usize,
+    pub attempts_already_retryable: usize,
+    pub attempts_deferred: usize,
+}
+
+#[derive(Debug, Clone)]
+struct ReconcilableRemoteAttemptV1 {
+    attempt_id: String,
+    job_id: String,
+    input_hash: String,
+    attempt_status: StepStatus,
+}
+
+impl StateStore {
+    fn reconcilable_remote_attempts_v1(
+        &self,
+        provider_id: &str,
+        session_id: &str,
+    ) -> Result<Vec<ReconcilableRemoteAttemptV1>> {
+        let worker_prefix = format!("{provider_id}/{session_id}/");
+        let mut statement = self.connection.prepare(
+            "SELECT a.id,a.job_id,a.worker,a.status,j.input_hash \
+             FROM attempts a \
+             JOIN jobs j ON j.id=a.job_id \
+             WHERE a.status IN ('RUNNING','RETRYABLE') \
+               AND j.status IN ('RUNNING','RETRYABLE') \
+               AND a.worker IS NOT NULL \
+             ORDER BY a.started_at,a.id",
+        )?;
+        let rows = statement.query_map([], |row| {
+            let raw_status: String = row.get(3)?;
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                crate::state::parse_step_status(&raw_status, 3)?,
+                row.get::<_, String>(4)?,
+            ))
+        })?;
+
+        let mut attempts = Vec::new();
+        for row in rows {
+            let (attempt_id, job_id, worker, attempt_status, input_hash) = row?;
+            if worker.starts_with(&worker_prefix) && worker.len() > worker_prefix.len() {
+                attempts.push(ReconcilableRemoteAttemptV1 {
+                    attempt_id,
+                    job_id,
+                    input_hash,
+                    attempt_status,
+                });
+            }
+        }
+        Ok(attempts)
+    }
+
+    fn restore_remote_attempt_running_v1(&mut self, attempt_id: &str) -> Result<()> {
+        let attempt = self.get_attempt(attempt_id)?;
+        if attempt.status == StepStatus::Running {
+            return Ok(());
+        }
+        if attempt.status != StepStatus::Retryable {
+            return Err(Error::InvalidJobState(format!(
+                "remote attempt {} cannot be restored from {}",
+                attempt.attempt_id,
+                attempt.status.as_str()
+            )));
+        }
+        let job = self.get_job(&attempt.job_id)?;
+        if job.status != StepStatus::Retryable {
+            return Err(Error::InvalidJobState(format!(
+                "remote job {} cannot be restored from {}",
+                job.job_id,
+                job.status.as_str()
+            )));
+        }
+
+        let transaction = self.connection.transaction()?;
+        transaction.execute(
+            "UPDATE attempts \
+             SET status='RUNNING',finished_at=NULL,runtime_seconds=NULL,error_code=NULL \
+             WHERE id=?1 AND status='RETRYABLE'",
+            [&attempt.attempt_id],
+        )?;
+        transaction.execute(
+            "UPDATE jobs SET status='RUNNING' WHERE id=?1 AND status='RETRYABLE'",
+            [&job.job_id],
+        )?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    fn reconcile_remote_failure_v1(
+        &mut self,
+        attempt_id: &str,
+        error_code: &str,
+    ) -> Result<StepStatus> {
+        require_identifier("remote reconciliation error_code", error_code)?;
+        let attempt = self.get_attempt(attempt_id)?;
+        if !matches!(attempt.status, StepStatus::Running | StepStatus::Retryable) {
+            return Err(Error::InvalidJobState(format!(
+                "remote attempt {} cannot reconcile failure from {}",
+                attempt.attempt_id,
+                attempt.status.as_str()
+            )));
+        }
+        let job = self.get_job(&attempt.job_id)?;
+        if !matches!(job.status, StepStatus::Running | StepStatus::Retryable) {
+            return Err(Error::InvalidJobState(format!(
+                "remote job {} cannot reconcile failure from {}",
+                job.job_id,
+                job.status.as_str()
+            )));
+        }
+
+        let policy = remote_retry_policy_v1(error_code);
+        let next = match policy.disposition {
+            FailureDisposition::Retryable => StepStatus::Retryable,
+            FailureDisposition::Fatal => StepStatus::Fatal,
+        };
+        let finished_at = Utc::now();
+        let runtime_millis = finished_at
+            .signed_duration_since(attempt.started_at)
+            .num_milliseconds()
+            .max(0);
+        let runtime_seconds = runtime_millis as f64 / 1000.0;
+        let transaction = self.connection.transaction()?;
+        transaction.execute(
+            "UPDATE attempts \
+             SET status=?1,finished_at=COALESCE(finished_at,?2), \
+                 runtime_seconds=COALESCE(runtime_seconds,?3),error_code=?4 \
+             WHERE id=?5 AND status IN ('RUNNING','RETRYABLE')",
+            params![
+                next.as_str(),
+                finished_at.to_rfc3339(),
+                runtime_seconds,
+                error_code,
+                &attempt.attempt_id
+            ],
+        )?;
+        transaction.execute(
+            "UPDATE jobs SET status=?1 \
+             WHERE id=?2 AND status IN ('RUNNING','RETRYABLE')",
+            params![next.as_str(), &job.job_id],
+        )?;
+        transaction.commit()?;
+        Ok(next)
+    }
+}
+
+pub fn reconcile_remote_session_v1(
+    state_store: &mut StateStore,
+    artifact_store: &ArtifactStore,
+    executor: &mut impl ComputeProviderExecution,
+    provider_id: &str,
+    session_id: &str,
+    provider_state: ComputeProviderConnectionState,
+    runtime_staging_dir: impl AsRef<Path>,
+) -> Result<RemoteReconciliationSummaryV1> {
+    require_identifier("reconciliation provider_id", provider_id)?;
+    require_identifier("reconciliation session_id", session_id)?;
+    let attempts = state_store.reconcilable_remote_attempts_v1(provider_id, session_id)?;
+    let mut summary = RemoteReconciliationSummaryV1 {
+        local_attempts_considered: attempts.len(),
+        ..RemoteReconciliationSummaryV1::default()
+    };
+
+    match provider_state {
+        ComputeProviderConnectionState::Lost | ComputeProviderConnectionState::Disconnected => {
+            for attempt in attempts {
+                if attempt.attempt_status == StepStatus::Retryable {
+                    summary.attempts_already_retryable += 1;
+                    continue;
+                }
+                let next =
+                    state_store.reconcile_remote_failure_v1(&attempt.attempt_id, "WORKER_LOST")?;
+                match next {
+                    StepStatus::Retryable => summary.attempts_marked_retryable += 1,
+                    StepStatus::Fatal => summary.attempts_marked_fatal += 1,
+                    _ => unreachable!("remote failure only resolves to RETRYABLE or FATAL"),
+                }
+            }
+            return Ok(summary);
+        }
+        ComputeProviderConnectionState::Unhealthy
+        | ComputeProviderConnectionState::Stale
+        | ComputeProviderConnectionState::Connecting => {
+            summary.attempts_deferred = attempts.len();
+            return Ok(summary);
+        }
+        ComputeProviderConnectionState::Ready => {}
+    }
+
+    let journal = executor.read_journal(provider_id, session_id, None)?;
+    validate_reconciliation_journal_v1(&journal, provider_id, session_id)?;
+    summary.journal_entries_read = journal.len();
+    let runtime_staging_dir = runtime_staging_dir.as_ref();
+
+    for attempt in attempts {
+        let relevant = journal
+            .iter()
+            .filter(|entry| entry.attempt_id == attempt.attempt_id)
+            .collect::<Vec<_>>();
+
+        for entry in &relevant {
+            if entry.job_id != attempt.job_id || entry.input_hash != attempt.input_hash {
+                return Err(Error::InvalidContract(format!(
+                    "remote journal identity mismatch for attempt {}",
+                    attempt.attempt_id
+                )));
+            }
+        }
+
+        if let Some(artifact_entry) = relevant
+            .iter()
+            .rev()
+            .find(|entry| entry.artifact_ready().is_some())
+            .copied()
+        {
+            let outcome = sync_remote_artifact(
+                state_store,
+                artifact_store,
+                executor,
+                artifact_entry,
+                runtime_staging_dir,
+                serde_json::json!({
+                    "source": "remote-reconciliation",
+                    "provider_id": provider_id,
+                    "session_id": session_id,
+                    "journal_sequence": artifact_entry.sequence
+                }),
+            )?;
+            match outcome {
+                RemoteArtifactSyncOutcomeV1::Committed(_) => summary.artifacts_recovered += 1,
+                RemoteArtifactSyncOutcomeV1::AlreadyCommitted(_) => {
+                    summary.artifacts_already_committed += 1
+                }
+            }
+            continue;
+        }
+
+        if let Some((error_code, _message)) = relevant.iter().rev().find_map(|entry| {
+            if let ComputeRemoteJournalEventV1::Failed {
+                error_code,
+                message,
+            } = &entry.event
+            {
+                Some((error_code.as_str(), message.as_deref()))
+            } else {
+                None
+            }
+        }) {
+            let next =
+                state_store.reconcile_remote_failure_v1(&attempt.attempt_id, error_code)?;
+            match next {
+                StepStatus::Retryable => summary.attempts_marked_retryable += 1,
+                StepStatus::Fatal => summary.attempts_marked_fatal += 1,
+                _ => unreachable!("remote failure only resolves to RETRYABLE or FATAL"),
+            }
+            continue;
+        }
+
+        let remote_still_running = relevant.iter().any(|entry| {
+            matches!(
+                entry.event,
+                ComputeRemoteJournalEventV1::Accepted | ComputeRemoteJournalEventV1::Running
+            )
+        });
+        if remote_still_running {
+            if attempt.attempt_status == StepStatus::Retryable {
+                state_store.restore_remote_attempt_running_v1(&attempt.attempt_id)?;
+                summary.attempts_restored_running += 1;
+            } else {
+                summary.attempts_still_running += 1;
+            }
+            continue;
+        }
+
+        if attempt.attempt_status == StepStatus::Retryable {
+            summary.attempts_already_retryable += 1;
+        } else {
+            let next =
+                state_store.reconcile_remote_failure_v1(&attempt.attempt_id, "WORKER_LOST")?;
+            match next {
+                StepStatus::Retryable => summary.attempts_marked_retryable += 1,
+                StepStatus::Fatal => summary.attempts_marked_fatal += 1,
+                _ => unreachable!("remote failure only resolves to RETRYABLE or FATAL"),
+            }
+        }
+    }
+
+    Ok(summary)
+}
+
+fn validate_reconciliation_journal_v1(
+    journal: &[ComputeRemoteJournalEntryV1],
+    provider_id: &str,
+    session_id: &str,
+) -> Result<()> {
+    let mut previous_sequence = None;
+    for entry in journal {
+        entry.validate_v1()?;
+        if entry.provider_id != provider_id || entry.session_id != session_id {
+            return Err(Error::InvalidContract(
+                "remote reconciliation journal contains an entry from another provider/session"
+                    .to_owned(),
+            ));
+        }
+        if let Some(previous) = previous_sequence {
+            if entry.sequence <= previous {
+                return Err(Error::InvalidContract(format!(
+                    "remote reconciliation journal sequence {} is not greater than {}",
+                    entry.sequence, previous
+                )));
+            }
+        }
+        previous_sequence = Some(entry.sequence);
+    }
+    Ok(())
 }
 
 fn required_prepared_value<'a>(label: &str, value: Option<&'a str>) -> Result<&'a str> {
