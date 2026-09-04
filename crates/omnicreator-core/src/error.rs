@@ -42,8 +42,18 @@ pub enum Error {
     ProjectNotFound(String),
     #[error("job not found: {0}")]
     JobNotFound(String),
+    #[error("step not found: {0}")]
+    StepNotFound(String),
+    #[error("attempt not found: {0}")]
+    AttemptNotFound(String),
     #[error("invalid job state: {0}")]
     InvalidJobState(String),
+    #[error("invalid workflow transition: {0}")]
+    InvalidTransition(String),
+    #[error("dependency would create a cycle: {0} -> {1}")]
+    DependencyCycle(String, String),
+    #[error("workflow dependency crosses project boundaries")]
+    CrossProjectDependency,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
