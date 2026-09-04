@@ -20,6 +20,15 @@ jobs:
       - name: Test
         run: cargo test --workspace
 
+  plugins:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python syntax
+        run: python3 -m py_compile plugins/pexels/plugin.py plugins/pexels/tests/test_plugin.py
+      - name: Pexels offline tests
+        run: python3 -m unittest discover -s plugins/pexels/tests -p 'test_*.py'
+
   desktop:
     runs-on: ubuntu-latest
     steps:
