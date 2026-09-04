@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::{Error, LogicalUri, Result};
+use crate::{Error, LogicalUri, Result, StepStatus};
 
 pub const PROJECT_IR_SCHEMA: &str = "omnicreator.project-ir";
 pub const PROJECT_IR_SCHEMA_VERSION: u32 = 1;
@@ -13,6 +13,14 @@ pub const SCENE_INTENT_SCHEMA: &str = "omnicreator.scene-intent";
 pub const SCENE_INTENT_SCHEMA_VERSION: u32 = 1;
 pub const ASSET_SCHEMA: &str = "omnicreator.asset";
 pub const ASSET_SCHEMA_VERSION: u32 = 1;
+pub const ARTIFACT_IR_SCHEMA: &str = "omnicreator.artifact";
+pub const ARTIFACT_IR_SCHEMA_VERSION: u32 = 1;
+pub const STEP_IR_SCHEMA: &str = "omnicreator.step";
+pub const STEP_IR_SCHEMA_VERSION: u32 = 1;
+pub const JOB_IR_SCHEMA: &str = "omnicreator.job";
+pub const JOB_IR_SCHEMA_VERSION: u32 = 1;
+pub const ATTEMPT_IR_SCHEMA: &str = "omnicreator.attempt";
+pub const ATTEMPT_IR_SCHEMA_VERSION: u32 = 1;
 pub const COMPUTE_CAPABILITIES_SCHEMA: &str = "omnicreator.compute-capabilities";
 pub const COMPUTE_CAPABILITIES_SCHEMA_VERSION: u32 = 1;
 
@@ -172,6 +180,128 @@ impl AssetV1 {
         if self.duration.is_some_and(|duration| duration <= 0.0) {
             return Err(Error::InvalidContract(
                 "asset duration must be positive".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ArtifactIrV1 {
+    pub schema: String,
+    pub schema_version: u32,
+    pub artifact_id: String,
+    pub artifact_type: String,
+    pub uri: LogicalUri,
+    pub sha256: String,
+    pub size_bytes: u64,
+    pub producer_job: Option<String>,
+    pub created_at: DateTime<Utc>,
+    #[serde(default)]
+    pub metadata: BTreeMap<String, serde_json::Value>,
+}
+
+impl ArtifactIrV1 {
+    pub fn validate_v1(&self) -> Result<()> {
+        validate_schema(
+            &self.schema,
+            self.schema_version,
+            ARTIFACT_IR_SCHEMA,
+            ARTIFACT_IR_SCHEMA_VERSION,
+        )?;
+        require_non_empty("artifact_id", &self.artifact_id)?;
+        require_non_empty("artifact_type", &self.artifact_type)?;
+        validate_sha256(&self.sha256)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StepIrV1 {
+    pub schema: String,
+    pub schema_version: u32,
+    pub step_id: String,
+    pub project_id: String,
+    pub step: String,
+    pub unit: String,
+    pub status: StepStatus,
+    pub input_hash: Option<String>,
+}
+
+impl StepIrV1 {
+    pub fn validate_v1(&self) -> Result<()> {
+        validate_schema(
+            &self.schema,
+            self.schema_version,
+            STEP_IR_SCHEMA,
+            STEP_IR_SCHEMA_VERSION,
+        )?;
+        require_non_empty("step_id", &self.step_id)?;
+        require_non_empty("step project_id", &self.project_id)?;
+        require_non_empty("step key", &self.step)?;
+        require_non_empty("step unit", &self.unit)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct JobIrV1 {
+    pub schema: String,
+    pub schema_version: u32,
+    pub job_id: String,
+    pub project_id: String,
+    pub step: String,
+    pub unit: String,
+    pub status: StepStatus,
+    pub input_hash: String,
+    pub selected_attempt: Option<String>,
+    pub selected_artifact: Option<String>,
+}
+
+impl JobIrV1 {
+    pub fn validate_v1(&self) -> Result<()> {
+        validate_schema(
+            &self.schema,
+            self.schema_version,
+            JOB_IR_SCHEMA,
+            JOB_IR_SCHEMA_VERSION,
+        )?;
+        require_non_empty("job_id", &self.job_id)?;
+        require_non_empty("job project_id", &self.project_id)?;
+        require_non_empty("job step", &self.step)?;
+        require_non_empty("job unit", &self.unit)?;
+        require_non_empty("job input_hash", &self.input_hash)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AttemptIrV1 {
+    pub schema: String,
+    pub schema_version: u32,
+    pub attempt_id: String,
+    pub job_id: String,
+    pub worker: Option<String>,
+    pub started_at: DateTime<Utc>,
+    pub finished_at: Option<DateTime<Utc>>,
+    pub runtime_seconds: Option<f64>,
+    pub status: StepStatus,
+    pub error_code: Option<String>,
+}
+
+impl AttemptIrV1 {
+    pub fn validate_v1(&self) -> Result<()> {
+        validate_schema(
+            &self.schema,
+            self.schema_version,
+            ATTEMPT_IR_SCHEMA,
+            ATTEMPT_IR_SCHEMA_VERSION,
+        )?;
+        require_non_empty("attempt_id", &self.attempt_id)?;
+        require_non_empty("attempt job_id", &self.job_id)?;
+        if self
+            .runtime_seconds
+            .is_some_and(|runtime_seconds| runtime_seconds < 0.0)
+        {
+            return Err(Error::InvalidContract(
+                "attempt runtime_seconds must not be negative".to_owned(),
             ));
         }
         Ok(())
