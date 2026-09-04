@@ -173,6 +173,130 @@ function projectCard(item, readOnly) {
   );
 }
 
+function llmStateLabel(state) {
+  switch (state) {
+    case "ready":
+      return "READY";
+    case "needs_api_key":
+      return "NEEDS API KEY";
+    case "offline":
+      return "OFFLINE";
+    case "degraded":
+      return "CHECK SETUP";
+    default:
+      return statusLabel(state);
+  }
+}
+
+function llmModelOptions(status) {
+  const models = Array.isArray(status.models) ? status.models : [];
+  const ids = new Set();
+  const rows = [];
+
+  if (status.default_model) {
+    ids.add(status.default_model);
+    rows.push(
+      '<option value="' +
+        escapeHtml(status.default_model) +
+        '">' +
+        escapeHtml(status.default_model) +
+        "</option>",
+    );
+  }
+
+  models.forEach(function (model) {
+    if (ids.has(model.id)) return;
+    ids.add(model.id);
+    rows.push(
+      '<option value="' +
+        escapeHtml(model.id) +
+        '">' +
+        escapeHtml(model.display_name || model.id) +
+        (model.is_virtual ? " · virtual" : "") +
+        "</option>",
+    );
+  });
+
+  return rows.join("");
+}
+
+function renderLlmGatewayPanel(status) {
+  const panel = document.getElementById("llmgateway-panel");
+  if (!panel) return;
+
+  const state = String(status.state || "offline");
+  const health = status.health_status
+    ? '<div class="info-row"><div class="info-label">HEALTH</div><div class="info-value">' +
+      escapeHtml(status.health_status) +
+      "</div></div>"
+    : "";
+  const discovered = Array.isArray(status.models) ? status.models.length : 0;
+
+  panel.innerHTML =
+    '<div class="panel-heading">' +
+    '<div><p class="eyebrow">LLM ROUTER</p><h3>LLMGateway</h3></div>' +
+    '<span class="llm-state ' +
+    escapeHtml(state) +
+    '">' +
+    escapeHtml(llmStateLabel(state)) +
+    "</span></div>" +
+    '<p class="muted compact">' +
+    escapeHtml(status.message) +
+    "</p>" +
+    '<div class="field compact-field"><label>ENDPOINT</label><input id="llmgateway-url" value="' +
+    escapeHtml(status.base_url) +
+    '" /></div>' +
+    '<div class="field compact-field"><label>API KEY ENVIRONMENT VARIABLE</label><input id="llmgateway-key-env" value="' +
+    escapeHtml(status.api_key_env) +
+    '" /></div>' +
+    '<div class="field compact-field"><label>MODEL POLICY</label><input id="llmgateway-model" list="llmgateway-model-options" value="' +
+    escapeHtml(status.default_model) +
+    '" /><datalist id="llmgateway-model-options">' +
+    llmModelOptions(status) +
+    "</datalist></div>" +
+    '<div class="info-list llm-meta">' +
+    health +
+    '<div class="info-row"><div class="info-label">DISCOVERED MODELS</div><div class="info-value">' +
+    escapeHtml(discovered) +
+    " · virtual models first</div></div>" +
+    '<div class="info-row"><div class="info-label">SECRET STORAGE</div><div class="info-value">Machine environment only · never Data Root</div></div>' +
+    "</div>" +
+    '<div class="actions compact-actions">' +
+    '<button class="btn primary" id="llmgateway-save">Save &amp; Check</button>' +
+    '<button class="btn" id="llmgateway-refresh">Refresh</button>' +
+    "</div>";
+
+  document.getElementById("llmgateway-save").onclick = async function () {
+    const baseUrl = document.getElementById("llmgateway-url").value.trim();
+    const apiKeyEnv = document.getElementById("llmgateway-key-env").value.trim();
+    const defaultModel = document.getElementById("llmgateway-model").value.trim();
+
+    const updated = await call("save_llmgateway_settings", {
+      baseUrl: baseUrl,
+      apiKeyEnv: apiKeyEnv,
+      defaultModel: defaultModel,
+    });
+    renderLlmGatewayPanel(updated);
+  };
+
+  document.getElementById("llmgateway-refresh").onclick = async function () {
+    renderLlmGatewayPanel(await call("llmgateway_status"));
+  };
+}
+
+async function loadLlmGatewayPanel() {
+  const panel = document.getElementById("llmgateway-panel");
+  if (!panel) return;
+
+  try {
+    renderLlmGatewayPanel(await call("llmgateway_status"));
+  } catch (_error) {
+    panel.innerHTML =
+      '<p class="eyebrow">LLM ROUTER</p><h3>LLMGateway</h3>' +
+      '<div class="notice">Could not load LLMGateway settings. Check the desktop configuration and try again.</div>';
+  }
+}
+
 function renderWorkspace(snapshot) {
   const workspace = snapshot.workspace;
   const projects = snapshot.projects;
@@ -199,7 +323,7 @@ function renderWorkspace(snapshot) {
     (workspace.read_only ? " disabled" : "") +
     ">Create</button></div>" +
     '<div class="project-list">' + cards + "</div></section>" +
-    '<aside class="panel">' +
+    '<div class="sidebar-stack"><aside class="panel">' +
     '<p class="eyebrow">DATA & PORTABILITY</p><h3>Workspace</h3>' +
     '<div class="info-list">' +
     '<div class="info-row"><div class="info-label">DATA FOLDER</div><div class="info-value">' + escapeHtml(workspace.data_root) + "</div></div>" +
@@ -211,7 +335,10 @@ function renderWorkspace(snapshot) {
     '<div class="actions">' +
     '<button class="btn primary" id="handoff"' + (workspace.read_only ? " disabled" : "") + ">Prepare for Device Handoff</button>" +
     '<button class="btn" id="change-root">Change Data Folder</button>' +
-    "</div></aside></div>";
+    '</div></aside><aside class="panel" id="llmgateway-panel">' +
+    '<p class="eyebrow">LLM ROUTER</p><h3>LLMGateway</h3>' +
+    '<p class="muted">Checking local gateway connection…</p>' +
+    "</aside></div></div>";
 
   const createButton = document.getElementById("create-project");
   if (createButton) {
@@ -248,6 +375,7 @@ function renderWorkspace(snapshot) {
     render(await call("prepare_device_handoff"));
   };
   document.getElementById("change-root").onclick = renderFirstLaunch;
+  loadLlmGatewayPanel();
 }
 
 function renderHandoff(snapshot) {
