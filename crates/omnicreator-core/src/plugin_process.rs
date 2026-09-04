@@ -315,10 +315,14 @@ impl PluginProcess {
             message: "child lock was poisoned".to_owned(),
         })?;
 
-        if child.try_wait().map_err(|error| Error::PluginRuntimeIo {
-            plugin: self.plugin_id.clone(),
-            message: error.to_string(),
-        })?.is_some() {
+        if child
+            .try_wait()
+            .map_err(|error| Error::PluginRuntimeIo {
+                plugin: self.plugin_id.clone(),
+                message: error.to_string(),
+            })?
+            .is_some()
+        {
             return Ok(());
         }
 
