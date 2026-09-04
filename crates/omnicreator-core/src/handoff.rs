@@ -8,11 +8,11 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::Error;
 use crate::{
     fs_util::{atomic_write_json, sha256_file},
     LogicalUri, PathResolver, Result, StateStore, Workspace,
 };
-use crate::Error;
 
 pub const HANDOFF_SCHEMA: &str = "omnicreator.handoff";
 pub const HANDOFF_SCHEMA_VERSION: u32 = 1;
@@ -88,7 +88,9 @@ pub(crate) fn create_handoff(
     };
 
     atomic_write_json(
-        &workspace.data_root().join(".omnicreator/handoff/latest.json"),
+        &workspace
+            .data_root()
+            .join(".omnicreator/handoff/latest.json"),
         &handoff,
     )?;
     workspace.mark_handoff_clean(device_id, revision)?;
