@@ -79,10 +79,7 @@ pub enum Error {
     #[error("plugin {plugin} request {request_id} timed out")]
     PluginTimeout { plugin: String, request_id: String },
     #[error("plugin {plugin} exited unexpectedly with status {status:?}")]
-    PluginProcessExited {
-        plugin: String,
-        status: Option<i32>,
-    },
+    PluginProcessExited { plugin: String, status: Option<i32> },
     #[error("plugin {plugin} runtime I/O error: {message}")]
     PluginRuntimeIo { plugin: String, message: String },
     #[error("dependency would create a cycle: {0} -> {1}")]
