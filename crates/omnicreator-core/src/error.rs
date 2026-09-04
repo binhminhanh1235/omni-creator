@@ -52,6 +52,20 @@ pub enum Error {
     InvalidTransition(String),
     #[error("invalid contract: {0}")]
     InvalidContract(String),
+    #[error("invalid LLMGateway configuration: {0}")]
+    InvalidLlmGatewayConfig(String),
+    #[error("LLMGateway credential is unavailable in environment variable {0}")]
+    MissingLlmGatewayCredential(String),
+    #[error("LLMGateway transport error: {0}")]
+    LlmGatewayTransport(String),
+    #[error("LLMGateway API error HTTP {status}: {message}")]
+    LlmGatewayApi {
+        status: u16,
+        code: Option<String>,
+        message: String,
+    },
+    #[error("invalid LLMGateway response: {0}")]
+    InvalidLlmGatewayResponse(String),
     #[error("dependency would create a cycle: {0} -> {1}")]
     DependencyCycle(String, String),
     #[error("workflow dependency crosses project boundaries")]
