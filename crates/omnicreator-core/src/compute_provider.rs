@@ -37,7 +37,10 @@ pub struct ComputeProviderMetadataV1 {
 impl ComputeProviderMetadataV1 {
     pub fn validate_v1(&self) -> Result<()> {
         validate_identifier("compute provider_id", &self.provider_id)?;
-        validate_optional_non_empty("compute provider display_name", self.display_name.as_deref())?;
+        validate_optional_non_empty(
+            "compute provider display_name",
+            self.display_name.as_deref(),
+        )?;
         validate_optional_non_empty(
             "compute provider implementation_version",
             self.implementation_version.as_deref(),
@@ -159,10 +162,7 @@ pub trait ComputeProvider {
 
     fn heartbeat(&mut self, session_id: &str) -> Result<ComputeProviderHeartbeatV1>;
 
-    fn discover_capabilities(
-        &mut self,
-        session_id: &str,
-    ) -> Result<ComputeProviderCapabilitiesV1>;
+    fn discover_capabilities(&mut self, session_id: &str) -> Result<ComputeProviderCapabilitiesV1>;
 }
 
 pub struct ComputeProviderRuntime<P> {
@@ -340,7 +340,9 @@ where
         match self.state {
             ComputeProviderConnectionState::Disconnected
             | ComputeProviderConnectionState::Connecting => return Ok(self.state),
-            ComputeProviderConnectionState::Lost => return Ok(ComputeProviderConnectionState::Lost),
+            ComputeProviderConnectionState::Lost => {
+                return Ok(ComputeProviderConnectionState::Lost)
+            }
             ComputeProviderConnectionState::Ready
             | ComputeProviderConnectionState::Unhealthy
             | ComputeProviderConnectionState::Stale => {}
@@ -402,9 +404,8 @@ where
             .identity
             .session_id
             .clone();
-        let capabilities = self.validated_capabilities(
-            self.provider.discover_capabilities(&session_id)?,
-        )?;
+        let capabilities =
+            self.validated_capabilities(self.provider.discover_capabilities(&session_id)?)?;
 
         let session = self.session.as_mut().expect("session validated above");
         session.capabilities = capabilities;
