@@ -246,10 +246,7 @@ fn structured_quality_options(
 }
 
 fn validate_optional_model(model: &Option<String>, label: &str) -> Result<()> {
-    if model
-        .as_ref()
-        .is_some_and(|model| model.trim().is_empty())
-    {
+    if model.as_ref().is_some_and(|model| model.trim().is_empty()) {
         return Err(Error::InvalidContract(format!(
             "{label} model must not be empty when present"
         )));
@@ -468,13 +465,9 @@ mod tests {
     fn content_helper_rejects_empty_instruction_before_transport() {
         let client = LlmGatewayClient::new(crate::LlmGatewayConfig::default()).unwrap();
 
-        let error = build_content_request(
-            &client,
-            "   ",
-            "content",
-            &CreatorContentOptions::default(),
-        )
-        .unwrap_err();
+        let error =
+            build_content_request(&client, "   ", "content", &CreatorContentOptions::default())
+                .unwrap_err();
 
         assert!(error.to_string().contains("instruction must not be empty"));
     }
