@@ -92,10 +92,8 @@ impl PluginProcessControl {
                 "cancel target request_id must not be empty".to_owned(),
             ));
         }
-        let request = new_plugin_request(
-            "plugin.cancel",
-            json!({ "request_id": target_request_id }),
-        );
+        let request =
+            new_plugin_request("plugin.cancel", json!({ "request_id": target_request_id }));
         let request_id = request.request_id.clone();
         self.send(&request)?;
         Ok(request_id)
@@ -296,7 +294,9 @@ impl PluginProcess {
         let shutdown_result = self.call("plugin.shutdown", Value::Null);
         match shutdown_result {
             Ok(_) => {}
-            Err(Error::PluginProcessExited { status: Some(0), .. }) => return Ok(()),
+            Err(Error::PluginProcessExited {
+                status: Some(0), ..
+            }) => return Ok(()),
             Err(error) => {
                 self.force_terminate()?;
                 return Err(error);
@@ -315,12 +315,10 @@ impl PluginProcess {
             message: "child lock was poisoned".to_owned(),
         })?;
 
-        match child
-            .try_wait()
-            .map_err(|error| Error::PluginRuntimeIo {
-                plugin: self.plugin_id.clone(),
-                message: error.to_string(),
-            })? {
+        match child.try_wait().map_err(|error| Error::PluginRuntimeIo {
+            plugin: self.plugin_id.clone(),
+            message: error.to_string(),
+        })? {
             Some(_) => return Ok(()),
             None => {}
         }
@@ -336,11 +334,7 @@ impl PluginProcess {
         Ok(())
     }
 
-    fn wait_for_response(
-        &self,
-        request_id: &str,
-        timeout: Duration,
-    ) -> Result<PluginCallResult> {
+    fn wait_for_response(&self, request_id: &str, timeout: Duration) -> Result<PluginCallResult> {
         let deadline = Instant::now() + timeout;
         let mut progress = Vec::new();
         let mut inbox = self.inbox.lock().map_err(|_| Error::PluginProtocol {
@@ -367,7 +361,10 @@ impl PluginProcess {
                 });
             }
 
-            match inbox.receiver.recv_timeout(deadline.saturating_duration_since(now)) {
+            match inbox
+                .receiver
+                .recv_timeout(deadline.saturating_duration_since(now))
+            {
                 Ok(ReaderFrame::Message(message)) => {
                     let message_request_id = wire_request_id(&message).to_owned();
                     if message_request_id == request_id {
@@ -379,10 +376,12 @@ impl PluginProcess {
                             });
                         }
                     } else {
-                        inbox.stash(message).map_err(|message| Error::PluginProtocol {
-                            plugin: self.plugin_id.clone(),
-                            message,
-                        })?;
+                        inbox
+                            .stash(message)
+                            .map_err(|message| Error::PluginProtocol {
+                                plugin: self.plugin_id.clone(),
+                                message,
+                            })?;
                     }
                 }
                 Ok(ReaderFrame::Malformed(message)) => {
@@ -530,7 +529,10 @@ impl PluginInbox {
             ));
         }
         let request_id = wire_request_id(&message).to_owned();
-        self.pending.entry(request_id).or_default().push_back(message);
+        self.pending
+            .entry(request_id)
+            .or_default()
+            .push_back(message);
         self.pending_count += 1;
         Ok(())
     }
@@ -744,9 +746,7 @@ for raw in sys.stdin:
         };
         let process = PluginProcess::spawn(&plugin, process_options()).unwrap();
 
-        let error = process
-            .call("fixture.malformed", Value::Null)
-            .unwrap_err();
+        let error = process.call("fixture.malformed", Value::Null).unwrap_err();
 
         assert!(matches!(error, Error::PluginProtocol { .. }));
         process.force_terminate().unwrap();
