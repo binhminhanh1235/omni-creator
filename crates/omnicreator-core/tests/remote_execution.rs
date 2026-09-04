@@ -331,12 +331,7 @@ fn corrupted_transfer_never_marks_attempt_or_job_succeeded() {
         &spec(&job.job_id, &job.input_hash),
     )
     .unwrap();
-    let entry = artifact_entry(
-        &job.job_id,
-        &started.attempt_id,
-        &job.input_hash,
-        expected,
-    );
+    let entry = artifact_entry(&job.job_id, &started.attempt_id, &job.input_hash, expected);
     let artifacts = ArtifactStore::new(workspace.data_root()).unwrap();
 
     assert!(matches!(
