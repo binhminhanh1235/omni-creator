@@ -95,6 +95,8 @@ pub struct VisualCandidate {
     #[serde(default)]
     pub tags: Vec<String>,
     pub source_page_url: Option<String>,
+    pub creator_name: Option<String>,
+    pub creator_url: Option<String>,
     pub width: Option<u32>,
     pub height: Option<u32>,
     pub duration: Option<f64>,
@@ -109,6 +111,17 @@ impl VisualCandidate {
         require_non_empty("visual candidate source_provider", &self.source_provider)?;
         require_non_empty("visual candidate source_asset_id", &self.source_asset_id)?;
         require_non_empty("visual candidate selection_ref", &self.selection_ref)?;
+        for (label, value) in [
+            ("visual candidate source_page_url", &self.source_page_url),
+            ("visual candidate creator_name", &self.creator_name),
+            ("visual candidate creator_url", &self.creator_url),
+        ] {
+            if value.as_ref().is_some_and(|value| value.trim().is_empty()) {
+                return Err(Error::InvalidContract(format!(
+                    "{label} must not be empty when present"
+                )));
+            }
+        }
 
         if self.width == Some(0) {
             return Err(Error::InvalidContract(
@@ -541,6 +554,8 @@ mod tests {
             description: None,
             tags: Vec::new(),
             source_page_url: Some(format!("https://example.invalid/{id}")),
+            creator_name: Some("Fixture Creator".to_owned()),
+            creator_url: Some("https://example.invalid/creator".to_owned()),
             width: Some(1920),
             height: Some(1080),
             duration: Some(12.0),
