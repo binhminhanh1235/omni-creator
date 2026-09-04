@@ -404,8 +404,8 @@ where
             .identity
             .session_id
             .clone();
-        let capabilities =
-            self.validated_capabilities(self.provider.discover_capabilities(&session_id)?)?;
+        let discovered = self.provider.discover_capabilities(&session_id)?;
+        let capabilities = self.validated_capabilities(discovered)?;
 
         let session = self.session.as_mut().expect("session validated above");
         session.capabilities = capabilities;
@@ -419,10 +419,10 @@ where
     ) -> Result<ComputeProviderSessionV1> {
         connection.validate_v1()?;
 
-        let capabilities = self.validated_capabilities(
-            self.provider
-                .discover_capabilities(&connection.session_id)?,
-        )?;
+        let discovered = self
+            .provider
+            .discover_capabilities(&connection.session_id)?;
+        let capabilities = self.validated_capabilities(discovered)?;
         let identity = ComputeProviderSessionIdentityV1 {
             provider_id: self.metadata.provider_id.clone(),
             session_id: connection.session_id,
