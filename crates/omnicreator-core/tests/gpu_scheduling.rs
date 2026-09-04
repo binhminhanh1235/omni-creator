@@ -394,6 +394,73 @@ fn non_parallelizable_group_cannot_run_concurrently() {
 }
 
 #[test]
+fn workflow_step_must_be_ready_or_retryable_to_enter_gpu_queue() {
+    let job = logical_job("job-1");
+    let prep = preparation(&job.job_id);
+    let providers = vec![provider_snapshot()];
+
+    for status in [
+        StepStatus::NotReady,
+        StepStatus::Queued,
+        StepStatus::Running,
+        StepStatus::Succeeded,
+        StepStatus::Failed,
+        StepStatus::Fatal,
+        StepStatus::Stale,
+        StepStatus::Skipped,
+        StepStatus::Cancelled,
+    ] {
+        let mut readiness = facts();
+        readiness.workflow_step_status = Some(status);
+
+        let decision =
+            evaluate_gpu_queue(&job, &readiness, &prep, &providers, &[]).unwrap();
+
+        assert_eq!(decision.status, GpuQueueEligibilityStatusV1::NotReady);
+        assert!(
+            codes(&decision).contains(&GpuNotReadyReasonCodeV1::WorkflowStepNotReady),
+            "workflow step {status:?} must not enter the GPU queue"
+        );
+        assert!(decision.selection.is_none());
+    }
+
+    for status in [StepStatus::Ready, StepStatus::Retryable] {
+        let mut readiness = facts();
+        readiness.workflow_step_status = Some(status);
+
+        let decision =
+            evaluate_gpu_queue(&job, &readiness, &prep, &providers, &[]).unwrap();
+
+        assert!(
+            decision.is_gpu_ready(),
+            "workflow step {status:?} should be schedulable"
+        );
+    }
+}
+
+#[test]
+fn unhealthy_stale_and_lost_sessions_cannot_claim_new_gpu_jobs() {
+    let job = logical_job("job-1");
+    let prep = preparation(&job.job_id);
+
+    for state in [
+        ComputeProviderConnectionState::Unhealthy,
+        ComputeProviderConnectionState::Stale,
+        ComputeProviderConnectionState::Lost,
+    ] {
+        let mut provider = provider_snapshot();
+        provider.state = state;
+
+        let decision =
+            evaluate_gpu_queue(&job, &facts(), &prep, &[provider], &[]).unwrap();
+
+        assert_eq!(decision.status, GpuQueueEligibilityStatusV1::NotReady);
+        assert!(codes(&decision).contains(&GpuNotReadyReasonCodeV1::ProviderNotReady));
+        assert!(decision.selection.is_none());
+    }
+}
+
+#[test]
 fn ready_reconnect_session_wins_over_stale_session_for_same_provider() {
     let job = logical_job("job-1");
     let mut stale = provider_snapshot();
