@@ -9,8 +9,12 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    fs_util::sha256_file, runtime_estimates::record_runtime_observation_transaction_v1, Artifact,
-    ArtifactStore, ComputeAttemptRuntimeContextV1, ComputeProviderConnectionState, Error,
+    fs_util::sha256_file,
+    runtime_estimates::record_runtime_observation_transaction_v1,
+    voice_takes::{
+        attach_voice_take_artifact_transaction_v1, clear_voice_retake_request_transaction_v1,
+    },
+    Artifact, ArtifactStore, ComputeAttemptRuntimeContextV1, ComputeProviderConnectionState, Error,
     FailureDisposition, GpuJobPreparationV1, GpuQueueEligibilityV1, LogicalUri, PathResolver,
     Result, StateStore, StepStatus,
 };
@@ -487,12 +491,29 @@ impl StateStore {
                 &attempt.attempt_id
             ],
         )?;
-        transaction.execute(
-            "UPDATE jobs \
-             SET status='SUCCEEDED',selected_attempt_id=?1,selected_artifact_id=?2 \
-             WHERE id=?3 AND status IN ('RUNNING','RETRYABLE')",
-            params![&attempt.attempt_id, &artifact.artifact_id, &job.job_id],
+        let is_voice_take = attach_voice_take_artifact_transaction_v1(
+            &transaction,
+            &attempt.attempt_id,
+            &artifact.artifact_id,
         )?;
+        if is_voice_take {
+            transaction.execute(
+                "UPDATE jobs \
+                 SET status='SUCCEEDED', \
+                     selected_attempt_id=COALESCE(selected_attempt_id,?1), \
+                     selected_artifact_id=COALESCE(selected_artifact_id,?2) \
+                 WHERE id=?3 AND status IN ('RUNNING','RETRYABLE')",
+                params![&attempt.attempt_id, &artifact.artifact_id, &job.job_id],
+            )?;
+            clear_voice_retake_request_transaction_v1(&transaction, &job.job_id)?;
+        } else {
+            transaction.execute(
+                "UPDATE jobs \
+                 SET status='SUCCEEDED',selected_attempt_id=?1,selected_artifact_id=?2 \
+                 WHERE id=?3 AND status IN ('RUNNING','RETRYABLE')",
+                params![&attempt.attempt_id, &artifact.artifact_id, &job.job_id],
+            )?;
+        }
         record_runtime_observation_transaction_v1(
             &transaction,
             &attempt.attempt_id,
@@ -522,6 +543,19 @@ impl ArtifactStore {
                 "journal input_hash does not match canonical logical job".to_owned(),
             ));
         }
+
+        if let Some(take) = state_store.get_voice_take_v1(&entry.attempt_id)? {
+            if let Some(artifact) = take.artifact {
+                ensure_delivery_matches_artifact(entry, remote_artifact, &artifact)?;
+                if !self.verify_artifact(&artifact)? {
+                    return Err(Error::InvalidArtifact(
+                        "committed voice take artifact is missing from local Data Root".to_owned(),
+                    ));
+                }
+                return Ok(Some(artifact));
+            }
+        }
+
         if job.status != StepStatus::Succeeded {
             return Ok(None);
         }
