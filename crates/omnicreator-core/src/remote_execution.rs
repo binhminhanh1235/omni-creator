@@ -9,8 +9,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    fs_util::sha256_file, Artifact, ArtifactStore, ComputeDeviceSelectionV1, Error, LogicalUri,
-    PathResolver, Result, StateStore, StepStatus,
+    fs_util::sha256_file, Artifact, ArtifactStore, Error, GpuJobPreparationV1,
+    GpuQueueEligibilityV1, LogicalUri, PathResolver, Result, StateStore, StepStatus,
 };
 
 pub const REMOTE_EXECUTION_SCHEMA_V1: &str = "omnicreator.compute.remote-execution";
@@ -19,13 +19,7 @@ pub const REMOTE_JOURNAL_SCHEMA_V1: &str = "omnicreator.compute.remote-journal";
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RemoteComputeJobSpecV1 {
     pub job_id: String,
-    pub input_hash: String,
-    pub plugin_id: String,
     pub operation: String,
-    pub model_id: String,
-    pub model_version: String,
-    pub settings_fingerprint: String,
-    pub output_uri: LogicalUri,
     #[serde(default)]
     pub plugin_payload: serde_json::Value,
 }
@@ -33,21 +27,7 @@ pub struct RemoteComputeJobSpecV1 {
 impl RemoteComputeJobSpecV1 {
     pub fn validate_v1(&self) -> Result<()> {
         require_identifier("remote job job_id", &self.job_id)?;
-        require_identifier("remote job input_hash", &self.input_hash)?;
-        require_identifier("remote job plugin_id", &self.plugin_id)?;
-        require_identifier("remote job operation", &self.operation)?;
-        require_identifier("remote job model_id", &self.model_id)?;
-        require_identifier("remote job model_version", &self.model_version)?;
-        require_identifier(
-            "remote job settings_fingerprint",
-            &self.settings_fingerprint,
-        )?;
-        if matches!(self.output_uri, LogicalUri::Artifact(_)) {
-            return Err(Error::InvalidContract(
-                "remote job output_uri must resolve to a physical logical URI".to_owned(),
-            ));
-        }
-        Ok(())
+        require_identifier("remote job operation", &self.operation)
     }
 }
 
@@ -294,22 +274,53 @@ pub struct RemoteDispatchStartedV1 {
 pub fn dispatch_remote_job(
     state_store: &mut StateStore,
     executor: &mut impl ComputeProviderExecution,
-    selection: &ComputeDeviceSelectionV1,
+    eligibility: &GpuQueueEligibilityV1,
+    preparation: &GpuJobPreparationV1,
     spec: &RemoteComputeJobSpecV1,
 ) -> Result<RemoteDispatchStartedV1> {
     spec.validate_v1()?;
-    let job = state_store.get_job(&spec.job_id)?;
-    if job.input_hash != spec.input_hash {
+    if eligibility.job_id != spec.job_id || preparation.job_id != spec.job_id {
         return Err(Error::InvalidContract(
-            "remote job input_hash does not match canonical logical job".to_owned(),
+            "GPU eligibility, preparation and remote job must share the same logical job_id"
+                .to_owned(),
         ));
     }
+    if !eligibility.is_gpu_ready() {
+        return Err(Error::InvalidJobState(format!(
+            "job {} cannot be remotely dispatched without GPU_READY eligibility",
+            spec.job_id
+        )));
+    }
+    let selection = eligibility.selection.as_ref().ok_or_else(|| {
+        Error::InvalidContract("GPU_READY eligibility must include a device selection".to_owned())
+    })?;
+    preparation.requirements.validate_scheduling_v1()?;
+
+    let job = state_store.get_job(&spec.job_id)?;
     if !matches!(job.status, StepStatus::Ready | StepStatus::Retryable) {
         return Err(Error::InvalidJobState(format!(
             "job {} cannot be remotely dispatched from {}",
             job.job_id,
             job.status.as_str()
         )));
+    }
+
+    let plugin_id = required_prepared_value("plugin_id", preparation.plugin_id.as_deref())?;
+    let provider_id = required_prepared_value("provider_id", preparation.provider_id.as_deref())?;
+    let model_id = required_prepared_value("model_id", preparation.model_id.as_deref())?;
+    let model_version =
+        required_prepared_value("model_version", preparation.model_version.as_deref())?;
+    let settings_fingerprint = required_prepared_value(
+        "settings_fingerprint",
+        preparation.settings_fingerprint.as_deref(),
+    )?;
+    let output_uri = preparation.output_uri.as_ref().ok_or_else(|| {
+        Error::InvalidContract("GPU preparation output_uri must be known before dispatch".to_owned())
+    })?;
+    if provider_id != selection.provider_id {
+        return Err(Error::InvalidContract(
+            "GPU preparation provider_id does not match selected provider".to_owned(),
+        ));
     }
 
     let worker = format!(
@@ -326,12 +337,12 @@ pub fn dispatch_remote_job(
         job_id: job.job_id.clone(),
         attempt_id: attempt.attempt_id.clone(),
         input_hash: job.input_hash.clone(),
-        plugin_id: spec.plugin_id.clone(),
+        plugin_id: plugin_id.to_owned(),
         operation: spec.operation.clone(),
-        model_id: spec.model_id.clone(),
-        model_version: spec.model_version.clone(),
-        settings_fingerprint: spec.settings_fingerprint.clone(),
-        output_uri: spec.output_uri.clone(),
+        model_id: model_id.to_owned(),
+        model_version: model_version.to_owned(),
+        settings_fingerprint: settings_fingerprint.to_owned(),
+        output_uri: output_uri.clone(),
         plugin_payload: spec.plugin_payload.clone(),
     };
     dispatch.validate_v1()?;
@@ -638,6 +649,15 @@ pub fn sync_remote_artifact(
         artifact_store.promote_remote_artifact(state_store, entry, &staging_path, metadata);
     let _ = fs::remove_file(&staging_path);
     result
+}
+
+fn required_prepared_value<'a>(label: &str, value: Option<&'a str>) -> Result<&'a str> {
+    match value {
+        Some(value) if !value.trim().is_empty() => Ok(value),
+        _ => Err(Error::InvalidContract(format!(
+            "GPU preparation {label} must be known before dispatch"
+        ))),
+    }
 }
 
 fn ensure_delivery_matches_artifact(
