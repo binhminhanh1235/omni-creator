@@ -243,6 +243,27 @@ to its full candidate + score record when technical inspection is actually neede
 
 This keeps the normal decision focused on meaning and fit rather than media plumbing.
 
+### Optional LLMGateway vision enrichment
+
+Vision review is optional and never replaces the deterministic ranking or the explicit human-selection
+boundary.
+
+Runtime v1 sends only the top image previews plus provider-neutral SceneIntent context. It does not
+send provider asset IDs, selection references, download URLs or provider-specific metadata to the
+vision model.
+
+Before sending a multimodal request, OmniCreator calls LLMGateway route explain with the same request
+body. Vision evaluation runs only when the selected route uses API transport. The actual route ID
+returned by LLMGateway is checked again after the request; if that route is not confirmed as API
+transport, the evaluation is discarded.
+
+This guard is necessary because current browser adapters flatten OpenAI content parts into text and
+ignore image_url parts. Treating a browser route as vision-capable would therefore create a false
+sense that the model inspected the preview.
+
+When vision enrichment succeeds, it adds a compact fit score and one-sentence rationale to the
+existing top-N review card. It does not reorder candidates automatically.
+
 ## Mixed visual routing
 
 A video does not need one provider for every scene.
