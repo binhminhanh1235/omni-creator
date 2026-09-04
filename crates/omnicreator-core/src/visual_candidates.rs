@@ -374,7 +374,11 @@ pub fn rank_visual_candidates(
             .score
             .final_score
             .total_cmp(&left.score.final_score)
-            .then_with(|| left.candidate.candidate_id.cmp(&right.candidate.candidate_id))
+            .then_with(|| {
+                left.candidate
+                    .candidate_id
+                    .cmp(&right.candidate.candidate_id)
+            })
             .then_with(|| {
                 left.candidate
                     .source_provider
@@ -407,11 +411,8 @@ pub fn score_visual_candidate(
     let freshness_score = freshness * weights.freshness;
 
     let content_match_score = semantic_relevance + emotional_relevance + narrative_purpose;
-    let base_score = content_match_score
-        + visual_quality
-        + channel_continuity
-        + editability
-        + freshness_score;
+    let base_score =
+        content_match_score + visual_quality + channel_continuity + editability + freshness_score;
 
     let cliche_matches = matched_cliche_terms(candidate, &policy.cliche_terms);
     let cliche_penalty = (policy.cliche_penalty_per_match * cliche_matches.len() as f64)
@@ -612,9 +613,12 @@ mod tests {
             signals: signals(),
         };
 
-        let ranked =
-            rank_visual_candidates(&scene(), vec![cliche, normal], &VisualRankingPolicy::default())
-                .unwrap();
+        let ranked = rank_visual_candidates(
+            &scene(),
+            vec![cliche, normal],
+            &VisualRankingPolicy::default(),
+        )
+        .unwrap();
 
         assert_eq!(ranked[0].candidate.candidate_id, "A");
         assert_eq!(ranked[1].score.cliche_matches.len(), 3);
@@ -635,9 +639,12 @@ mod tests {
             signals: reused_signals,
         };
 
-        let ranked =
-            rank_visual_candidates(&scene(), vec![reused, fresh], &VisualRankingPolicy::default())
-                .unwrap();
+        let ranked = rank_visual_candidates(
+            &scene(),
+            vec![reused, fresh],
+            &VisualRankingPolicy::default(),
+        )
+        .unwrap();
 
         assert_eq!(ranked[0].candidate.candidate_id, "fresh");
         assert!(ranked[1].score.reuse_penalty > 0.0);
