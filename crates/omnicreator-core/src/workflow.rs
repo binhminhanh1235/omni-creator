@@ -83,6 +83,7 @@ impl FailureDisposition {
             | "QUOTA_EXHAUSTED"
             | "QUOTA_TEMPORARY"
             | "PROVIDER_UNAVAILABLE"
+            | "LOCAL_RUNTIME_CONTEXT_ERROR"
             | "LOCAL_RESTART_PENDING_RECONCILIATION" => Self::Retryable,
             _ => Self::Fatal,
         }
@@ -441,6 +442,12 @@ impl StateStore {
 
         let now = Utc::now();
         let transaction = self.connection.transaction()?;
+        transaction.execute(
+            "UPDATE compute_attempt_contexts \
+             SET runtime_observation_eligible=0 \
+             WHERE attempt_id IN (SELECT id FROM attempts WHERE status='RUNNING')",
+            [],
+        )?;
         transaction.execute(
             "UPDATE attempts \
              SET status='RETRYABLE',finished_at=?1, \
