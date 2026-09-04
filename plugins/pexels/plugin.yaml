@@ -1,0 +1,33 @@
+schema: omnicreator.plugin-manifest
+schema_version: 1
+id: pexels
+name: Pexels Visuals
+version: 1.0.0
+api_version: 1
+
+types:
+  - visual
+
+entrypoint:
+  command: python3
+  args:
+    - plugin.py
+
+capabilities:
+  - stock_video
+  - stock_image
+  - preview_first_search
+
+scene_types:
+  - literal
+  - emotional
+  - conceptual
+
+permissions:
+  network:
+    - api.pexels.com
+  filesystem:
+    - job-workspace
+
+settings:
+  schema: settings.schema.json

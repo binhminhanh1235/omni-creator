@@ -1,0 +1,52 @@
+{
+  "type": "object",
+  "title": "Pexels Visuals",
+  "description": "Preview-first stock visual search. The API key itself stays outside project settings.",
+  "properties": {
+    "media_type": {
+      "type": "string",
+      "title": "Media type",
+      "description": "Search videos by default; enable images or both when a scene benefits from stills.",
+      "enum": ["video", "image", "both"],
+      "default": "video"
+    },
+    "per_query": {
+      "type": "integer",
+      "title": "Candidates per query",
+      "description": "Number of preview candidates requested for each SceneIntent search query.",
+      "minimum": 1,
+      "maximum": 80,
+      "default": 8
+    },
+    "orientation": {
+      "type": "string",
+      "title": "Orientation",
+      "description": "Auto derives orientation from the SceneIntent aspect ratio.",
+      "enum": ["auto", "landscape", "portrait", "square"],
+      "default": "auto",
+      "x-omnicreator-visibility": "advanced"
+    },
+    "minimum_size": {
+      "type": "string",
+      "title": "Minimum source size",
+      "description": "Pexels search filter. Medium maps to Full HD for video.",
+      "enum": ["small", "medium", "large"],
+      "default": "medium",
+      "x-omnicreator-visibility": "advanced"
+    },
+    "locale": {
+      "type": "string",
+      "title": "Search locale",
+      "description": "Pexels locale code used for generated visual search queries.",
+      "default": "en-US",
+      "x-omnicreator-visibility": "advanced"
+    },
+    "api_key_env": {
+      "type": "string",
+      "title": "API key environment variable",
+      "description": "Name of the machine-local environment variable containing the Pexels API key. The secret value is never stored in OmniCreator project data.",
+      "default": "PEXELS_API_KEY",
+      "x-omnicreator-visibility": "advanced"
+    }
+  }
+}
