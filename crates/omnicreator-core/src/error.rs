@@ -72,6 +72,19 @@ pub enum Error {
         attempts: u8,
         reason: String,
     },
+    #[error("failed to spawn plugin {plugin}: {message}")]
+    PluginSpawn { plugin: String, message: String },
+    #[error("plugin {plugin} protocol error: {message}")]
+    PluginProtocol { plugin: String, message: String },
+    #[error("plugin {plugin} request {request_id} timed out")]
+    PluginTimeout { plugin: String, request_id: String },
+    #[error("plugin {plugin} exited unexpectedly with status {status:?}")]
+    PluginProcessExited {
+        plugin: String,
+        status: Option<i32>,
+    },
+    #[error("plugin {plugin} runtime I/O error: {message}")]
+    PluginRuntimeIo { plugin: String, message: String },
     #[error("dependency would create a cycle: {0} -> {1}")]
     DependencyCycle(String, String),
     #[error("workflow dependency crosses project boundaries")]
