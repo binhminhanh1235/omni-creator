@@ -127,6 +127,30 @@ CREATE INDEX IF NOT EXISTS idx_compute_attempt_contexts_key
 ON compute_attempt_contexts(provider_id,device_id,plugin_id,model_id,model_version);
 "#;
 
+const MIGRATION_V5: &str = r#"
+CREATE TABLE IF NOT EXISTS voice_takes (
+    attempt_id TEXT PRIMARY KEY REFERENCES attempts(id) ON DELETE CASCADE,
+    job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    take_index INTEGER NOT NULL,
+    input_hash TEXT NOT NULL,
+    artifact_id TEXT UNIQUE REFERENCES artifacts(id),
+    created_at TEXT NOT NULL,
+    UNIQUE(job_id,take_index)
+);
+
+CREATE TABLE IF NOT EXISTS voice_retake_requests (
+    job_id TEXT PRIMARY KEY REFERENCES jobs(id) ON DELETE CASCADE,
+    input_hash TEXT NOT NULL,
+    requested_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_voice_takes_job
+ON voice_takes(job_id,take_index);
+
+CREATE INDEX IF NOT EXISTS idx_voice_takes_input_hash
+ON voice_takes(input_hash,artifact_id);
+"#;
+
 pub struct StateStore {
     pub(crate) connection: Connection,
 }
@@ -170,6 +194,7 @@ impl StateStore {
         self.apply_migration(2, MIGRATION_V2)?;
         self.apply_migration(3, MIGRATION_V3)?;
         self.apply_migration(4, MIGRATION_V4)?;
+        self.apply_migration(5, MIGRATION_V5)?;
         Ok(())
     }
 
