@@ -9,6 +9,31 @@ use omnicreator_core::{
     SEGMENT_SCHEMA_VERSION,
 };
 
+#[derive(Clone, Copy)]
+struct VoiceFixtureSpec<'a> {
+    model_id: &'a str,
+    model_version: &'a str,
+    model_group: &'a str,
+    voice_id: &'a str,
+    voice_version: &'a str,
+    min_vram_mb: u64,
+    parallelizable: bool,
+}
+
+impl<'a> VoiceFixtureSpec<'a> {
+    fn standard(voice_id: &'a str) -> Self {
+        Self {
+            model_id: "voice-model",
+            model_version: "1.0",
+            model_group: "voice-model-a",
+            voice_id,
+            voice_version: "v1",
+            min_vram_mb: 12_288,
+            parallelizable: true,
+        }
+    }
+}
+
 fn fixed_time() -> DateTime<Utc> {
     DateTime::parse_from_rfc3339("2026-09-04T17:00:00Z")
         .unwrap()
@@ -41,13 +66,7 @@ fn provider_snapshot(max_parallel_jobs: u32) -> ComputeProviderSchedulingSnapsho
 
 fn tts_preparation(
     segment_id: &str,
-    model_id: &str,
-    model_version: &str,
-    model_group: &str,
-    voice_id: &str,
-    voice_version: &str,
-    min_vram_mb: u64,
-    parallelizable: bool,
+    spec: VoiceFixtureSpec<'_>,
 ) -> SegmentTtsPreparationV1 {
     let segment = SegmentV1 {
         schema: SEGMENT_SCHEMA.to_owned(),
@@ -69,19 +88,21 @@ fn tts_preparation(
         &segment,
         Vec::new(),
         VoiceIdentityV1 {
-            voice_id: voice_id.to_owned(),
-            voice_version: voice_version.to_owned(),
+            voice_id: spec.voice_id.to_owned(),
+            voice_version: spec.voice_version.to_owned(),
         },
         VoiceModelIdentityV1 {
-            model_id: model_id.to_owned(),
-            model_version: model_version.to_owned(),
+            model_id: spec.model_id.to_owned(),
+            model_version: spec.model_version.to_owned(),
         },
         "settings-v1",
     );
 
-    let mut requirements =
-        omnicreator_core::default_segment_tts_compute_requirements_v1(model_group, min_vram_mb);
-    requirements.parallelizable = parallelizable;
+    let mut requirements = omnicreator_core::default_segment_tts_compute_requirements_v1(
+        spec.model_group,
+        spec.min_vram_mb,
+    );
+    requirements.parallelizable = spec.parallelizable;
 
     SegmentTtsPreparationV1 {
         segment_id: segment_id.to_owned(),
@@ -118,24 +139,9 @@ fn candidate(
     job_id: &str,
     project_id: &str,
     segment_id: &str,
-    model_id: &str,
-    model_version: &str,
-    model_group: &str,
-    voice_id: &str,
-    voice_version: &str,
-    min_vram_mb: u64,
-    parallelizable: bool,
+    spec: VoiceFixtureSpec<'_>,
 ) -> VoiceBurstCandidateV1 {
-    let tts = tts_preparation(
-        segment_id,
-        model_id,
-        model_version,
-        model_group,
-        voice_id,
-        voice_version,
-        min_vram_mb,
-        parallelizable,
-    );
+    let tts = tts_preparation(segment_id, spec);
     let input_hash = tts.input_hash_v1().unwrap();
 
     VoiceBurstCandidateV1 {
@@ -159,13 +165,7 @@ fn default_candidate(job_id: &str, segment_id: &str, voice_id: &str) -> VoiceBur
         job_id,
         "prj-a",
         segment_id,
-        "voice-model",
-        "1.0",
-        "voice-model-a",
-        voice_id,
-        "v1",
-        12_288,
-        true,
+        VoiceFixtureSpec::standard(voice_id),
     )
 }
 
@@ -250,13 +250,10 @@ fn unsupported_model_group_is_blocked_without_poisoning_supported_jobs() {
         "job-blocked",
         "prj-a",
         "S02",
-        "voice-model",
-        "1.0",
-        "voice-model-unsupported",
-        "voice-a",
-        "v1",
-        12_288,
-        true,
+        VoiceFixtureSpec {
+            model_group: "voice-model-unsupported",
+            ..VoiceFixtureSpec::standard("voice-a")
+        },
     );
 
     let plan = plan_voice_burst_v1(&[unsupported, supported], &[provider_snapshot(2)]).unwrap();
@@ -277,13 +274,10 @@ fn planner_never_pools_vram_across_two_t4_devices() {
         "job-large",
         "prj-a",
         "S01",
-        "voice-model",
-        "1.0",
-        "voice-model-a",
-        "voice-a",
-        "v1",
-        20_000,
-        true,
+        VoiceFixtureSpec {
+            min_vram_mb: 20_000,
+            ..VoiceFixtureSpec::standard("voice-a")
+        },
     );
 
     let plan = plan_voice_burst_v1(&[too_large], &[provider_snapshot(2)]).unwrap();
@@ -299,30 +293,12 @@ fn planner_never_pools_vram_across_two_t4_devices() {
 
 #[test]
 fn non_parallelizable_affinity_group_runs_one_segment_per_wave() {
-    let first = candidate(
-        "job-01",
-        "prj-a",
-        "S01",
-        "voice-model",
-        "1.0",
-        "voice-model-a",
-        "voice-a",
-        "v1",
-        12_288,
-        false,
-    );
-    let second = candidate(
-        "job-02",
-        "prj-a",
-        "S02",
-        "voice-model",
-        "1.0",
-        "voice-model-a",
-        "voice-a",
-        "v1",
-        12_288,
-        false,
-    );
+    let spec = VoiceFixtureSpec {
+        parallelizable: false,
+        ..VoiceFixtureSpec::standard("voice-a")
+    };
+    let first = candidate("job-01", "prj-a", "S01", spec);
+    let second = candidate("job-02", "prj-a", "S02", spec);
 
     let plan = plan_voice_burst_v1(&[second, first], &[provider_snapshot(2)]).unwrap();
 
