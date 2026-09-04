@@ -1,0 +1,10 @@
+{
+  "schema": "omnicreator.step",
+  "schema_version": 1,
+  "step_id": "step_s04_tts",
+  "project_id": "prj_demo",
+  "step": "tts",
+  "unit": "S04",
+  "status": "READY",
+  "input_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+}
