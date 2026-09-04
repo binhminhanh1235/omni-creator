@@ -5,9 +5,9 @@ use omnicreator_core::{
     ComputeDeviceSelectionV1, ComputeJobDispatchAckV1, ComputeJobDispatchV1,
     ComputeProviderExecution, ComputeRemoteArtifactV1, ComputeRemoteJournalEntryV1,
     ComputeRemoteJournalEventV1, ComputeRequirements, GpuJobPreparationV1,
-    GpuQueueEligibilityStatusV1, GpuQueueEligibilityV1, LogicalUri,
-    RemoteArtifactSyncOutcomeV1, RemoteComputeJobSpecV1, ResourceRequirement, StateStore,
-    StepStatus, Workspace, REMOTE_JOURNAL_SCHEMA_V1,
+    GpuQueueEligibilityStatusV1, GpuQueueEligibilityV1, LogicalUri, RemoteArtifactSyncOutcomeV1,
+    RemoteComputeJobSpecV1, ResourceRequirement, StateStore, StepStatus, Workspace,
+    REMOTE_JOURNAL_SCHEMA_V1,
 };
 use sha2::{Digest, Sha256};
 
@@ -250,7 +250,10 @@ fn remote_dispatch_refuses_non_gpu_ready_decision_without_creating_attempt() {
     )
     .is_err());
 
-    assert_eq!(state.get_job(&job.job_id).unwrap().status, StepStatus::Ready);
+    assert_eq!(
+        state.get_job(&job.job_id).unwrap().status,
+        StepStatus::Ready
+    );
     assert!(state.list_attempts(&job.job_id).unwrap().is_empty());
     assert!(executor.dispatched.is_empty());
 }
