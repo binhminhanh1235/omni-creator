@@ -163,6 +163,9 @@ pub enum ComputeRemoteJournalEventV1 {
     ArtifactReady {
         artifact: ComputeRemoteArtifactV1,
     },
+    ArtifactBundleReady {
+        artifacts: Vec<ComputeRemoteArtifactV1>,
+    },
     Failed {
         error_code: String,
         message: Option<String>,
@@ -206,6 +209,29 @@ impl ComputeRemoteJournalEntryV1 {
 
         match &self.event {
             ComputeRemoteJournalEventV1::ArtifactReady { artifact } => artifact.validate_v1()?,
+            ComputeRemoteJournalEventV1::ArtifactBundleReady { artifacts } => {
+                if artifacts.is_empty() {
+                    return Err(Error::InvalidContract(
+                        "remote artifact bundle must contain at least one artifact".to_owned(),
+                    ));
+                }
+                let mut transfer_refs = std::collections::BTreeSet::new();
+                let mut output_uris = std::collections::BTreeSet::new();
+                for artifact in artifacts {
+                    artifact.validate_v1()?;
+                    if !transfer_refs.insert(artifact.transfer_ref.as_str()) {
+                        return Err(Error::InvalidContract(
+                            "remote artifact bundle contains duplicate transfer_ref".to_owned(),
+                        ));
+                    }
+                    let output_uri = artifact.output_uri.as_str();
+                    if !output_uris.insert(output_uri) {
+                        return Err(Error::InvalidContract(
+                            "remote artifact bundle contains duplicate output_uri".to_owned(),
+                        ));
+                    }
+                }
+            }
             ComputeRemoteJournalEventV1::Failed {
                 error_code,
                 message,
@@ -241,6 +267,13 @@ impl ComputeRemoteJournalEntryV1 {
     pub fn artifact_ready(&self) -> Option<&ComputeRemoteArtifactV1> {
         match &self.event {
             ComputeRemoteJournalEventV1::ArtifactReady { artifact } => Some(artifact),
+            _ => None,
+        }
+    }
+
+    pub fn artifact_bundle_ready(&self) -> Option<&[ComputeRemoteArtifactV1]> {
+        match &self.event {
+            ComputeRemoteJournalEventV1::ArtifactBundleReady { artifacts } => Some(artifacts),
             _ => None,
         }
     }
