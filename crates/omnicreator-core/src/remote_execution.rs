@@ -9,11 +9,10 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    fs_util::sha256_file,
-    runtime_estimates::record_runtime_observation_transaction_v1,
-    Artifact, ArtifactStore, ComputeAttemptRuntimeContextV1, ComputeProviderConnectionState,
-    Error, FailureDisposition, GpuJobPreparationV1, GpuQueueEligibilityV1, LogicalUri,
-    PathResolver, Result, StateStore, StepStatus,
+    fs_util::sha256_file, runtime_estimates::record_runtime_observation_transaction_v1, Artifact,
+    ArtifactStore, ComputeAttemptRuntimeContextV1, ComputeProviderConnectionState, Error,
+    FailureDisposition, GpuJobPreparationV1, GpuQueueEligibilityV1, LogicalUri, PathResolver,
+    Result, StateStore, StepStatus,
 };
 
 pub const REMOTE_EXECUTION_SCHEMA_V1: &str = "omnicreator.compute.remote-execution";
@@ -363,8 +362,8 @@ pub fn dispatch_remote_job(
         runtime_observation_eligible: true,
     };
     if let Err(error) = state_store.record_compute_attempt_runtime_context_v1(&runtime_context) {
-        let _ = state_store
-            .finish_attempt_failure(&attempt.attempt_id, "LOCAL_RUNTIME_CONTEXT_ERROR");
+        let _ =
+            state_store.finish_attempt_failure(&attempt.attempt_id, "LOCAL_RUNTIME_CONTEXT_ERROR");
         return Err(error);
     }
 
