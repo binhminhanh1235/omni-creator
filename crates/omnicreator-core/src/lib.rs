@@ -17,6 +17,8 @@ pub mod protocol;
 pub mod session;
 pub mod state;
 pub mod visual_candidates;
+pub mod visual_review;
+pub mod visual_vision;
 pub mod workflow;
 pub mod workspace;
 
@@ -38,4 +40,6 @@ pub use protocol::*;
 pub use session::WorkspaceSession;
 pub use state::StateStore;
 pub use visual_candidates::*;
+pub use visual_review::*;
+pub use visual_vision::*;
 pub use workspace::{Workspace, WorkspaceManifest, WorkspaceWriter, WriterLease};
