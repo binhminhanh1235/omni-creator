@@ -617,7 +617,10 @@ fn validate_optional_requirement(
     code: GpuNotReadyReasonCodeV1,
     message: &str,
 ) {
-    if value.is_none_or(|value| value.trim().is_empty()) {
+    if match value {
+        None => true,
+        Some(value) => value.trim().is_empty(),
+    } {
         push_reason(reasons, code, message);
     }
 }
