@@ -624,6 +624,12 @@ impl ArtifactStore {
             return Ok(RemoteArtifactSyncOutcomeV1::AlreadyCommitted(existing));
         }
 
+        if state_store.get_voice_take_v1(&entry.attempt_id)?.is_some() {
+            return Err(Error::InvalidContract(
+                "voice take success requires an audio + timing artifact bundle".to_owned(),
+            ));
+        }
+
         let job = state_store.get_job(&entry.job_id)?;
         if !matches!(job.status, StepStatus::Running | StepStatus::Retryable) {
             return Err(Error::InvalidJobState(format!(
