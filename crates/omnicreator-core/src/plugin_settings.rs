@@ -132,7 +132,11 @@ pub fn load_plugin_settings_ui(plugin: &DiscoveredPlugin) -> PluginSettingsLoadR
     build_settings_ui(&plugin.manifest.id, schema_ref, &schema)
 }
 
-fn build_settings_ui(plugin_id: &str, schema_ref: &str, schema: &Value) -> PluginSettingsLoadReport {
+fn build_settings_ui(
+    plugin_id: &str,
+    schema_ref: &str,
+    schema: &Value,
+) -> PluginSettingsLoadReport {
     let Some(root) = schema.as_object() else {
         return report_error(
             PluginSettingsDiagnosticCode::InvalidRootSchema,
@@ -225,10 +229,7 @@ fn parse_field(
     key: &str,
     schema: &Value,
     required: bool,
-) -> std::result::Result<
-    PluginSettingField,
-    (PluginSettingsDiagnosticCode, String),
-> {
+) -> std::result::Result<PluginSettingField, (PluginSettingsDiagnosticCode, String)> {
     let property = schema.as_object().ok_or_else(|| {
         (
             PluginSettingsDiagnosticCode::InvalidProperty,
@@ -269,9 +270,7 @@ fn parse_field(
         other => {
             return Err((
                 PluginSettingsDiagnosticCode::InvalidProperty,
-                format!(
-                    "{SETTINGS_VISIBILITY_KEY} must be 'basic' or 'advanced', found '{other}'"
-                ),
+                format!("{SETTINGS_VISIBILITY_KEY} must be 'basic' or 'advanced', found '{other}'"),
             ));
         }
     };
@@ -591,10 +590,17 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["enabled", "quality", "seed"]
         );
-        let quality = ui.fields.iter().find(|field| field.key == "quality").unwrap();
+        let quality = ui
+            .fields
+            .iter()
+            .find(|field| field.key == "quality")
+            .unwrap();
         assert!(quality.required);
         assert_eq!(quality.label, "Quality");
-        assert_eq!(quality.choices, vec![Value::from("fast"), Value::from("best")]);
+        assert_eq!(
+            quality.choices,
+            vec![Value::from("fast"), Value::from("best")]
+        );
 
         let seed = ui.fields.iter().find(|field| field.key == "seed").unwrap();
         assert_eq!(seed.visibility, PluginSettingVisibility::Advanced);
