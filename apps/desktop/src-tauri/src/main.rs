@@ -1,12 +1,12 @@
 use std::{
-    fs,
+    env, fs,
     path::{Path, PathBuf},
     sync::Mutex,
 };
 
 use omnicreator_core::{
-    Error as CoreError, HandoffManifest, MachineBinding, Project, ProjectDisplayStatus, StateStore,
-    Workspace, WorkspaceSession,
+    Error as CoreError, HandoffManifest, LlmGatewayClient, LlmGatewayConfig, LlmGatewayModel,
+    MachineBinding, Project, ProjectDisplayStatus, StateStore, Workspace, WorkspaceSession,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
@@ -79,6 +79,35 @@ struct WorkspaceView {
 struct ProjectView {
     project: Project,
     status: ProjectDisplayStatus,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum LlmGatewayConnectionState {
+    Ready,
+    NeedsApiKey,
+    Offline,
+    Degraded,
+}
+
+#[derive(Debug, Serialize)]
+struct LlmGatewayStatusView {
+    state: LlmGatewayConnectionState,
+    base_url: String,
+    api_key_env: String,
+    default_model: String,
+    credential_present: bool,
+    health_status: Option<String>,
+    gateway_default_model: Option<String>,
+    models: Vec<LlmGatewayModelView>,
+    message: String,
+}
+
+#[derive(Debug, Serialize)]
+struct LlmGatewayModelView {
+    id: String,
+    display_name: String,
+    is_virtual: bool,
 }
 
 #[tauri::command]
@@ -213,6 +242,33 @@ fn delete_project(
 ) -> Result<AppSnapshot, String> {
     with_writable_store(&state, |store| store.delete_project(&project_id))?;
     snapshot_from_active(&state)
+}
+
+#[tauri::command]
+fn llmgateway_status(app: AppHandle) -> Result<LlmGatewayStatusView, String> {
+    llmgateway_status_for_app(&app)
+}
+
+#[tauri::command]
+fn save_llmgateway_settings(
+    app: AppHandle,
+    base_url: String,
+    api_key_env: String,
+    default_model: String,
+) -> Result<LlmGatewayStatusView, String> {
+    let path = llmgateway_config_path(&app)?;
+    let mut config = if path.exists() {
+        LlmGatewayConfig::load(&path).map_err(error_string)?
+    } else {
+        LlmGatewayConfig::default()
+    };
+
+    config.base_url = base_url.trim().to_owned();
+    config.api_key_env = api_key_env.trim().to_owned();
+    config.default_model = default_model.trim().to_owned();
+    config.save(&path).map_err(error_string)?;
+
+    llmgateway_status_for_app(&app)
 }
 
 #[tauri::command]
@@ -392,6 +448,131 @@ fn with_writable_store(
     operation(&store).map_err(error_string)
 }
 
+fn llmgateway_status_for_app(app: &AppHandle) -> Result<LlmGatewayStatusView, String> {
+    let config = load_llmgateway_config(app)?;
+    let credential_present = env::var(&config.api_key_env)
+        .map(|value| !value.trim().is_empty())
+        .unwrap_or(false);
+    let client = LlmGatewayClient::new(config.clone()).map_err(error_string)?;
+
+    let health = match client.health() {
+        Ok(health) => health,
+        Err(error) => {
+            return Ok(LlmGatewayStatusView {
+                state: LlmGatewayConnectionState::Offline,
+                base_url: config.base_url.clone(),
+                api_key_env: config.api_key_env.clone(),
+                default_model: config.default_model.clone(),
+                credential_present,
+                health_status: None,
+                gateway_default_model: None,
+                models: Vec::new(),
+                message: format!(
+                    "LLMGateway is not reachable at {}. Start LLMGateway or update the endpoint, then refresh. ({error})",
+                    config.base_url
+                ),
+            });
+        }
+    };
+
+    if !credential_present {
+        return Ok(LlmGatewayStatusView {
+            state: LlmGatewayConnectionState::NeedsApiKey,
+            base_url: config.base_url.clone(),
+            api_key_env: config.api_key_env.clone(),
+            default_model: config.default_model.clone(),
+            credential_present: false,
+            health_status: Some(health.status),
+            gateway_default_model: health.default_model,
+            models: Vec::new(),
+            message: format!(
+                "Gateway is reachable. Set the {} environment variable on this machine, then refresh. The secret is never stored in the portable Data Folder.",
+                config.api_key_env
+            ),
+        });
+    }
+
+    match client.models() {
+        Ok(mut models) => {
+            sort_llmgateway_models(&mut models);
+            let models = models
+                .into_iter()
+                .map(llmgateway_model_view)
+                .collect::<Vec<_>>();
+            Ok(LlmGatewayStatusView {
+                state: LlmGatewayConnectionState::Ready,
+                base_url: config.base_url,
+                api_key_env: config.api_key_env,
+                default_model: config.default_model,
+                credential_present: true,
+                health_status: Some(health.status),
+                gateway_default_model: health.default_model,
+                message: format!(
+                    "Connected. {} models discovered; LLMGateway virtual models are listed first.",
+                    models.len()
+                ),
+                models,
+            })
+        }
+        Err(error) => Ok(LlmGatewayStatusView {
+            state: LlmGatewayConnectionState::Degraded,
+            base_url: config.base_url,
+            api_key_env: config.api_key_env,
+            default_model: config.default_model,
+            credential_present: true,
+            health_status: Some(health.status),
+            gateway_default_model: health.default_model,
+            models: Vec::new(),
+            message: format!(
+                "Gateway health is reachable, but authenticated model discovery failed. Check the API key and gateway configuration. ({error})"
+            ),
+        }),
+    }
+}
+
+fn load_llmgateway_config(app: &AppHandle) -> Result<LlmGatewayConfig, String> {
+    let path = llmgateway_config_path(app)?;
+    if path.exists() {
+        LlmGatewayConfig::load(path).map_err(error_string)
+    } else {
+        Ok(LlmGatewayConfig::default())
+    }
+}
+
+fn llmgateway_config_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let config_dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| format!("Cannot resolve app config directory: {error}"))?;
+    fs::create_dir_all(&config_dir)
+        .map_err(|error| format!("Cannot create app config directory: {error}"))?;
+    Ok(config_dir.join("llmgateway.json"))
+}
+
+fn sort_llmgateway_models(models: &mut [LlmGatewayModel]) {
+    models.sort_by(|left, right| {
+        right
+            .is_virtual()
+            .cmp(&left.is_virtual())
+            .then_with(|| left.id.to_lowercase().cmp(&right.id.to_lowercase()))
+    });
+}
+
+fn llmgateway_model_view(model: LlmGatewayModel) -> LlmGatewayModelView {
+    let display_name = model
+        .llmgateway
+        .as_ref()
+        .and_then(|metadata| metadata.display_name.clone())
+        .unwrap_or_else(|| model.id.clone());
+    let is_virtual = model.is_virtual();
+
+    LlmGatewayModelView {
+        id: model.id,
+        display_name,
+        is_virtual,
+    }
+}
+
 fn local_device_id(app: &AppHandle) -> Result<String, String> {
     let path = binding_path(app)?;
     if path.exists() {
@@ -490,6 +671,8 @@ fn main() {
             create_project,
             rename_project,
             delete_project,
+            llmgateway_status,
+            save_llmgateway_settings,
             prepare_device_handoff
         ])
         .build(tauri::generate_context!())
