@@ -40,7 +40,7 @@ pub struct WriterLease {
 }
 
 impl WriterLease {
-    fn is_recent(&self) -> bool {
+    pub(crate) fn is_recent(&self) -> bool {
         Utc::now().signed_duration_since(self.updated_at)
             < Duration::seconds(WRITER_LEASE_TTL_SECONDS)
     }
@@ -48,8 +48,8 @@ impl WriterLease {
 
 #[derive(Debug, Clone)]
 pub struct Workspace {
-    data_root: PathBuf,
-    manifest: WorkspaceManifest,
+    pub(crate) data_root: PathBuf,
+    pub(crate) manifest: WorkspaceManifest,
 }
 
 pub struct WorkspaceWriter<'a> {
@@ -88,17 +88,21 @@ impl Workspace {
         })
     }
 
-    pub fn open(data_root: impl AsRef<Path>) -> Result<Self> {
+    pub fn inspect(data_root: impl AsRef<Path>) -> Result<Self> {
         let data_root = fs::canonicalize(data_root)?;
         let manifest_path = data_root.join(".omnicreator/workspace.json");
         let manifest: WorkspaceManifest = serde_json::from_slice(&fs::read(&manifest_path)?)?;
         validate_manifest(&manifest)?;
-        create_layout(&data_root)?;
-
         Ok(Self {
             data_root,
             manifest,
         })
+    }
+
+    pub fn open(data_root: impl AsRef<Path>) -> Result<Self> {
+        let workspace = Self::inspect(data_root)?;
+        create_layout(&workspace.data_root)?;
+        Ok(workspace)
     }
 
     pub fn data_root(&self) -> &Path {
@@ -188,7 +192,7 @@ impl Workspace {
         self.persist_manifest()
     }
 
-    fn mark_writer_open(&mut self, device_id: &str) -> Result<()> {
+    pub(crate) fn mark_writer_open(&mut self, device_id: &str) -> Result<()> {
         self.manifest.last_clean_shutdown = false;
         self.manifest.last_writer_device = Some(device_id.to_owned());
         self.manifest.updated_at = Utc::now();
@@ -202,7 +206,7 @@ impl Workspace {
         )
     }
 
-    fn lease_path(&self) -> PathBuf {
+    pub(crate) fn lease_path(&self) -> PathBuf {
         self.data_root.join(".omnicreator/writer-lease.json")
     }
 }
@@ -285,7 +289,7 @@ fn validate_manifest(manifest: &WorkspaceManifest) -> Result<()> {
     Ok(())
 }
 
-fn validate_lease(lease: &WriterLease, workspace_id: &str) -> Result<()> {
+pub(crate) fn validate_lease(lease: &WriterLease, workspace_id: &str) -> Result<()> {
     if lease.schema != WRITER_LEASE_SCHEMA
         || lease.schema_version != WRITER_LEASE_SCHEMA_VERSION
         || lease.workspace_id != workspace_id
