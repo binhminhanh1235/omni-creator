@@ -71,7 +71,13 @@ impl SegmentTtsProductionInputV1 {
                 "unsupported segment TTS production input schema/version".to_owned(),
             ));
         }
+        require_identifier("segment TTS source_text", &self.source_text)?;
         require_identifier("segment TTS normalized_text", &self.normalized_text)?;
+        if self.normalized_text != normalize_segment_text_v1(&self.source_text) {
+            return Err(Error::InvalidContract(
+                "segment TTS normalized_text is stale for the current source_text".to_owned(),
+            ));
+        }
         require_identifier(
             "segment TTS normalization_version",
             &self.normalization_version,
@@ -157,6 +163,7 @@ pub enum SegmentTtsPreflightIssueCodeV1 {
     SourceTextMissing,
     NormalizedTextMissing,
     NormalizationVersionMissing,
+    NormalizationStale,
     NormalizationUnlocked,
     PronunciationUnlocked,
     PronunciationRuleInvalid,
@@ -284,6 +291,16 @@ pub fn evaluate_segment_tts_preflight_v1(
             &mut issues,
             SegmentTtsPreflightIssueCodeV1::NormalizationVersionMissing,
             "The normalization contract version is unknown.",
+        );
+    }
+    if !input.source_text.trim().is_empty()
+        && !input.normalized_text.trim().is_empty()
+        && input.normalized_text != normalize_segment_text_v1(&input.source_text)
+    {
+        push_issue(
+            &mut issues,
+            SegmentTtsPreflightIssueCodeV1::NormalizationStale,
+            "Source narration changed after normalization; normalize and lock it again.",
         );
     }
     if !locks.normalization_locked {
