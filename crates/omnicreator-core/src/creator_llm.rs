@@ -314,8 +314,10 @@ mod tests {
 
     #[test]
     fn generated_scene_validation_accepts_contract_aligned_output() {
-        let mut options = SceneIntentGenerationOptions::default();
-        options.avoid = vec!["generic praying hands".to_owned()];
+        let options = SceneIntentGenerationOptions {
+            avoid: vec!["generic praying hands".to_owned()],
+            ..Default::default()
+        };
 
         validate_generated_scene_intent(&valid_scene(), &segment(), "SC17", &options).unwrap();
     }
@@ -356,8 +358,10 @@ mod tests {
 
     #[test]
     fn generated_scene_validation_preserves_required_avoid_rules() {
-        let mut options = SceneIntentGenerationOptions::default();
-        options.avoid = vec!["church silhouette".to_owned()];
+        let options = SceneIntentGenerationOptions {
+            avoid: vec!["church silhouette".to_owned()],
+            ..Default::default()
+        };
 
         let error = validate_generated_scene_intent(&valid_scene(), &segment(), "SC17", &options)
             .unwrap_err();
