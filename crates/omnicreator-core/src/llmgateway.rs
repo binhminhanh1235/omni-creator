@@ -254,6 +254,41 @@ pub struct LlmChatResult {
     pub model: Option<String>,
     pub content: String,
 }
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LlmGatewayRouteCandidate {
+    pub route_id: String,
+    pub transport: String,
+    pub eligible: bool,
+    pub selected: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LlmGatewayRouteTrace {
+    pub selected_route: Option<String>,
+    #[serde(default)]
+    pub candidates: Vec<LlmGatewayRouteCandidate>,
+}
+
+impl LlmGatewayRouteTrace {
+    pub fn selected_candidate(&self) -> Option<&LlmGatewayRouteCandidate> {
+        self.candidates
+            .iter()
+            .find(|candidate| candidate.selected)
+            .or_else(|| {
+                self.selected_route.as_deref().and_then(|route_id| {
+                    self.candidates
+                        .iter()
+                        .find(|candidate| candidate.route_id == route_id)
+                })
+            })
+    }
+
+    pub fn selected_transport(&self) -> Option<&str> {
+        self.selected_candidate()
+            .map(|candidate| candidate.transport.as_str())
+    }
+}
+
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct StructuredOutputOptions {
@@ -339,6 +374,48 @@ impl LlmGatewayClient {
         let value = serde_json::to_value(request)?;
         let response = self.post_json("/v1/chat/completions", &value)?;
         parse_chat_result(response)
+    }
+
+    pub fn chat_raw(&self, body: &Value) -> Result<LlmChatResult> {
+        validate_raw_chat_body(body)?;
+        let response = self.post_json("/v1/chat/completions", body)?;
+        parse_chat_result(response)
+    }
+
+    pub fn explain_routes_for_body(
+        &self,
+        model: &str,
+        body: &Value,
+    ) -> Result<LlmGatewayRouteTrace> {
+        if model.trim().is_empty() {
+            return Err(Error::InvalidLlmGatewayConfig(
+                "route explain model must not be empty".to_owned(),
+            ));
+        }
+        validate_raw_chat_body(body)?;
+
+        let response = self.post_json(
+            "/_llmgateway/routes/explain",
+            &serde_json::json!({
+                "model": model,
+                "body": body,
+            }),
+        )?;
+        let trace: LlmGatewayRouteTrace = serde_json::from_value(response).map_err(|error| {
+            Error::InvalidLlmGatewayResponse(format!(
+                "invalid route explain response: {error}"
+            ))
+        })?;
+
+        if trace
+            .selected_candidate()
+            .is_some_and(|candidate| candidate.transport.trim().is_empty())
+        {
+            return Err(Error::InvalidLlmGatewayResponse(
+                "selected route explain candidate has empty transport".to_owned(),
+            ));
+        }
+        Ok(trace)
     }
 
     pub fn chat_with_default_model(
@@ -449,6 +526,69 @@ fn decode_http_response(
         }
         Err(ureq::Error::Transport(error)) => Err(Error::LlmGatewayTransport(error.to_string())),
     }
+}
+
+fn validate_raw_chat_body(body: &Value) -> Result<()> {
+    let object = body.as_object().ok_or_else(|| {
+        Error::InvalidLlmGatewayConfig("raw chat body must be a JSON object".to_owned())
+    })?;
+
+    let model = object.get("model").and_then(Value::as_str).unwrap_or_default();
+    if model.trim().is_empty() {
+        return Err(Error::InvalidLlmGatewayConfig(
+            "raw chat model must not be empty".to_owned(),
+        ));
+    }
+
+    if object
+        .get("stream")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        return Err(Error::InvalidLlmGatewayConfig(
+            "streaming is not supported by this adapter yet".to_owned(),
+        ));
+    }
+
+    let messages = object
+        .get("messages")
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            Error::InvalidLlmGatewayConfig(
+                "raw chat messages must be a non-empty array".to_owned(),
+            )
+        })?;
+    if messages.is_empty() {
+        return Err(Error::InvalidLlmGatewayConfig(
+            "raw chat messages must be a non-empty array".to_owned(),
+        ));
+    }
+
+    for message in messages {
+        let message = message.as_object().ok_or_else(|| {
+            Error::InvalidLlmGatewayConfig("raw chat message must be an object".to_owned())
+        })?;
+        if message
+            .get("role")
+            .and_then(Value::as_str)
+            .is_none_or(|role| role.trim().is_empty())
+        {
+            return Err(Error::InvalidLlmGatewayConfig(
+                "raw chat message role must not be empty".to_owned(),
+            ));
+        }
+        match message.get("content") {
+            Some(Value::String(content)) if !content.trim().is_empty() => {}
+            Some(Value::Array(parts)) if !parts.is_empty() => {}
+            _ => {
+                return Err(Error::InvalidLlmGatewayConfig(
+                    "raw chat message content must be non-empty text or content parts".to_owned(),
+                ));
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn parse_gateway_error(status: u16, body: &str) -> Error {
@@ -693,6 +833,52 @@ mod tests {
         assert!(json.get("provider").is_none());
         assert!(json.get("account").is_none());
         assert!(json.get("route").is_none());
+    }
+
+    #[test]
+    fn raw_chat_accepts_openai_multimodal_content_parts() {
+        let body = serde_json::json!({
+            "model": "vision-model",
+            "messages": [{
+                "role": "user",
+                "content": [
+                    {"type":"text","text":"Evaluate this preview."},
+                    {"type":"image_url","image_url":{"url":"https://images.example/preview.jpg"}}
+                ]
+            }],
+            "stream": false,
+            "llmgateway_task": "reasoning"
+        });
+
+        validate_raw_chat_body(&body).unwrap();
+    }
+
+    #[test]
+    fn route_trace_exposes_selected_transport_for_capability_guards() {
+        let trace: LlmGatewayRouteTrace = serde_json::from_value(serde_json::json!({
+            "selected_route":"openrouter-vision",
+            "candidates":[
+                {
+                    "route_id":"gemini-browser",
+                    "transport":"browser",
+                    "eligible":true,
+                    "selected":false
+                },
+                {
+                    "route_id":"openrouter-vision",
+                    "transport":"api",
+                    "eligible":true,
+                    "selected":true
+                }
+            ]
+        }))
+        .unwrap();
+
+        assert_eq!(trace.selected_transport(), Some("api"));
+        assert_eq!(
+            trace.selected_candidate().map(|candidate| candidate.route_id.as_str()),
+            Some("openrouter-vision")
+        );
     }
 
     #[test]
