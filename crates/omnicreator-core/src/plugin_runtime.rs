@@ -78,9 +78,7 @@ impl PluginRegistry {
     }
 
     pub fn plugin_ids_for_type(&self, plugin_type: &str) -> &[String] {
-        self.by_type
-            .get(plugin_type)
-            .map_or(&[], Vec::as_slice)
+        self.by_type.get(plugin_type).map_or(&[], Vec::as_slice)
     }
 
     pub fn plugin_ids_for_capability(&self, capability: &str) -> &[String] {
