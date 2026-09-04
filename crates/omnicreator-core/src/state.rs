@@ -75,8 +75,14 @@ CREATE INDEX IF NOT EXISTS idx_artifacts_input_hash ON artifacts(input_hash);
 CREATE INDEX IF NOT EXISTS idx_jobs_input_hash ON jobs(input_hash);
 "#;
 
+const MIGRATION_V3: &str = r#"
+CREATE INDEX IF NOT EXISTS idx_steps_project ON steps(project_id);
+CREATE INDEX IF NOT EXISTS idx_dependencies_downstream ON dependencies(downstream_step_id);
+CREATE INDEX IF NOT EXISTS idx_attempts_job ON attempts(job_id);
+"#;
+
 pub struct StateStore {
-    connection: Connection,
+    pub(crate) connection: Connection,
 }
 
 impl StateStore {
@@ -106,6 +112,7 @@ impl StateStore {
         )?;
         self.apply_migration(1, MIGRATION_V1)?;
         self.apply_migration(2, MIGRATION_V2)?;
+        self.apply_migration(3, MIGRATION_V3)?;
         Ok(())
     }
 
@@ -449,7 +456,7 @@ fn artifact_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Artifact> {
     })
 }
 
-fn parse_step_status(value: &str, column: usize) -> rusqlite::Result<StepStatus> {
+pub(crate) fn parse_step_status(value: &str, column: usize) -> rusqlite::Result<StepStatus> {
     let status = match value {
         "NOT_READY" => StepStatus::NotReady,
         "READY" => StepStatus::Ready,
