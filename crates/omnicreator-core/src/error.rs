@@ -30,8 +30,20 @@ pub enum Error {
     PathEscape(String),
     #[error("artifact URI requires artifact-store lookup: {0}")]
     ArtifactResolutionRequired(String),
+    #[error("artifact target already exists: {0}")]
+    ArtifactTargetExists(PathBuf),
+    #[error("artifact hash verification failed for {0}")]
+    ArtifactHashMismatch(String),
+    #[error("invalid artifact: {0}")]
+    InvalidArtifact(String),
+    #[error("artifact not found: {0}")]
+    ArtifactNotFound(String),
     #[error("project not found: {0}")]
     ProjectNotFound(String),
+    #[error("job not found: {0}")]
+    JobNotFound(String),
+    #[error("invalid job state: {0}")]
+    InvalidJobState(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
