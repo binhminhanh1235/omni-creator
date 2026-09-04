@@ -283,7 +283,11 @@ impl StructuredOutputOptions {
                 "structured output contract must not be empty".to_owned(),
             ));
         }
-        if self.model.as_ref().is_some_and(|model| model.trim().is_empty()) {
+        if self
+            .model
+            .as_ref()
+            .is_some_and(|model| model.trim().is_empty())
+        {
             return Err(Error::InvalidLlmGatewayConfig(
                 "structured output model must not be empty when present".to_owned(),
             ));
@@ -513,18 +517,14 @@ fn parse_models(value: Value) -> Result<Vec<LlmGatewayModel>> {
     Ok(models)
 }
 
-
-fn decode_structured_output<T, F>(
-    content: &str,
-    validate: &F,
-) -> std::result::Result<T, String>
+fn decode_structured_output<T, F>(content: &str, validate: &F) -> std::result::Result<T, String>
 where
     T: DeserializeOwned,
     F: Fn(&T) -> Result<()>,
 {
     let candidate = extract_json_candidate(content)?;
-    let value: Value = serde_json::from_str(candidate)
-        .map_err(|error| format!("invalid JSON: {error}"))?;
+    let value: Value =
+        serde_json::from_str(candidate).map_err(|error| format!("invalid JSON: {error}"))?;
     let decoded: T = serde_json::from_value(value)
         .map_err(|error| format!("contract decoding failed: {error}"))?;
     validate(&decoded).map_err(|error| format!("contract validation failed: {error}"))?;
@@ -732,7 +732,6 @@ mod tests {
         assert_eq!(result.id.as_deref(), Some("chatcmpl_123"));
         assert_eq!(result.content, "{\"ok\":true}");
     }
-
 
     #[test]
     fn structured_output_extracts_json_from_fenced_response() {
