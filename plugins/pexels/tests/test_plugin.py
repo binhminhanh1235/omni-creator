@@ -3,6 +3,7 @@ import json
 import os
 import pathlib
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 from urllib.error import HTTPError
@@ -63,9 +64,29 @@ VIDEO_FIXTURE = {
         {
             "id": 7,
             "quality": "hd",
+            "file_type": "video/mp4",
+            "width": 4096,
+            "height": 2160,
+            "fps": 24.0,
+            "link": "https://player.vimeo.com/external/video-4k.mp4",
+        },
+        {
+            "id": 8,
+            "quality": "hd",
+            "file_type": "video/mp4",
             "width": 1920,
             "height": 1080,
-            "link": "https://full.example/video.mp4",
+            "fps": 24.0,
+            "link": "https://player.vimeo.com/external/video-1080.mp4",
+        },
+        {
+            "id": 9,
+            "quality": "hd",
+            "file_type": "video/mp4",
+            "width": 1280,
+            "height": 720,
+            "fps": 24.0,
+            "link": "https://player.vimeo.com/external/video-720.mp4",
         }
     ],
     "video_pictures": [
@@ -85,7 +106,7 @@ PHOTO_FIXTURE = {
     "photographer": "Photo Creator",
     "photographer_url": "https://www.pexels.com/@photo-creator",
     "src": {
-        "original": "https://full.example/original.jpg",
+        "original": "https://images.pexels.com/photos/2014422/original.jpeg",
         "large": "https://preview.example/large.jpg",
         "medium": "https://preview.example/medium.jpg",
         "small": "https://preview.example/small.jpg",
@@ -99,6 +120,7 @@ class FakeClient:
         self.api_key = api_key
         self.video_queries = []
         self.photo_queries = []
+        self.downloads = []
 
     def search_videos(self, query, **kwargs):
         self.video_queries.append((query, kwargs))
@@ -113,6 +135,23 @@ class FakeClient:
             data={"photos": [PHOTO_FIXTURE]},
             quota={"limit": 20000, "remaining": 19997, "reset": 1999999999},
         )
+
+    def get_video(self, asset_id):
+        return plugin.PexelsResponse(
+            data=VIDEO_FIXTURE,
+            quota={"limit": 20000, "remaining": 19996, "reset": 1999999999},
+        )
+
+    def get_photo(self, asset_id):
+        return plugin.PexelsResponse(
+            data=PHOTO_FIXTURE,
+            quota={"limit": 20000, "remaining": 19995, "reset": 1999999999},
+        )
+
+    def download_to_path(self, url, destination):
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"fixture selected media")
+        self.downloads.append((url, destination))
 
 
 class PexelsPluginTests(unittest.TestCase):
@@ -149,7 +188,7 @@ class PexelsPluginTests(unittest.TestCase):
             "https://preview.example/medium.jpg",
         )
         self.assertNotIn("original", encoded)
-        self.assertNotIn("https://full.example/original.jpg", encoded)
+        self.assertNotIn("https://images.pexels.com/photos/2014422/original.jpeg", encoded)
 
     def test_video_normalization_keeps_preview_frames_not_video_files(self):
         candidate = plugin.normalize_video("SC17", VIDEO_FIXTURE)
@@ -159,7 +198,7 @@ class PexelsPluginTests(unittest.TestCase):
         self.assertEqual(candidate["creator_name"], "Video Creator")
         self.assertGreaterEqual(len(candidate["previews"]), 2)
         self.assertNotIn("video_files", encoded)
-        self.assertNotIn("https://full.example/video.mp4", encoded)
+        self.assertNotIn("https://player.vimeo.com/external/video-1080.mp4", encoded)
 
     def test_visual_resolve_deduplicates_across_queries_and_never_returns_full_urls(self):
         state = plugin.PluginState()
@@ -199,7 +238,8 @@ class PexelsPluginTests(unittest.TestCase):
         )
         encoded = json.dumps(result)
         self.assertNotIn("video_files", encoded)
-        self.assertNotIn("https://full.example/", encoded)
+        self.assertNotIn("https://player.vimeo.com/external/video-", encoded)
+        self.assertNotIn("https://images.pexels.com/photos/2014422/original.jpeg", encoded)
         self.assertEqual(
             fake.video_queries[0][1]["orientation"],
             "landscape",
@@ -267,6 +307,142 @@ class PexelsPluginTests(unittest.TestCase):
         self.assertEqual(response["request_id"], "req_123")
         self.assertTrue(response["result"]["preview_only"])
         self.assertEqual(fake.video_queries[0][1]["orientation"], "square")
+
+    def test_client_get_by_id_uses_documented_pexels_paths(self):
+        video_opener = RecordingOpener(VIDEO_FIXTURE)
+        video_client = plugin.PexelsClient("secret-key", opener=video_opener)
+        video_client.get_video("2499611")
+        self.assertTrue(
+            video_opener.requests[0][0].full_url.endswith(
+                "/v1/videos/videos/2499611"
+            )
+        )
+
+        photo_opener = RecordingOpener(PHOTO_FIXTURE)
+        photo_client = plugin.PexelsClient("secret-key", opener=photo_opener)
+        photo_client.get_photo("2014422")
+        self.assertTrue(
+            photo_opener.requests[0][0].full_url.endswith("/v1/photos/2014422")
+        )
+
+    def test_standard_video_source_prefers_1080p_and_high_prefers_largest(self):
+        standard = plugin.select_video_file(VIDEO_FIXTURE, "standard")
+        high = plugin.select_video_file(VIDEO_FIXTURE, "high")
+
+        self.assertEqual((standard["width"], standard["height"]), (1920, 1080))
+        self.assertEqual((high["width"], high["height"]), (4096, 2160))
+
+    def test_fetch_selected_video_downloads_only_chosen_asset_into_workspace(self):
+        with tempfile.TemporaryDirectory() as root:
+            output = pathlib.Path(root) / "output"
+            temp = pathlib.Path(root) / "temp"
+            output.mkdir()
+            temp.mkdir()
+
+            state = plugin.PluginState()
+            state.initialize(
+                {
+                    "job_workspace": {
+                        "output": str(output),
+                        "temp": str(temp),
+                    },
+                    "settings": {"api_key_env": "PEXELS_API_KEY"},
+                }
+            )
+            fake = FakeClient("machine-secret")
+
+            with patch.dict(
+                os.environ,
+                {"PEXELS_API_KEY": "machine-secret"},
+                clear=False,
+            ):
+                result = plugin.execute_fetch_selected(
+                    {
+                        "selection_ref": "pexels:video:2499611",
+                        "quality_mode": "standard",
+                    },
+                    state,
+                    client_factory=lambda api_key: fake,
+                )
+
+            selected = output / result["relative_output"]
+            self.assertTrue(selected.is_file())
+            self.assertEqual(selected.read_bytes(), b"fixture selected media")
+            self.assertEqual((result["width"], result["height"]), (1920, 1080))
+            self.assertEqual(result["source_asset_id"], "2499611")
+            self.assertEqual(result["provenance"]["creator_name"], "Video Creator")
+            self.assertIn("Video by Video Creator on Pexels", result["provenance"]["attribution"])
+            self.assertEqual(len(fake.downloads), 1)
+            self.assertIn("video-1080.mp4", fake.downloads[0][0])
+            encoded = json.dumps(result)
+            self.assertNotIn("player.vimeo.com", encoded)
+
+    def test_fetch_selected_photo_uses_original_and_preserves_attribution(self):
+        with tempfile.TemporaryDirectory() as root:
+            output = pathlib.Path(root) / "output"
+            temp = pathlib.Path(root) / "temp"
+            output.mkdir()
+            temp.mkdir()
+
+            state = plugin.PluginState()
+            state.initialize(
+                {
+                    "job_workspace": {
+                        "output": str(output),
+                        "temp": str(temp),
+                    }
+                }
+            )
+            fake = FakeClient("machine-secret")
+
+            with patch.dict(
+                os.environ,
+                {"PEXELS_API_KEY": "machine-secret"},
+                clear=False,
+            ):
+                result = plugin.execute_fetch_selected(
+                    {"selection_ref": "pexels:image:2014422"},
+                    state,
+                    client_factory=lambda api_key: fake,
+                )
+
+            selected = output / result["relative_output"]
+            self.assertTrue(selected.is_file())
+            self.assertTrue(result["relative_output"].endswith(".jpeg"))
+            self.assertEqual(result["provenance"]["creator_name"], "Photo Creator")
+            self.assertEqual(
+                fake.downloads[0][0],
+                "https://images.pexels.com/photos/2014422/original.jpeg",
+            )
+            self.assertNotIn(
+                "https://images.pexels.com/photos/2014422/original.jpeg",
+                json.dumps(result),
+            )
+
+    def test_fetch_selected_requires_initialized_workspace(self):
+        state = plugin.PluginState()
+        fake = FakeClient("machine-secret")
+
+        with patch.dict(
+            os.environ,
+            {"PEXELS_API_KEY": "machine-secret"},
+            clear=False,
+        ):
+            with self.assertRaises(plugin.PluginFailure) as raised:
+                plugin.execute_fetch_selected(
+                    {"selection_ref": "pexels:video:2499611"},
+                    state,
+                    client_factory=lambda api_key: fake,
+                )
+
+        self.assertEqual(raised.exception.code, "WORKSPACE_REQUIRED")
+
+    def test_invalid_selection_ref_is_rejected_before_provider_call(self):
+        state = plugin.PluginState()
+        with self.assertRaises(plugin.PluginFailure) as raised:
+            plugin.parse_selection_ref("other:video:2499611")
+
+        self.assertEqual(raised.exception.code, "INVALID_SELECTION_REF")
 
     def test_unsupported_operation_returns_stable_fatal_error(self):
         state = plugin.PluginState()
