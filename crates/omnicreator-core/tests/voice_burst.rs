@@ -64,10 +64,7 @@ fn provider_snapshot(max_parallel_jobs: u32) -> ComputeProviderSchedulingSnapsho
     }
 }
 
-fn tts_preparation(
-    segment_id: &str,
-    spec: VoiceFixtureSpec<'_>,
-) -> SegmentTtsPreparationV1 {
+fn tts_preparation(segment_id: &str, spec: VoiceFixtureSpec<'_>) -> SegmentTtsPreparationV1 {
     let segment = SegmentV1 {
         schema: SEGMENT_SCHEMA.to_owned(),
         schema_version: SEGMENT_SCHEMA_VERSION,
