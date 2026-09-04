@@ -622,11 +622,11 @@ fn validate_raw_chat_body(body: &Value) -> Result<()> {
         let message = message.as_object().ok_or_else(|| {
             Error::InvalidLlmGatewayConfig("raw chat message must be an object".to_owned())
         })?;
-        if message
-            .get("role")
-            .and_then(Value::as_str)
-            .is_none_or(|role| role.trim().is_empty())
-        {
+        let role_is_empty = match message.get("role").and_then(Value::as_str) {
+            Some(role) => role.trim().is_empty(),
+            None => true,
+        };
+        if role_is_empty {
             return Err(Error::InvalidLlmGatewayConfig(
                 "raw chat message role must not be empty".to_owned(),
             ));
