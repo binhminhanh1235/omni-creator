@@ -14,7 +14,10 @@ impl StepStatus {
         }
 
         match self {
-            Self::NotReady => matches!(next, Self::Ready | Self::Stale | Self::Skipped | Self::Cancelled),
+            Self::NotReady => matches!(
+                next,
+                Self::Ready | Self::Stale | Self::Skipped | Self::Cancelled
+            ),
             Self::Ready => matches!(
                 next,
                 Self::Queued
@@ -59,7 +62,10 @@ impl StepStatus {
                     | Self::Cancelled
             ),
             Self::Fatal => matches!(next, Self::Stale),
-            Self::Stale => matches!(next, Self::NotReady | Self::Ready | Self::Skipped | Self::Cancelled),
+            Self::Stale => matches!(
+                next,
+                Self::NotReady | Self::Ready | Self::Skipped | Self::Cancelled
+            ),
             Self::Skipped => matches!(next, Self::Ready | Self::Stale),
             Self::Cancelled => matches!(next, Self::Ready | Self::Stale),
         }
@@ -315,10 +321,7 @@ impl StateStore {
                 attempt.started_at.to_rfc3339(),
             ],
         )?;
-        transaction.execute(
-            "UPDATE jobs SET status='RUNNING' WHERE id=?1",
-            [job_id],
-        )?;
+        transaction.execute("UPDATE jobs SET status='RUNNING' WHERE id=?1", [job_id])?;
         transaction.commit()?;
         Ok(attempt)
     }
@@ -349,12 +352,7 @@ impl StateStore {
 
     pub fn finish_attempt_success(&mut self, attempt_id: &str) -> Result<Attempt> {
         let attempt = self.get_attempt(attempt_id)?;
-        ensure_transition(
-            attempt.status,
-            StepStatus::Succeeded,
-            "attempt",
-            attempt_id,
-        )?;
+        ensure_transition(attempt.status, StepStatus::Succeeded, "attempt", attempt_id)?;
         let job = self.get_job(&attempt.job_id)?;
         if job.status != StepStatus::Running {
             return Err(Error::InvalidTransition(format!(
@@ -495,12 +493,7 @@ impl StateStore {
     }
 }
 
-fn ensure_transition(
-    current: StepStatus,
-    next: StepStatus,
-    entity: &str,
-    id: &str,
-) -> Result<()> {
+fn ensure_transition(current: StepStatus, next: StepStatus, entity: &str, id: &str) -> Result<()> {
     if current.can_transition_to(next) {
         return Ok(());
     }
@@ -609,7 +602,10 @@ mod tests {
             .unwrap();
 
         assert_eq!(state.refresh_ready_steps(&project.id).unwrap(), 1);
-        assert_eq!(state.get_step(&root.step_id).unwrap().status, StepStatus::Ready);
+        assert_eq!(
+            state.get_step(&root.step_id).unwrap().status,
+            StepStatus::Ready
+        );
         assert_eq!(
             state.get_step(&downstream.step_id).unwrap().status,
             StepStatus::NotReady
@@ -645,7 +641,13 @@ mod tests {
             )
             .unwrap();
         let tts = state
-            .create_step(&project.id, "tts", "S04", StepStatus::Succeeded, Some("old-tts"))
+            .create_step(
+                &project.id,
+                "tts",
+                "S04",
+                StepStatus::Succeeded,
+                Some("old-tts"),
+            )
             .unwrap();
         let timing = state
             .create_step(
@@ -681,8 +683,14 @@ mod tests {
             .invalidate_from(&script.step_id, Some("new-script"))
             .unwrap();
         assert_eq!(impact, preview);
-        assert_eq!(state.get_step(&script.step_id).unwrap().status, StepStatus::Stale);
-        assert_eq!(state.get_step(&tts.step_id).unwrap().status, StepStatus::Stale);
+        assert_eq!(
+            state.get_step(&script.step_id).unwrap().status,
+            StepStatus::Stale
+        );
+        assert_eq!(
+            state.get_step(&tts.step_id).unwrap().status,
+            StepStatus::Stale
+        );
         assert_eq!(
             state.get_step(&timing.step_id).unwrap().status,
             StepStatus::Stale
@@ -692,7 +700,11 @@ mod tests {
             StepStatus::Succeeded
         );
         assert_eq!(
-            state.get_step(&script.step_id).unwrap().input_hash.as_deref(),
+            state
+                .get_step(&script.step_id)
+                .unwrap()
+                .input_hash
+                .as_deref(),
             Some("new-script")
         );
         assert!(state.get_project(&project.id).unwrap().production_lock);
@@ -779,12 +791,17 @@ mod tests {
         let job = state
             .create_job(&project.id, "tts", "S01", "input-hash")
             .unwrap();
-        let attempt = state.start_attempt(&job.job_id, Some("remote-gpu")).unwrap();
+        let attempt = state
+            .start_attempt(&job.job_id, Some("remote-gpu"))
+            .unwrap();
 
         let summary = state.reconcile_interrupted_jobs().unwrap();
         assert_eq!(summary.jobs_marked_retryable, 1);
         assert_eq!(summary.attempts_marked_retryable, 1);
-        assert_eq!(state.get_job(&job.job_id).unwrap().status, StepStatus::Retryable);
+        assert_eq!(
+            state.get_job(&job.job_id).unwrap().status,
+            StepStatus::Retryable
+        );
 
         let reconciled_attempt = state.get_attempt(&attempt.attempt_id).unwrap();
         assert_eq!(reconciled_attempt.status, StepStatus::Retryable);
