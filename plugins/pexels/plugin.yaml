@@ -17,6 +17,7 @@ capabilities:
   - stock_video
   - stock_image
   - preview_first_search
+  - selected_asset_download
 
 scene_types:
   - literal
@@ -26,6 +27,8 @@ scene_types:
 permissions:
   network:
     - api.pexels.com
+    - images.pexels.com
+    - player.vimeo.com
   filesystem:
     - job-workspace
 
