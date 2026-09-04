@@ -16,7 +16,9 @@ pub enum Error {
     WorkspaceBusy(String),
     #[error("invalid machine binding: {0}")]
     InvalidMachineBinding(String),
-    #[error("machine binding points to a different workspace: expected {expected}, found {actual}")]
+    #[error(
+        "machine binding points to a different workspace: expected {expected}, found {actual}"
+    )]
     WorkspaceBindingMismatch { expected: String, actual: String },
     #[error("invalid handoff: {0}")]
     InvalidHandoff(String),
