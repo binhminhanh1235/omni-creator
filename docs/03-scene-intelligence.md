@@ -225,6 +225,24 @@ C 82%  walking alone
 
 Codec, bitrate and raw API metadata belong in Advanced/Details.
 
+### Runtime v1 review payload
+
+The default review boundary is deliberately human-first:
+
+- show at most three candidates by default, configurable up to six
+- keep the deterministic ranking order
+- expose one preferred preview, user-facing score, score breakdown and concise rationale
+- show cliché/reuse cautions when penalties were applied
+- preserve contributor name where available
+- expose a recommended candidate as a suggestion only
+- always require an explicit selection decision in the default workflow
+- omit provider asset IDs, selection references, source/download URLs, dimensions, duration and provider file details
+
+Core retains the complete ranked candidate records. Advanced/Details can resolve a candidate ID back
+to its full candidate + score record when technical inspection is actually needed.
+
+This keeps the normal decision focused on meaning and fit rather than media plumbing.
+
 ## Mixed visual routing
 
 A video does not need one provider for every scene.
