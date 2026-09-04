@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    Error, RankedVisualCandidate, Result, SceneIntentV1, VisualCandidate, VisualCandidatePreview,
-    VisualCandidateScore, VisualMediaType, VisualPreviewKind,
+    visual_vision::VisualVisionEvaluationSet, Error, RankedVisualCandidate, Result, SceneIntentV1,
+    VisualCandidate, VisualCandidatePreview, VisualCandidateScore, VisualMediaType,
+    VisualPreviewKind,
 };
 
 pub const DEFAULT_VISUAL_REVIEW_LIMIT: usize = 3;
@@ -44,6 +45,17 @@ pub struct VisualReviewScoreBreakdown {
     pub penalty_points: u8,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct VisualReviewVisionSummary {
+    pub fit_percent: u8,
+    pub semantic_points: u8,
+    pub emotional_points: u8,
+    pub purpose_points: u8,
+    pub visual_quality_points: u8,
+    pub editability_points: u8,
+    pub rationale: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct VisualReviewCandidate {
     pub rank: u32,
@@ -57,6 +69,8 @@ pub struct VisualReviewCandidate {
     pub rationale: String,
     #[serde(default)]
     pub cautions: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vision: Option<VisualReviewVisionSummary>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -119,6 +133,7 @@ pub fn build_visual_review(
             score_breakdown: score_breakdown(&ranked_candidate.score),
             rationale: deterministic_rationale(&ranked_candidate.score),
             cautions: score_cautions(&ranked_candidate.score),
+            vision: None,
         });
     }
 
@@ -133,6 +148,40 @@ pub fn build_visual_review(
         selection_required: true,
         candidates,
     })
+}
+
+pub fn enrich_visual_review_with_vision(
+    review: &mut VisualReviewSet,
+    vision: &VisualVisionEvaluationSet,
+) -> Result<usize> {
+    let mut enriched = 0usize;
+
+    for evaluation in &vision.evaluations {
+        evaluation.validate()?;
+        let candidate = review
+            .candidates
+            .iter_mut()
+            .find(|candidate| candidate.candidate_id == evaluation.candidate_id)
+            .ok_or_else(|| {
+                Error::InvalidContract(format!(
+                    "visual vision evaluation references candidate outside review set: {}",
+                    evaluation.candidate_id
+                ))
+            })?;
+
+        candidate.vision = Some(VisualReviewVisionSummary {
+            fit_percent: percentage(evaluation.fit_score()),
+            semantic_points: percentage(evaluation.semantic_relevance),
+            emotional_points: percentage(evaluation.emotional_relevance),
+            purpose_points: percentage(evaluation.narrative_purpose),
+            visual_quality_points: percentage(evaluation.visual_quality),
+            editability_points: percentage(evaluation.editability),
+            rationale: evaluation.rationale.trim().to_owned(),
+        });
+        enriched += 1;
+    }
+
+    Ok(enriched)
 }
 
 pub fn visual_review_advanced_details(
@@ -367,6 +416,7 @@ mod tests {
         assert!(candidate.get("width").is_none());
         assert!(candidate.get("height").is_none());
         assert!(candidate.get("duration").is_none());
+        assert!(candidate.get("vision").is_none());
     }
 
     #[test]
@@ -411,6 +461,53 @@ mod tests {
         assert_eq!(details.candidate.selection_ref, "pexels:video:A");
         assert_eq!(details.candidate.width, Some(3840));
         assert_eq!(details.score.final_score, 0.92);
+    }
+
+    #[test]
+    fn vision_enrichment_adds_human_facing_summary_without_changing_rank() {
+        let mut review = build_visual_review(
+            &scene(),
+            &[ranked("A", 0.92, false), ranked("B", 0.88, false)],
+            VisualReviewOptions::default(),
+        )
+        .unwrap();
+
+        let before = review
+            .candidates
+            .iter()
+            .map(|candidate| candidate.candidate_id.clone())
+            .collect::<Vec<_>>();
+
+        let count = enrich_visual_review_with_vision(
+            &mut review,
+            &VisualVisionEvaluationSet {
+                evaluations: vec![crate::VisualVisionEvaluation {
+                    candidate_id: "A".to_owned(),
+                    semantic_relevance: 0.9,
+                    emotional_relevance: 0.8,
+                    narrative_purpose: 0.7,
+                    visual_quality: 0.8,
+                    editability: 0.6,
+                    rationale: "The preview directly supports cautious rebuilding.".to_owned(),
+                }],
+            },
+        )
+        .unwrap();
+
+        assert_eq!(count, 1);
+        assert_eq!(
+            before,
+            review
+                .candidates
+                .iter()
+                .map(|candidate| candidate.candidate_id.clone())
+                .collect::<Vec<_>>()
+        );
+        let summary = review.candidates[0].vision.as_ref().unwrap();
+        assert_eq!(summary.fit_percent, 76);
+        assert_eq!(summary.semantic_points, 90);
+        assert!(summary.rationale.contains("cautious rebuilding"));
+        assert!(review.candidates[1].vision.is_none());
     }
 
     #[test]
