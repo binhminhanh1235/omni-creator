@@ -203,10 +203,8 @@ fn connect_discovers_capabilities_and_disconnect_is_idempotent() {
 
 #[test]
 fn stale_lost_and_reconnect_are_deterministic() {
-    let provider =
-        FakeProvider::new(&["session-1", "session-2"], fixture_capabilities()).with_heartbeats(&[
-            true, true,
-        ]);
+    let provider = FakeProvider::new(&["session-1", "session-2"], fixture_capabilities())
+        .with_heartbeats(&[true, true]);
     let mut runtime = ComputeProviderRuntime::new(provider, liveness_policy()).unwrap();
     let start = fixed_time();
 
@@ -325,20 +323,16 @@ fn provider_id_mismatch_is_rejected_during_discovery() {
 
 #[test]
 fn liveness_policy_rejects_non_deterministic_thresholds() {
-    assert!(
-        ComputeProviderLivenessPolicyV1 {
-            stale_after_seconds: 0,
-            lost_after_seconds: 30,
-        }
-        .validate_v1()
-        .is_err()
-    );
-    assert!(
-        ComputeProviderLivenessPolicyV1 {
-            stale_after_seconds: 30,
-            lost_after_seconds: 30,
-        }
-        .validate_v1()
-        .is_err()
-    );
+    assert!(ComputeProviderLivenessPolicyV1 {
+        stale_after_seconds: 0,
+        lost_after_seconds: 30,
+    }
+    .validate_v1()
+    .is_err());
+    assert!(ComputeProviderLivenessPolicyV1 {
+        stale_after_seconds: 30,
+        lost_after_seconds: 30,
+    }
+    .validate_v1()
+    .is_err());
 }
