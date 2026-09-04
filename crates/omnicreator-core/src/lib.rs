@@ -8,6 +8,7 @@ pub mod model;
 pub mod path_resolver;
 pub mod protocol;
 pub mod state;
+pub mod workflow;
 pub mod workspace;
 
 pub use artifact_store::ArtifactStore;

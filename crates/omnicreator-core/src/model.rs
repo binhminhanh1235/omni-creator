@@ -100,3 +100,34 @@ pub struct Artifact {
     #[serde(default)]
     pub metadata: serde_json::Value,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WorkflowStep {
+    pub step_id: String,
+    pub project_id: String,
+    pub step: String,
+    pub unit: String,
+    pub status: StepStatus,
+    pub input_hash: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct InvalidationImpact {
+    pub step_id: String,
+    pub step: String,
+    pub unit: String,
+    pub previous_status: StepStatus,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum FailureDisposition {
+    Retryable,
+    Fatal,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReconciliationSummary {
+    pub jobs_marked_retryable: usize,
+    pub attempts_marked_retryable: usize,
+}
