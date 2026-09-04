@@ -82,8 +82,7 @@ impl Workspace {
     }
 
     pub fn sqlite_path(&self) -> PathBuf {
-        self.data_root
-            .join(".omnicreator/state/omnicreator.sqlite")
+        self.data_root.join(".omnicreator/state/omnicreator.sqlite")
     }
 
     pub fn mark_writer_open(&mut self, device_id: &str) -> Result<()> {
