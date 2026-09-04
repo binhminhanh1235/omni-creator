@@ -1,0 +1,28 @@
+{
+  "schema": "omnicreator.project-ir",
+  "schema_version": 1,
+  "id": "prj_fixture",
+  "title": "Portable Contract Fixture",
+  "created_at": "2026-09-04T00:00:00Z",
+  "updated_at": "2026-09-04T01:00:00Z",
+  "studio_pack": "christian-cinematic",
+  "channel_profile": "default",
+  "script_version": 3,
+  "production_lock": true,
+  "segments": [
+    {
+      "schema": "omnicreator.segment",
+      "schema_version": 1,
+      "id": "S01",
+      "order": 1,
+      "text": "Forgiveness is not instant trust.",
+      "voice_direction": {
+        "tone": "warm",
+        "pace": "slower",
+        "tags": ["emphasis"]
+      }
+    }
+  ],
+  "scene_intents": [],
+  "assets": []
+}

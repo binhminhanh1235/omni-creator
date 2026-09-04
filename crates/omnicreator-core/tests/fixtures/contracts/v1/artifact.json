@@ -1,0 +1,15 @@
+{
+  "schema": "omnicreator.artifact",
+  "schema_version": 1,
+  "artifact_id": "AUDIO_221",
+  "artifact_type": "audio",
+  "uri": "project://audio/S04.wav",
+  "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "size_bytes": 48123,
+  "producer_job": "job_01827",
+  "created_at": "2026-09-04T01:02:03Z",
+  "metadata": {
+    "model_version": "omnivoice-v3.2",
+    "voice_version": "warm-v4"
+  }
+}

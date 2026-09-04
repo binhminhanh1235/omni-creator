@@ -1,6 +1,11 @@
-# Plugin API v1 Draft
+# Plugin API v1
 
-Status: design draft, not yet frozen.
+Status: **frozen v1 contract** as of 2026-09-04.
+
+The canonical compatibility anchors are the v1 fixtures under
+`crates/omnicreator-core/tests/fixtures/contracts/v1/`. Any change to this
+spec must preserve those fixtures unless the affected schema/API version is
+explicitly advanced.
 
 ## Goals
 
@@ -17,6 +22,8 @@ Status: design draft, not yet frozen.
 Minimum fields:
 
 ```yaml
+schema: omnicreator.plugin-manifest
+schema_version: 1
 id: stick-figure
 name: Stick Figure Animator
 version: 1.0.0
@@ -201,9 +208,15 @@ Core owns retry policy.
 
 ## API compatibility
 
-Manifest declares `api_version`.
+Plugin API v1 is frozen.
 
-OmniCreator should support a defined compatibility window and reject incompatible plugins with a clear message.
+- Plugin manifests use `schema: omnicreator.plugin-manifest` with `schema_version: 1`.
+- Manifest, request, response and progress envelopes use `api_version: 1`.
+- Core accepts API major version `1` and rejects other API versions with a clear incompatibility error.
+- Additive optional fields may be introduced within v1 only when existing v1 fixtures remain valid and their established semantics do not change.
+- Removing or renaming required fields, changing enum/wire values, or changing the meaning of an existing field requires a new schema/API version.
+- Canonical v1 JSON fixtures are compatibility anchors and are exercised by deterministic serialization tests.
+- Plugins must not infer compatibility from the OmniCreator application version. Compatibility is determined by the declared schema/API versions.
 
 ## SDK goal
 

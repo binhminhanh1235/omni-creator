@@ -1,0 +1,29 @@
+{
+  "schema": "omnicreator.plugin-manifest",
+  "schema_version": 1,
+  "id": "stick-figure",
+  "name": "Stick Figure Animator",
+  "version": "1.0.0",
+  "api_version": 1,
+  "types": ["visual"],
+  "entrypoint": {
+    "command": "python",
+    "args": ["plugin.py"]
+  },
+  "capabilities": ["animation", "conceptual_visual"],
+  "scene_types": ["conceptual", "educational"],
+  "permissions": {
+    "filesystem": ["job-workspace"],
+    "network": []
+  },
+  "settings": {
+    "schema": "settings.schema.json"
+  },
+  "resources": {
+    "gpu": "required",
+    "min_vram_mb": 12000,
+    "model_group": "stick-v1",
+    "parallelizable": true,
+    "cost_metric": "frames"
+  }
+}

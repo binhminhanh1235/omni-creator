@@ -1,0 +1,20 @@
+{
+  "schema": "omnicreator.scene-intent",
+  "schema_version": 1,
+  "id": "SC17",
+  "segment_id": "S04",
+  "narration": "Forgiveness does not automatically restore trust.",
+  "purpose": "Show cautious rebuilding of trust.",
+  "scene_type": "conceptual",
+  "emotion_before": "uncertainty",
+  "emotion_after": "cautious hope",
+  "duration_hint": 11.5,
+  "visual_ideas": ["repairing a broken bridge", "rebuilding a fence"],
+  "search_queries": ["repairing wooden bridge morning", "rebuilding fence careful hands"],
+  "avoid": ["generic praying hands", "church silhouette"],
+  "continuity": {
+    "lighting": "soft dawn",
+    "palette": "neutral"
+  },
+  "aspect_ratio": "16:9"
+}

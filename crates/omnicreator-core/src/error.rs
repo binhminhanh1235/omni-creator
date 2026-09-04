@@ -50,6 +50,8 @@ pub enum Error {
     InvalidJobState(String),
     #[error("invalid workflow transition: {0}")]
     InvalidTransition(String),
+    #[error("invalid contract: {0}")]
+    InvalidContract(String),
     #[error("dependency would create a cycle: {0} -> {1}")]
     DependencyCycle(String, String),
     #[error("workflow dependency crosses project boundaries")]
