@@ -241,6 +241,39 @@ Settings should support visibility levels:
 
 Default users should see only meaningful presets.
 
+### Settings schema subset in Runtime v1
+
+Plugin Runtime v1 intentionally supports a small deterministic JSON Schema subset for auto-generated settings UI.
+
+Supported root shape:
+
+- `type: "object"`
+- optional `title` / `description`
+- optional `required: string[]`
+- optional `properties`
+
+Supported property types:
+
+- `string`
+- `integer`
+- `number`
+- `boolean`
+
+Supported property hints:
+
+- `title`
+- `description`
+- `default`
+- non-empty `enum`
+- `minimum` / `maximum` for numeric fields
+- `x-omnicreator-visibility: "basic" | "advanced"`
+
+Unsupported property types are skipped with diagnostics rather than crashing the runtime. Invalid schema files likewise produce a fail-soft diagnostic so other plugins remain usable.
+
+The schema path is resolved relative to the plugin directory. Absolute paths, parent traversal and symlink escapes are rejected.
+
+This subset is a UI-description contract, not a claim to implement the entire JSON Schema specification.
+
 ## Plugin health lifecycle
 
 Minimum lifecycle:
