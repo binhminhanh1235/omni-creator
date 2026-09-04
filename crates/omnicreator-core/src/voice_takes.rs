@@ -6,8 +6,10 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    Artifact, ArtifactStore, Attempt, CacheLookupV1, Error, GpuReadinessFactsV1, Job, LogicalUri,
-    Result, StateStore, StepStatus,
+    Artifact, ArtifactStore, Attempt, CacheLookupV1, ComputeAttemptRuntimeContextV1,
+    ComputeJobDispatchV1, ComputeProviderExecution, Error, GpuJobPreparationV1,
+    GpuQueueEligibilityV1, GpuReadinessFactsV1, Job, LogicalUri, RemoteComputeJobSpecV1,
+    RemoteDispatchStartedV1, Result, StateStore, StepStatus, REMOTE_EXECUTION_SCHEMA_V1,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -431,4 +433,147 @@ fn require_identifier(label: &str, value: &str) -> Result<()> {
         return Err(Error::InvalidContract(format!("{label} must not be empty")));
     }
     Ok(())
+}
+
+
+pub fn dispatch_remote_voice_take_v1(
+    state_store: &mut StateStore,
+    executor: &mut impl ComputeProviderExecution,
+    eligibility: &GpuQueueEligibilityV1,
+    preparation: &GpuJobPreparationV1,
+    spec: &RemoteComputeJobSpecV1,
+) -> Result<RemoteDispatchStartedV1> {
+    spec.validate_v1()?;
+    if eligibility.job_id != spec.job_id || preparation.job_id != spec.job_id {
+        return Err(Error::InvalidContract(
+            "voice GPU eligibility, preparation and remote job must share the same logical job_id"
+                .to_owned(),
+        ));
+    }
+    if !eligibility.is_gpu_ready() {
+        return Err(Error::InvalidJobState(format!(
+            "voice job {} cannot dispatch without GPU_READY eligibility",
+            spec.job_id
+        )));
+    }
+    preparation.requirements.validate_scheduling_v1()?;
+
+    let selection = eligibility.selection.as_ref().ok_or_else(|| {
+        Error::InvalidContract("GPU_READY voice eligibility requires device selection".to_owned())
+    })?;
+    let job = state_store.get_job(&spec.job_id)?;
+    require_tts_job(&job)?;
+    if !matches!(job.status, StepStatus::Ready | StepStatus::Retryable) {
+        return Err(Error::InvalidJobState(format!(
+            "voice job {} cannot remotely dispatch from {}",
+            job.job_id,
+            job.status.as_str()
+        )));
+    }
+
+    let plugin_id = required_prepared_value("plugin_id", preparation.plugin_id.as_deref())?;
+    let provider_id = required_prepared_value("provider_id", preparation.provider_id.as_deref())?;
+    let model_id = required_prepared_value("model_id", preparation.model_id.as_deref())?;
+    let model_version =
+        required_prepared_value("model_version", preparation.model_version.as_deref())?;
+    let settings_fingerprint = required_prepared_value(
+        "settings_fingerprint",
+        preparation.settings_fingerprint.as_deref(),
+    )?;
+    let base_output_uri = preparation.output_uri.as_ref().ok_or_else(|| {
+        Error::InvalidContract(
+            "voice GPU preparation output_uri must be known before dispatch".to_owned(),
+        )
+    })?;
+    voice_take_output_uri_v1(base_output_uri, 1)?;
+    if provider_id != selection.provider_id {
+        return Err(Error::InvalidContract(
+            "voice preparation provider_id does not match selected provider".to_owned(),
+        ));
+    }
+
+    let worker = format!(
+        "{}/{}/{}",
+        selection.provider_id, selection.session_id, selection.device_id
+    );
+    let started = state_store.start_voice_take_attempt_v1(&job.job_id, Some(&worker))?;
+    let output_uri = match voice_take_output_uri_v1(base_output_uri, started.take_index) {
+        Ok(output_uri) => output_uri,
+        Err(error) => {
+            let _ = state_store.finish_attempt_failure(
+                &started.attempt.attempt_id,
+                "VOICE_TAKE_OUTPUT_URI_ERROR",
+            );
+            return Err(error);
+        }
+    };
+
+    let dispatch = ComputeJobDispatchV1 {
+        schema: REMOTE_EXECUTION_SCHEMA_V1.to_owned(),
+        version: 1,
+        provider_id: selection.provider_id.clone(),
+        session_id: selection.session_id.clone(),
+        device_id: selection.device_id.clone(),
+        job_id: job.job_id.clone(),
+        attempt_id: started.attempt.attempt_id.clone(),
+        input_hash: job.input_hash.clone(),
+        plugin_id: plugin_id.to_owned(),
+        operation: spec.operation.clone(),
+        model_id: model_id.to_owned(),
+        model_version: model_version.to_owned(),
+        settings_fingerprint: settings_fingerprint.to_owned(),
+        output_uri,
+        plugin_payload: spec.plugin_payload.clone(),
+    };
+    dispatch.validate_v1()?;
+
+    let runtime_context = ComputeAttemptRuntimeContextV1 {
+        attempt_id: started.attempt.attempt_id.clone(),
+        provider_id: dispatch.provider_id.clone(),
+        session_id: dispatch.session_id.clone(),
+        device_id: dispatch.device_id.clone(),
+        plugin_id: dispatch.plugin_id.clone(),
+        model_id: dispatch.model_id.clone(),
+        model_version: dispatch.model_version.clone(),
+        runtime_observation_eligible: true,
+    };
+    if let Err(error) = state_store.record_compute_attempt_runtime_context_v1(&runtime_context) {
+        let _ = state_store.finish_attempt_failure(
+            &started.attempt.attempt_id,
+            "LOCAL_RUNTIME_CONTEXT_ERROR",
+        );
+        return Err(error);
+    }
+
+    let acknowledgement = match executor.dispatch_job(&dispatch) {
+        Ok(acknowledgement) => acknowledgement,
+        Err(error) => {
+            state_store.finish_attempt_failure(
+                &started.attempt.attempt_id,
+                "PROVIDER_UNAVAILABLE",
+            )?;
+            return Err(error);
+        }
+    };
+    if let Err(error) = acknowledgement.validate_for(&dispatch) {
+        state_store.finish_attempt_failure(
+            &started.attempt.attempt_id,
+            "PROVIDER_UNAVAILABLE",
+        )?;
+        return Err(error);
+    }
+
+    Ok(RemoteDispatchStartedV1 {
+        attempt_id: started.attempt.attempt_id,
+        acknowledgement,
+        dispatch,
+    })
+}
+
+fn required_prepared_value<'a>(label: &str, value: Option<&'a str>) -> Result<&'a str> {
+    let value = value.ok_or_else(|| {
+        Error::InvalidContract(format!("voice GPU preparation {label} is required"))
+    })?;
+    require_identifier(&format!("voice GPU preparation {label}"), value)?;
+    Ok(value)
 }
