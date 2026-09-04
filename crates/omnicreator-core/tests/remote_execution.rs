@@ -8,7 +8,7 @@ use omnicreator_core::{
     ComputeRemoteJournalEventV1, ComputeRequirements, Error, FailureDisposition,
     GpuJobPreparationV1, GpuQueueEligibilityStatusV1, GpuQueueEligibilityV1, LogicalUri,
     RemoteArtifactSyncOutcomeV1, RemoteComputeJobSpecV1, RemoteRetryActionV1, ResourceRequirement,
-    StateStore, StepStatus, Workspace, REMOTE_JOURNAL_SCHEMA_V1,
+    RuntimeEstimateKeyV1, StateStore, StepStatus, Workspace, REMOTE_JOURNAL_SCHEMA_V1,
 };
 use sha2::{Digest, Sha256};
 
@@ -127,6 +127,16 @@ fn gpu_ready(job_id: &str) -> GpuQueueEligibilityV1 {
         status: GpuQueueEligibilityStatusV1::GpuReady,
         reasons: Vec::new(),
         selection: Some(selection()),
+    }
+}
+
+fn runtime_key() -> RuntimeEstimateKeyV1 {
+    RuntimeEstimateKeyV1 {
+        provider_id: "compute-provider".to_owned(),
+        device_id: "gpu0".to_owned(),
+        plugin_id: "omnivoice".to_owned(),
+        model_id: "omnivoice-v3".to_owned(),
+        model_version: "3.2".to_owned(),
     }
 }
 
@@ -392,6 +402,13 @@ fn remote_artifact_is_transferred_verified_and_committed_atomically() {
     );
     assert_eq!(executor.transfer_calls, 1);
 
+    let first_estimate = state
+        .get_runtime_estimate_v1(&runtime_key())
+        .unwrap()
+        .expect("successful remote compute should record a runtime estimate");
+    assert_eq!(first_estimate.sample_count, 1);
+    assert!(first_estimate.ema_runtime_seconds > 0.0);
+
     let duplicate = sync_remote_artifact(
         &mut state,
         &artifacts,
@@ -410,6 +427,11 @@ fn remote_artifact_is_transferred_verified_and_committed_atomically() {
     assert_eq!(duplicate_artifact.artifact_id, committed.artifact_id);
     assert_eq!(executor.transfer_calls, 1);
     assert_eq!(state.list_attempts(&job.job_id).unwrap().len(), 1);
+    let duplicate_estimate = state
+        .get_runtime_estimate_v1(&runtime_key())
+        .unwrap()
+        .unwrap();
+    assert_eq!(duplicate_estimate.sample_count, 1);
 }
 
 #[test]
@@ -629,6 +651,18 @@ fn reconnect_recovers_remote_artifact_after_local_restart_before_regenerating() 
         .unwrap();
     assert!(artifacts.verify_artifact(&artifact).unwrap());
     assert_eq!(state.list_attempts(&job.job_id).unwrap().len(), 1);
+    assert!(
+        state.get_runtime_estimate_v1(&runtime_key()).unwrap().is_none(),
+        "restart/reconnect downtime must not pollute runtime estimates"
+    );
+    assert_eq!(
+        state
+            .get_compute_attempt_runtime_context_v1(&started.attempt_id)
+            .unwrap()
+            .unwrap()
+            .runtime_observation_eligible,
+        false
+    );
 }
 
 #[test]
