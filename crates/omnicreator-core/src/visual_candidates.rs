@@ -1,4 +1,7 @@
-use std::{collections::BTreeSet, path::{Component, Path}};
+use std::{
+    collections::BTreeSet,
+    path::{Component, Path},
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -693,7 +696,10 @@ mod tests {
             height: Some(1080),
             duration: Some(8.0),
             provenance: BTreeMap::from([
-                ("creator_name".to_owned(), serde_json::json!("Video Creator")),
+                (
+                    "creator_name".to_owned(),
+                    serde_json::json!("Video Creator"),
+                ),
                 (
                     "source_page_url".to_owned(),
                     serde_json::json!("https://www.pexels.com/video/example-2499611/"),
