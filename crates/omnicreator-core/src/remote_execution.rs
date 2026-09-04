@@ -1037,6 +1037,40 @@ pub fn reconcile_remote_session_v1(
             }
         }
 
+        if let Some(bundle_entry) = relevant
+            .iter()
+            .rev()
+            .find(|entry| entry.artifact_bundle_ready().is_some())
+            .copied()
+        {
+            let artifact_count = bundle_entry
+                .artifact_bundle_ready()
+                .map(|artifacts| artifacts.len())
+                .unwrap_or(0);
+            let outcome = crate::sync_remote_voice_artifact_bundle_v1(
+                state_store,
+                artifact_store,
+                executor,
+                bundle_entry,
+                runtime_staging_dir,
+                serde_json::json!({
+                    "source": "remote-reconciliation",
+                    "provider_id": provider_id,
+                    "session_id": session_id,
+                    "journal_sequence": bundle_entry.sequence
+                }),
+            )?;
+            match outcome {
+                crate::RemoteVoiceBundleSyncOutcomeV1::Committed(_) => {
+                    summary.artifacts_recovered += artifact_count
+                }
+                crate::RemoteVoiceBundleSyncOutcomeV1::AlreadyCommitted(_) => {
+                    summary.artifacts_already_committed += artifact_count
+                }
+            }
+            continue;
+        }
+
         if let Some(artifact_entry) = relevant
             .iter()
             .rev()
