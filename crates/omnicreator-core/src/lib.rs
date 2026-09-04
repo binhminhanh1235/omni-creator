@@ -16,6 +16,7 @@ pub mod plugin_workspace;
 pub mod protocol;
 pub mod session;
 pub mod state;
+pub mod visual_candidates;
 pub mod workflow;
 pub mod workspace;
 
@@ -36,4 +37,5 @@ pub use plugin_workspace::*;
 pub use protocol::*;
 pub use session::WorkspaceSession;
 pub use state::StateStore;
+pub use visual_candidates::*;
 pub use workspace::{Workspace, WorkspaceManifest, WorkspaceWriter, WriterLease};

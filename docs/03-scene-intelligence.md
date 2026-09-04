@@ -93,6 +93,33 @@ Default conceptual weighting:
 
 Approximately 70% of the score should come from content match.
 
+### Runtime v1 candidate ranking contract
+
+Phase 4 keeps candidate discovery separate from full-asset download.
+
+A provider-normalized `VisualCandidate` contains:
+
+- stable candidate and provider/source identifiers
+- an opaque `selection_ref` used only after selection
+- generic image/video metadata
+- source page and creator attribution metadata
+- one or more preview URLs
+- no local full-asset path
+
+This makes the default search path preview-first by construction. Full media is resolved only after a candidate is selected.
+
+The default deterministic ranking weights match the table above. Candidate signals are normalized to `0.0..=1.0`; core owns the scoring policy while metadata heuristics or a vision-capable LLM may supply the signals.
+
+Default additional penalties:
+
+- cliché match: `0.08` each, capped at `0.24`
+- prior reuse: `0.02` per prior use, capped at `0.10`
+- recently used: additional `0.05`
+
+The initial cliché vocabulary follows the documented anti-cliché set and is configurable in the ranking policy. Reuse also lowers the positive freshness component, so frequently reused candidates lose both freshness and an explicit reuse penalty.
+
+Scores expose their full breakdown for review/debugging. Ties are resolved deterministically by stable candidate identity.
+
 ## Pexels strategy
 
 Do not immediately download many full videos.
