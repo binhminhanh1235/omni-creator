@@ -6,7 +6,10 @@ use std::{
 use chrono::Utc;
 use uuid::Uuid;
 
-use crate::{fs_util::sha256_file, Artifact, Error, LogicalUri, PathResolver, Result, StateStore};
+use crate::{
+    fs_util::sha256_file, Artifact, Error, LogicalUri, PathResolver, PluginJobWorkspace, Result,
+    StateStore,
+};
 
 #[derive(Debug, Clone)]
 pub struct ArtifactStore {
@@ -110,6 +113,27 @@ impl ArtifactStore {
         }
 
         Ok(artifact)
+    }
+
+    pub fn promote_plugin_output(
+        &self,
+        state_store: &mut StateStore,
+        job_id: &str,
+        workspace: &PluginJobWorkspace,
+        relative_output: &str,
+        target_uri: LogicalUri,
+        artifact_type: impl Into<String>,
+        metadata: serde_json::Value,
+    ) -> Result<Artifact> {
+        let verified = workspace.verify_output_file(relative_output)?;
+        self.promote_job_output(
+            state_store,
+            job_id,
+            verified.path(),
+            target_uri,
+            artifact_type,
+            metadata,
+        )
     }
 
     pub fn lookup_verified_cache(
@@ -220,6 +244,75 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(cached_after_restart.artifact_id, artifact.artifact_id);
+    }
+
+    #[test]
+    fn plugin_output_is_verified_inside_job_workspace_before_promotion() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("data");
+        let workspace = Workspace::create(&root).unwrap();
+        let mut state = StateStore::open(workspace.sqlite_path()).unwrap();
+        let project = state.create_project("Plugin Artifact Project").unwrap();
+        let input_hash = deterministic_input_hash(&[b"plugin", b"scene"]);
+        let job = state
+            .create_job(&project.id, "visual", "SC01", &input_hash)
+            .unwrap();
+
+        let plugin_workspace =
+            PluginJobWorkspace::create(temp.path().join("runtime"), &job.job_id).unwrap();
+        let output = plugin_workspace.resolve_output("scene/frame.png").unwrap();
+        fs::create_dir_all(output.parent().unwrap()).unwrap();
+        fs::write(&output, b"verified plugin frame").unwrap();
+
+        let artifacts = ArtifactStore::new(workspace.data_root()).unwrap();
+        let artifact = artifacts
+            .promote_plugin_output(
+                &mut state,
+                &job.job_id,
+                &plugin_workspace,
+                "scene/frame.png",
+                LogicalUri::parse("project://visual/SC01.png").unwrap(),
+                "image",
+                serde_json::json!({"provider": "fixture-plugin"}),
+            )
+            .unwrap();
+
+        assert_eq!(
+            state.get_job(&job.job_id).unwrap().status,
+            StepStatus::Succeeded
+        );
+        assert!(artifacts.verify_artifact(&artifact).unwrap());
+    }
+
+    #[test]
+    fn plugin_output_traversal_is_rejected_before_artifact_promotion() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("data");
+        let workspace = Workspace::create(&root).unwrap();
+        let mut state = StateStore::open(workspace.sqlite_path()).unwrap();
+        let project = state.create_project("Plugin Traversal Project").unwrap();
+        let input_hash = deterministic_input_hash(&[b"plugin", b"escape"]);
+        let job = state
+            .create_job(&project.id, "visual", "SC02", &input_hash)
+            .unwrap();
+
+        let plugin_workspace =
+            PluginJobWorkspace::create(temp.path().join("runtime"), &job.job_id).unwrap();
+        let artifacts = ArtifactStore::new(workspace.data_root()).unwrap();
+
+        assert!(matches!(
+            artifacts.promote_plugin_output(
+                &mut state,
+                &job.job_id,
+                &plugin_workspace,
+                "../outside.png",
+                LogicalUri::parse("project://visual/SC02.png").unwrap(),
+                "image",
+                serde_json::Value::Null,
+            ),
+            Err(Error::PathEscape(_))
+        ));
+        assert_eq!(state.get_job(&job.job_id).unwrap().status, StepStatus::Ready);
     }
 
     #[test]
