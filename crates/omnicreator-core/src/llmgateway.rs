@@ -1,6 +1,6 @@
 use std::{env, fs, path::Path, time::Duration};
 
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{fs_util::atomic_write_json, Error, Result};
@@ -255,6 +255,57 @@ pub struct LlmChatResult {
     pub content: String,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct StructuredOutputOptions {
+    pub contract: String,
+    pub model: Option<String>,
+    pub task: LlmGatewayTask,
+    pub temperature: Option<f64>,
+    pub max_tokens: Option<u32>,
+    pub max_attempts: u8,
+}
+
+impl StructuredOutputOptions {
+    pub fn new(contract: impl Into<String>) -> Self {
+        Self {
+            contract: contract.into(),
+            model: None,
+            task: LlmGatewayTask::Reasoning,
+            temperature: Some(0.0),
+            max_tokens: None,
+            max_attempts: 3,
+        }
+    }
+
+    pub fn validate(&self) -> Result<()> {
+        if self.contract.trim().is_empty() {
+            return Err(Error::InvalidLlmGatewayConfig(
+                "structured output contract must not be empty".to_owned(),
+            ));
+        }
+        if self
+            .model
+            .as_ref()
+            .is_some_and(|model| model.trim().is_empty())
+        {
+            return Err(Error::InvalidLlmGatewayConfig(
+                "structured output model must not be empty when present".to_owned(),
+            ));
+        }
+        if !(1..=4).contains(&self.max_attempts) {
+            return Err(Error::InvalidLlmGatewayConfig(
+                "structured output max_attempts must be between 1 and 4".to_owned(),
+            ));
+        }
+        if self.temperature.is_some_and(|value| !value.is_finite()) {
+            return Err(Error::InvalidLlmGatewayConfig(
+                "structured output temperature must be finite".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+}
+
 pub struct LlmGatewayClient {
     config: LlmGatewayConfig,
     agent: ureq::Agent,
@@ -298,6 +349,60 @@ impl LlmGatewayClient {
         let mut request = LlmChatRequest::new(self.config.default_model.clone(), messages);
         request.llmgateway_task = task;
         self.chat(&request)
+    }
+
+    pub fn chat_structured<T, F>(
+        &self,
+        messages: Vec<LlmMessage>,
+        options: &StructuredOutputOptions,
+        validate: F,
+    ) -> Result<T>
+    where
+        T: DeserializeOwned,
+        F: Fn(&T) -> Result<()>,
+    {
+        options.validate()?;
+        if messages.is_empty() {
+            return Err(Error::InvalidLlmGatewayConfig(
+                "structured output messages must not be empty".to_owned(),
+            ));
+        }
+
+        let model = options
+            .model
+            .clone()
+            .unwrap_or_else(|| self.config.default_model.clone());
+        let mut attempt_messages = messages;
+        let mut last_reason = "structured output was not attempted".to_owned();
+
+        for attempt in 1..=options.max_attempts {
+            let mut request = LlmChatRequest::new(model.clone(), attempt_messages.clone());
+            request.llmgateway_task = options.task;
+            request.temperature = options.temperature;
+            request.max_tokens = options.max_tokens;
+
+            let response = self.chat(&request)?;
+            match decode_structured_output::<T, F>(&response.content, &validate) {
+                Ok(value) => return Ok(value),
+                Err(reason) => {
+                    last_reason = reason;
+                    if attempt == options.max_attempts {
+                        break;
+                    }
+                    attempt_messages.push(LlmMessage::assistant(response.content));
+                    attempt_messages.push(LlmMessage::user(structured_repair_prompt(
+                        &options.contract,
+                        &last_reason,
+                    )));
+                }
+            }
+        }
+
+        Err(Error::InvalidStructuredOutput {
+            contract: options.contract.clone(),
+            attempts: options.max_attempts,
+            reason: last_reason,
+        })
     }
 
     fn get_json(&self, path: &str, authenticated: bool) -> Result<Value> {
@@ -410,6 +515,96 @@ fn parse_models(value: Value) -> Result<Vec<LlmGatewayModel>> {
             .then_with(|| left.id.cmp(&right.id))
     });
     Ok(models)
+}
+
+fn decode_structured_output<T, F>(content: &str, validate: &F) -> std::result::Result<T, String>
+where
+    T: DeserializeOwned,
+    F: Fn(&T) -> Result<()>,
+{
+    let candidate = extract_json_candidate(content)?;
+    let value: Value =
+        serde_json::from_str(candidate).map_err(|error| format!("invalid JSON: {error}"))?;
+    let decoded: T = serde_json::from_value(value)
+        .map_err(|error| format!("contract decoding failed: {error}"))?;
+    validate(&decoded).map_err(|error| format!("contract validation failed: {error}"))?;
+    Ok(decoded)
+}
+
+fn extract_json_candidate(content: &str) -> std::result::Result<&str, String> {
+    let trimmed = content.trim();
+    if trimmed.is_empty() {
+        return Err("response is empty".to_owned());
+    }
+
+    let source = strip_json_fence(trimmed).unwrap_or(trimmed);
+    let start = source
+        .char_indices()
+        .find_map(|(index, ch)| matches!(ch, '{' | '[').then_some(index))
+        .ok_or_else(|| "response does not contain a JSON object or array".to_owned())?;
+
+    let mut stack = Vec::new();
+    let mut in_string = false;
+    let mut escaped = false;
+
+    for (relative_index, ch) in source[start..].char_indices() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+
+        match ch {
+            '"' => in_string = true,
+            '{' => stack.push('}'),
+            '[' => stack.push(']'),
+            '}' | ']' => {
+                let expected = stack
+                    .pop()
+                    .ok_or_else(|| "JSON structure closes before it opens".to_owned())?;
+                if ch != expected {
+                    return Err(format!(
+                        "JSON structure is mismatched: expected {expected}, found {ch}"
+                    ));
+                }
+                if stack.is_empty() {
+                    let end = start + relative_index + ch.len_utf8();
+                    return Ok(source[start..end].trim());
+                }
+            }
+            _ => {}
+        }
+    }
+
+    Err("JSON object or array is incomplete".to_owned())
+}
+
+fn strip_json_fence(content: &str) -> Option<&str> {
+    let rest = content.strip_prefix("```")?;
+    let header_end = rest.find('\n')?;
+    let language = rest[..header_end].trim();
+    if !language.is_empty() && !language.eq_ignore_ascii_case("json") {
+        return None;
+    }
+    let fenced_body = &rest[header_end + 1..];
+    let close = fenced_body.rfind("```")?;
+    if !fenced_body[close + 3..].trim().is_empty() {
+        return None;
+    }
+    Some(fenced_body[..close].trim())
+}
+
+fn structured_repair_prompt(contract: &str, reason: &str) -> String {
+    format!(
+        "Repair the previous response so it satisfies structured-output contract '{contract}'. \
+Return exactly one valid JSON object or array and no Markdown or prose. \
+Preserve the intended meaning. Validation error: {reason}"
+    )
 }
 
 fn parse_chat_result(value: Value) -> Result<LlmChatResult> {
@@ -536,6 +731,90 @@ mod tests {
 
         assert_eq!(result.id.as_deref(), Some("chatcmpl_123"));
         assert_eq!(result.content, "{\"ok\":true}");
+    }
+
+    #[test]
+    fn structured_output_extracts_json_from_fenced_response() {
+        #[derive(Debug, Deserialize, PartialEq)]
+        struct Payload {
+            ok: bool,
+            nested: String,
+        }
+
+        let decoded = decode_structured_output(
+            "```json\n{\"ok\":true,\"nested\":\"brace } inside string\"}\n```",
+            &|_: &Payload| Ok(()),
+        )
+        .unwrap();
+
+        assert_eq!(
+            decoded,
+            Payload {
+                ok: true,
+                nested: "brace } inside string".to_owned()
+            }
+        );
+    }
+
+    #[test]
+    fn structured_output_extracts_first_balanced_json_from_prose() {
+        #[derive(Debug, Deserialize, PartialEq)]
+        struct Payload {
+            value: u32,
+        }
+
+        let decoded = decode_structured_output(
+            "Result follows: {\"value\":7} This text is ignored.",
+            &|_: &Payload| Ok(()),
+        )
+        .unwrap();
+
+        assert_eq!(decoded, Payload { value: 7 });
+    }
+
+    #[test]
+    fn structured_output_reports_contract_validation_without_echoing_body() {
+        #[derive(Debug, Deserialize)]
+        struct Payload {
+            value: u32,
+        }
+
+        let error = decode_structured_output(
+            "{\"value\":0,\"secret\":\"do-not-echo\"}",
+            &|payload: &Payload| {
+                if payload.value == 0 {
+                    Err(Error::InvalidContract("value must be positive".to_owned()))
+                } else {
+                    Ok(())
+                }
+            },
+        )
+        .unwrap_err();
+
+        assert!(error.contains("value must be positive"));
+        assert!(!error.contains("do-not-echo"));
+    }
+
+    #[test]
+    fn structured_output_options_default_to_reasoning_and_bounded_repairs() {
+        let options = StructuredOutputOptions::new("omnicreator.scene-intent.v1");
+        options.validate().unwrap();
+
+        assert_eq!(options.task, LlmGatewayTask::Reasoning);
+        assert_eq!(options.max_attempts, 3);
+        assert_eq!(options.temperature, Some(0.0));
+    }
+
+    #[test]
+    fn repair_prompt_requires_json_only_and_names_contract() {
+        let prompt = structured_repair_prompt(
+            "omnicreator.scene-intent.v1",
+            "contract validation failed: scene purpose must not be empty",
+        );
+
+        assert!(prompt.contains("omnicreator.scene-intent.v1"));
+        assert!(prompt.contains("exactly one valid JSON"));
+        assert!(prompt.contains("scene purpose must not be empty"));
     }
 
     #[test]

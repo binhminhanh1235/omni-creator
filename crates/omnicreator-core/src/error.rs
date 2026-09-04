@@ -66,6 +66,12 @@ pub enum Error {
     },
     #[error("invalid LLMGateway response: {0}")]
     InvalidLlmGatewayResponse(String),
+    #[error("invalid structured LLM output for {contract} after {attempts} attempt(s): {reason}")]
+    InvalidStructuredOutput {
+        contract: String,
+        attempts: u8,
+        reason: String,
+    },
     #[error("dependency would create a cycle: {0} -> {1}")]
     DependencyCycle(String, String),
     #[error("workflow dependency crosses project boundaries")]
