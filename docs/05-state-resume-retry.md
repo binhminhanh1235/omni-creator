@@ -15,9 +15,11 @@ Completed work must not be repeated unnecessarily.
 
 ## Canonical state
 
-Local SQLite is the source of truth.
+SQLite inside the selected portable Data Root is the operational source of truth for the workspace.
 
 Remote workers are disposable.
+
+The Data Root path itself is machine-local and may change between devices. Durable state must therefore contain logical/relative URIs rather than absolute filesystem paths.
 
 ## Workflow as DAG
 
@@ -267,3 +269,110 @@ Take 3  selected
 ```
 
 Retry creates a new attempt/take and does not destroy previous artifacts.
+
+
+## Device handoff and cloud synchronization
+
+Portable workspaces support **handoff**, not concurrent multi-writer collaboration.
+
+Supported model:
+
+```text
+Machine A
+  -> finish/close OmniCreator
+  -> workspace reaches clean handoff revision
+  -> Google Drive/copy finishes
+  -> Machine B selects the same Data Root
+  -> validate
+  -> resume
+```
+
+Do not allow two devices to actively mutate the same synchronized workspace at the same time.
+
+### Workspace identity
+
+`.omnicreator/workspace.json` should contain durable identity/version metadata such as:
+
+```json
+{
+  "workspace_id": "ws_...",
+  "schema_version": 1,
+  "revision": 184,
+  "last_clean_shutdown": true,
+  "last_writer_device": "device_...",
+  "updated_at": "..."
+}
+```
+
+Machine-specific absolute Data Root paths are not stored here.
+
+### Single-writer protection
+
+Use two layers:
+
+1. OS/filesystem lock for same-filesystem concurrent access
+2. a synchronized best-effort lease/heartbeat record containing device ID and session information
+
+Cloud file synchronization cannot provide a trustworthy distributed lock. If another recent writer is detected, OmniCreator should warn and default to read-only/recovery instead of blindly opening as writer.
+
+### Clean handoff snapshot
+
+On graceful close or explicit **Prepare for Device Handoff**:
+
+1. stop accepting new mutating jobs
+2. finish/commit current local transactions
+3. verify artifact writes that are already marked complete
+4. create a consistent SQLite backup/snapshot
+5. hash the snapshot
+6. write a handoff manifest referencing the revision + snapshot hash
+7. atomically mark the workspace clean
+
+Keep a small rotating set of clean state snapshots.
+
+On a new machine:
+
+1. validate workspace manifest
+2. verify the referenced clean snapshot/hash
+3. run SQLite integrity validation when appropriate
+4. recover from the clean snapshot if the working DB is damaged/incomplete
+5. reconcile artifact hashes
+6. resume the DAG
+
+This gives the workspace a recovery anchor even if a sync service captured files at awkward moments.
+
+### SQLite sync policy
+
+A synchronized folder is not a multi-machine database service.
+
+For syncable workspaces:
+
+- prefer a journal configuration that does not depend on portable WAL/SHM files as durable state
+- close/checkpoint cleanly before device handoff
+- never depend on copying an actively-mutating SQLite file for correctness
+- keep verified clean backups
+- require a single active writer
+
+### Artifact sync safety
+
+Generated/downloaded artifacts should be written to temporary names and atomically promoted to final workspace paths after completion.
+
+An artifact is valid only when:
+
+- expected file exists
+- size is plausible
+- recorded hash matches
+
+If Google Drive has not fully synchronized a file yet, keep the dependent step WAITING_FOR_ARTIFACT/NOT_READY rather than treating it as failed or regenerating immediately.
+
+### Resume on a second machine
+
+After binding to an existing Data Root, OmniCreator should reconstruct the same project board and DAG states:
+
+- DONE stays DONE
+- GPU_READY stays GPU_READY
+- successful TTS takes remain selectable
+- retry history remains available
+- unfinished jobs are re-evaluated against artifacts/cache
+- remote RUNNING jobs from a dead old session become reconcilable/retryable
+
+No completed job should be repeated solely because the physical machine changed.

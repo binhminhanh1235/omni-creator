@@ -110,6 +110,42 @@ This document records decisions so later development does not accidentally reint
 
 **Reason:** Supports A/B selection, retry history and safe rollback.
 
+## ADR-019: User-selected portable Data Root
+
+**Decision:** All durable creator/project data lives under one user-selected Data Root.
+
+**Reason:** The user must be able to move, copy or synchronize the workspace and continue on another machine.
+
+## ADR-020: No durable absolute paths
+
+**Decision:** Canonical state uses logical URIs/artifact IDs; absolute paths are resolved only at machine I/O/export boundaries.
+
+**Reason:** User home paths, Google Drive mount paths and OS path conventions differ between machines.
+
+## ADR-021: Cloud sync is device handoff, not concurrent collaboration
+
+**Decision:** A synchronized Data Root supports one active writer at a time.
+
+**Reason:** Google Drive-style file synchronization is not a distributed transaction/locking system and SQLite should not be treated as a multi-machine live database through a sync folder.
+
+## ADR-022: Clean handoff snapshots
+
+**Decision:** Graceful close/device handoff creates a verified clean state snapshot and handoff manifest.
+
+**Reason:** A synced/copyable recovery point protects against partial synchronization or interrupted copies.
+
+## ADR-023: Secrets are machine-local
+
+**Decision:** Plaintext API keys/passwords are not stored in the portable Data Root by default.
+
+**Reason:** A workspace may be synced through third-party cloud storage. Secrets belong in the OS credential store; the workspace stores symbolic credential references.
+
+## ADR-024: Portable data is not portable runtime
+
+**Decision:** Projects, assets, state, profiles, Studio Packs and plugin configuration are portable. Disposable caches, platform-specific plugin binaries and AI runtimes remain machine-local.
+
+**Reason:** Copying runtime/cache bloat wastes sync/storage and can be incompatible across machines. The new machine should resolve/install required runtimes from a plugin lock/config.
+
 ## Non-goals for MVP
 
 OmniCreator is not:

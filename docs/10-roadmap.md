@@ -13,6 +13,9 @@ Before broad implementation:
 5. define Plugin Manifest v1
 6. define Plugin API transport/envelopes
 7. define ComputeProvider capability model
+8. define Workspace/Data Root manifest v1
+9. define logical URI/path resolver contract
+10. define device-handoff and clean-snapshot contract
 
 Deliverable:
 - schemas/specs stable enough to build against
@@ -23,7 +26,13 @@ Build the lightweight local control plane.
 
 - Rust workspace
 - Tauri desktop shell
-- SQLite persistence
+- user-selectable Data Root
+- Create New / Use Existing Data Folder flow
+- portable workspace manifest
+- logical URI/path resolver
+- SQLite persistence inside the portable workspace
+- single-writer workspace lock/lease
+- clean handoff snapshots + rotating backups
 - project CRUD
 - artifact store
 - hashes/cache
@@ -35,6 +44,8 @@ Build the lightweight local control plane.
 Success:
 - app restart does not lose state
 - changing one segment invalidates only affected downstream work
+- copying/syncing the Data Root to another machine and rebinding restores projects and step states
+- no canonical project/artifact record depends on the old machine's absolute paths
 
 ## Phase 2 - LLMGateway integration
 

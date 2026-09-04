@@ -263,3 +263,98 @@ The primary scene review question is:
 not:
 
 > Is this 24 or 30 fps?
+
+
+## Data Root UX
+
+The portable workspace feature must remain simple.
+
+### First launch
+
+```text
+Where should OmniCreator keep your data?
+
+[ Create New Data Folder ]
+[ Use Existing Data Folder ]
+
+All projects, media and production state will live here.
+You can move or sync this folder later.
+```
+
+If the selected directory already contains `.omnicreator/workspace.json`, OmniCreator automatically recognizes it as an existing workspace.
+
+### Settings
+
+```text
+Data & Portability
+
+Data Folder
+/Users/.../Google Drive/OmniCreatorData
+
+[ Open in Finder ]
+[ Change Data Folder ]
+[ Prepare for Device Handoff ]
+
+Workspace
+Healthy
+Revision 184
+Last clean handoff: 2 min ago
+```
+
+### Changing Data Root
+
+Provide two actions with clear semantics:
+
+- **Use Existing Data Folder**: rebind this machine to an existing workspace
+- **Move Data Folder**: safely relocate the current workspace and update the local pointer
+
+Do not make the user edit paths manually.
+
+### Opening on a new machine
+
+Expected UX:
+
+```text
+Select OmniCreator Data Folder
+        |
+workspace detected
+        |
+Validating state and files...
+        |
+2 plugins missing
+1 API credential missing
+
+[ Install Missing Plugins ]
+[ Configure Credential ]
+
+Projects restored
+```
+
+Completed projects and completed steps should be visible immediately even if an optional plugin/credential is missing.
+
+### Cloud-sync safety UX
+
+When the Data Root is inside Google Drive or another synchronized location, show a small informational mode:
+
+```text
+Cloud-synced workspace
+
+Safe to switch devices after OmniCreator is closed
+and synchronization is complete.
+```
+
+If a probable active writer on another device is detected:
+
+```text
+This workspace may still be open on "MacBook-A".
+
+[ Open Read Only ]
+[ Check Again ]
+[ Advanced: Force Open ]
+```
+
+Do not expose distributed-lock terminology in the default UI.
+
+### Active project files
+
+For cloud providers that support online-only placeholders, recommend that active project media be available offline before opening DaVinci to avoid playback stalls.

@@ -26,6 +26,7 @@ Recommended first-class entities:
 - Job
 - Attempt
 - PluginDescriptor
+- Workspace
 
 ## Project
 
@@ -244,3 +245,84 @@ Example:
 ```
 
 Future migrations should be explicit rather than silently changing persisted semantics.
+
+
+## Workspace and Data Root
+
+Workspace is the portable top-level container for all durable OmniCreator creator data.
+
+Suggested identity fields:
+
+```text
+workspace_id
+schema_version
+revision
+created_at
+updated_at
+required_plugins
+default_channel_profile
+```
+
+The actual filesystem path is intentionally **not** a durable Workspace field.
+
+Each machine binds a local Data Root path to the same `workspace_id`.
+
+## Logical URI model
+
+Durable domain objects must reference files using portable logical URIs.
+
+Recommended schemes:
+
+```text
+workspace://projects/P001/script/script.md
+project://audio/S04.wav
+artifact://AUDIO_221
+library://assets/PEXELS_12345.mp4
+```
+
+Rules:
+
+- never serialize a user home directory into canonical project state
+- use forward-slash normalized logical paths
+- resolve to OS-native paths only at I/O/export boundaries
+- validate resolved paths cannot escape the Data Root
+- timeline IR references artifact IDs whenever possible
+
+## External files
+
+Default UX should import/copy external media into the Data Root.
+
+An Advanced **External Reference** mode may exist later, but it must display a portability warning because the referenced file may not exist on another machine.
+
+## Portable configuration
+
+Workspace-level portable configuration:
+
+- Studio Packs
+- channel profiles
+- project defaults
+- plugin settings
+- plugin version requirements
+- visual rules
+- export presets that are path-independent
+
+Machine-level configuration:
+
+- Data Root binding
+- device ID
+- secrets/keychain references
+- installed runtimes
+- DaVinci application path
+- compute device preferences
+
+## Secret references
+
+Canonical project/workspace JSON may store a symbolic credential reference:
+
+```text
+credential_ref: pexels/default
+```
+
+It must not store plaintext API keys by default.
+
+When opening the workspace on another machine, missing credential references become setup requirements, not corrupted project state.

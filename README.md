@@ -15,6 +15,7 @@ Its job is not to replace DaVinci Resolve. Its job is to make sure the editor ha
 5. **Plugin-driven capabilities** — voice, visuals, thumbnails, music and export backends can be replaced without changing the core.
 6. **DaVinci-first finishing** — OmniCreator prepares assets and timelines; DaVinci Resolve owns editing, effects, grading, mixing and final render.
 7. **Resumable by design** — every step/job has persisted state, hashes, attempts and artifacts so work can resume or retry without repeating completed work.
+8. **Portable workspace** — all durable creator data lives under a user-selected Data Root and uses logical/relative references, so the workspace can be copied or synchronized to another machine and resumed there.
 
 ## Target environment
 
@@ -28,6 +29,7 @@ Current primary setup:
 - OmniVoiceStudio for narration/TTS
 - Pexels as the first stock visual provider
 - Future visual providers may include stick-figure animation, illustration, whiteboard, generated video, etc.
+- A user-selected portable OmniCreator Data Root may live on local storage or inside a synchronized folder such as Google Drive.
 
 ## Architecture at a glance
 
@@ -70,6 +72,7 @@ Current primary setup:
 - [Plugin API v1 Draft](docs/09-plugin-api-v1.md)
 - [Roadmap](docs/10-roadmap.md)
 - [Architecture Decisions / Non-goals](docs/11-architecture-decisions.md)
+- [Portable Data Root & Device Handoff](docs/12-portable-data-root.md)
 
 ## MVP definition
 

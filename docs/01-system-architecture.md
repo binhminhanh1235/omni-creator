@@ -202,3 +202,118 @@ Primary performance wins should come from:
 8. keeping expensive resources busy only with useful jobs
 
 Language-level optimization is secondary to workflow-level optimization.
+
+
+## Portable Data Root
+
+All durable OmniCreator creator data lives under one user-selected **Data Root**.
+
+Example:
+
+```text
+OmniCreatorData/
+├── .omnicreator/
+│   ├── workspace.json
+│   ├── state/
+│   │   └── omnicreator.sqlite
+│   ├── backups/
+│   └── handoff/
+├── projects/
+├── library/
+│   └── assets/
+├── studio-packs/
+├── channel-profiles/
+├── plugin-data/
+├── exports/
+└── metadata/
+```
+
+The Data Root may be:
+
+- a normal local folder
+- an external SSD folder
+- a folder synchronized by Google Drive or another file-sync service
+
+### Machine-local pointer
+
+The application keeps only a tiny machine-local setting outside the Data Root:
+
+```text
+data_root = /Users/.../OmniCreatorData
+device_id = ...
+```
+
+On another machine the path may be completely different. The user chooses **Use Existing Data Folder**, and OmniCreator binds that machine to the workspace.
+
+### No absolute paths in durable project state
+
+Project/database records must not persist machine-specific paths such as:
+
+```text
+/Users/alice/Google Drive/OmniCreatorData/projects/P001/audio/S01.wav
+```
+
+Use logical references instead:
+
+```text
+workspace://projects/P001/audio/S01.wav
+project://audio/S01.wav
+artifact://AUDIO_221
+```
+
+The path resolver combines the current machine's Data Root with the logical URI at runtime.
+
+This is required for:
+
+- copying the folder to another Mac
+- moving the folder
+- Google Drive synchronization
+- external SSD workflows
+- future Windows/Linux support
+
+### Portable vs machine-specific data
+
+The Data Root contains everything required to continue creator work:
+
+- projects and scripts
+- SQLite state
+- selected/downloaded/generated assets
+- narration/takes
+- provenance/license metadata
+- channel profiles
+- Studio Packs
+- plugin configuration
+- plugin version requirements
+- timeline/export source data
+
+Do not put these machine-specific items in the portable root by default:
+
+- API secrets/passwords
+- macOS Keychain data
+- disposable temp/cache
+- platform-specific plugin binaries
+- Python/AI runtimes
+- DaVinci executable path
+- device-specific GPU settings
+
+The workspace may store credential references, but actual secrets remain in the OS credential store.
+
+### Plugin portability
+
+Persist a plugin lock/config description in the Data Root.
+
+On another machine OmniCreator should:
+
+1. read required plugin IDs and versions
+2. compare against installed plugins
+3. automatically use bundled plugins when available
+4. show one simple **Install Missing Plugins** action when required
+5. preserve all plugin settings from the workspace
+
+Do not copy platform-specific plugin executables as canonical workspace data.
+
+### DaVinci portability
+
+Internal timeline data references artifact IDs/logical URIs.
+
+FCPXML and other path-bearing exports should be regenerated on the current machine so absolute media URLs are always correct for the current Data Root.
