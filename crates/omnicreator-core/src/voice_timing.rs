@@ -397,8 +397,17 @@ pub fn sync_remote_voice_artifact_bundle_v1(
         return Err(error);
     }
 
-    let timing_bytes = fs::read(&timing_staging)?;
-    let timing_contract = VoiceTimingV1::from_json_bytes_v1(&timing_bytes)?;
+    let timing_contract = match fs::read(&timing_staging)
+        .map_err(Error::from)
+        .and_then(|bytes| VoiceTimingV1::from_json_bytes_v1(&bytes))
+    {
+        Ok(timing) => timing,
+        Err(error) => {
+            let _ = fs::remove_file(&audio_staging);
+            let _ = fs::remove_file(&timing_staging);
+            return Err(error);
+        }
+    };
     if timing_contract.segment_id != job.unit {
         let _ = fs::remove_file(&audio_staging);
         let _ = fs::remove_file(&timing_staging);
@@ -522,6 +531,12 @@ fn voice_bundle_members_v1(
         return Err(Error::InvalidContract(
             "voice artifact bundle requires exactly one audio and one voice_timing artifact"
                 .to_owned(),
+        ));
+    }
+    let expected_timing_uri = voice_timing_output_uri_v1(&audio[0].output_uri)?;
+    if timing[0].output_uri != expected_timing_uri {
+        return Err(Error::InvalidContract(
+            "voice timing output_uri must be the sidecar of the audio output_uri".to_owned(),
         ));
     }
     Ok((audio[0], timing[0]))
