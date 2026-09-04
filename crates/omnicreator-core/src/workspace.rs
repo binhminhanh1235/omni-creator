@@ -123,6 +123,7 @@ impl Workspace {
         let lock_path = self.data_root.join(".omnicreator/writer.lock");
         let lock_file = fs::OpenOptions::new()
             .create(true)
+            .truncate(false)
             .read(true)
             .write(true)
             .open(lock_path)?;
