@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
-    llmgateway::decode_structured_output, Error, LlmGatewayClient, LlmGatewayRouteTrace,
-    RankedVisualCandidate, Result, SceneIntentV1, VisualCandidate, VisualCandidatePreview,
+    llmgateway::decode_structured_output, Error, LlmGatewayClient, RankedVisualCandidate, Result,
+    SceneIntentV1, VisualCandidate, VisualCandidatePreview,
     VisualPreviewKind,
 };
 
