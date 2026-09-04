@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use chrono::{DateTime, Utc};
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
 use uuid::Uuid;
 
 use crate::{Error, Project, Result};
@@ -102,6 +102,33 @@ impl StateStore {
         Ok(())
     }
 
+    pub fn integrity_check(&self) -> Result<()> {
+        integrity_check_connection(&self.connection)
+    }
+
+    pub fn create_snapshot(&self, destination: impl AsRef<Path>) -> Result<()> {
+        self.integrity_check()?;
+        let destination = destination.as_ref();
+        if destination.exists() {
+            return Err(Error::InvalidHandoff(format!(
+                "snapshot destination already exists: {}",
+                destination.display()
+            )));
+        }
+        let destination_str = destination
+            .to_str()
+            .ok_or_else(|| Error::InvalidPathEncoding(destination.to_path_buf()))?;
+
+        self.connection
+            .execute("VACUUM INTO ?1", params![destination_str])?;
+        Self::validate_database(destination)
+    }
+
+    pub fn validate_database(path: impl AsRef<Path>) -> Result<()> {
+        let connection = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        integrity_check_connection(&connection)
+    }
+
     pub fn create_project(&self, title: &str) -> Result<Project> {
         let now = Utc::now();
         let project = Project {
@@ -152,6 +179,16 @@ impl StateStore {
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(projects)
     }
+}
+
+fn integrity_check_connection(connection: &Connection) -> Result<()> {
+    let result: String = connection.query_row("PRAGMA integrity_check", [], |row| row.get(0))?;
+    if result != "ok" {
+        return Err(Error::InvalidHandoff(format!(
+            "SQLite integrity_check failed: {result}"
+        )));
+    }
+    Ok(())
 }
 
 fn project_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Project> {
