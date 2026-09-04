@@ -2,15 +2,12 @@ use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 
 use omnicreator_core::{
-    ArtifactIrV1, AssetV1, AttemptIrV1, ComputeProviderCapabilitiesV1, JobIrV1,
-    PluginManifest, PluginProgressEvent, PluginRequest, PluginResponse, ProjectIrV1, SceneIntentV1,
-    StepIrV1,
+    ArtifactIrV1, AssetV1, AttemptIrV1, ComputeProviderCapabilitiesV1, JobIrV1, PluginManifest,
+    PluginProgressEvent, PluginRequest, PluginResponse, ProjectIrV1, SceneIntentV1, StepIrV1,
 };
 
-fn assert_fixture<T>(
-    raw: &str,
-    validate: impl Fn(&T) -> omnicreator_core::Result<()>,
-) where
+fn assert_fixture<T>(raw: &str, validate: impl Fn(&T) -> omnicreator_core::Result<()>)
+where
     T: DeserializeOwned + Serialize,
 {
     let expected: Value = serde_json::from_str(raw).unwrap();
