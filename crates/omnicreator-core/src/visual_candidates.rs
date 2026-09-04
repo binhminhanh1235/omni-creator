@@ -1,8 +1,11 @@
-use std::collections::BTreeSet;
+use std::{
+    collections::BTreeSet,
+    path::{Component, Path},
+};
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Error, Result, SceneIntentV1};
+use crate::{artifact_store::PluginOutputPromotion, Error, LogicalUri, Result, SceneIntentV1};
 
 pub const DEFAULT_SEMANTIC_RELEVANCE_WEIGHT: f64 = 0.35;
 pub const DEFAULT_EMOTIONAL_RELEVANCE_WEIGHT: f64 = 0.20;
@@ -167,6 +170,77 @@ impl VisualCandidate {
         }
         parts.extend(self.tags.iter().map(String::as_str));
         normalize_text(&parts.join(" "))
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SelectedVisualOutput {
+    pub source_provider: String,
+    pub source_asset_id: String,
+    pub selection_ref: String,
+    pub media_type: VisualMediaType,
+    pub relative_output: String,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub duration: Option<f64>,
+    #[serde(default)]
+    pub provenance: std::collections::BTreeMap<String, serde_json::Value>,
+}
+
+impl SelectedVisualOutput {
+    pub fn validate(&self) -> Result<()> {
+        require_non_empty("selected visual source_provider", &self.source_provider)?;
+        require_non_empty("selected visual source_asset_id", &self.source_asset_id)?;
+        require_non_empty("selected visual selection_ref", &self.selection_ref)?;
+        require_non_empty("selected visual relative_output", &self.relative_output)?;
+        validate_relative_output(&self.relative_output)?;
+
+        if self.width == Some(0) {
+            return Err(Error::InvalidContract(
+                "selected visual width must be positive when present".to_owned(),
+            ));
+        }
+        if self.height == Some(0) {
+            return Err(Error::InvalidContract(
+                "selected visual height must be positive when present".to_owned(),
+            ));
+        }
+        if self
+            .duration
+            .is_some_and(|duration| !duration.is_finite() || duration <= 0.0)
+        {
+            return Err(Error::InvalidContract(
+                "selected visual duration must be finite and positive when present".to_owned(),
+            ));
+        }
+
+        Ok(())
+    }
+
+    pub fn artifact_type(&self) -> &'static str {
+        match self.media_type {
+            VisualMediaType::Image => "image",
+            VisualMediaType::Video => "video",
+        }
+    }
+
+    pub fn promotion(&self, target_uri: LogicalUri) -> Result<PluginOutputPromotion> {
+        self.validate()?;
+
+        Ok(PluginOutputPromotion {
+            relative_output: self.relative_output.clone(),
+            target_uri,
+            artifact_type: self.artifact_type().to_owned(),
+            metadata: serde_json::json!({
+                "source_provider": self.source_provider.clone(),
+                "source_asset_id": self.source_asset_id.clone(),
+                "selection_ref": self.selection_ref.clone(),
+                "width": self.width,
+                "height": self.height,
+                "duration": self.duration,
+                "provenance": self.provenance.clone(),
+            }),
+        })
     }
 }
 
@@ -498,6 +572,35 @@ fn normalize_text(value: &str) -> String {
         .join(" ")
 }
 
+fn validate_relative_output(value: &str) -> Result<()> {
+    let path = Path::new(value);
+    if path.is_absolute() {
+        return Err(Error::InvalidContract(
+            "selected visual relative_output must be relative".to_owned(),
+        ));
+    }
+
+    let mut saw_component = false;
+    for component in path.components() {
+        match component {
+            Component::Normal(_) => saw_component = true,
+            _ => {
+                return Err(Error::InvalidContract(
+                    "selected visual relative_output must not contain traversal or platform prefixes"
+                        .to_owned(),
+                ));
+            }
+        }
+    }
+
+    if !saw_component {
+        return Err(Error::InvalidContract(
+            "selected visual relative_output must identify a file".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
 fn validate_unit_interval(label: &str, value: f64) -> Result<()> {
     if !value.is_finite() || !(0.0..=1.0).contains(&value) {
         return Err(Error::InvalidContract(format!(
@@ -580,6 +683,57 @@ mod tests {
             usage_count: 0,
             used_recently: false,
         }
+    }
+
+    fn selected_output() -> SelectedVisualOutput {
+        SelectedVisualOutput {
+            source_provider: "pexels".to_owned(),
+            source_asset_id: "2499611".to_owned(),
+            selection_ref: "pexels:video:2499611".to_owned(),
+            media_type: VisualMediaType::Video,
+            relative_output: "selected/pexels-video-2499611.mp4".to_owned(),
+            width: Some(1920),
+            height: Some(1080),
+            duration: Some(8.0),
+            provenance: BTreeMap::from([
+                (
+                    "creator_name".to_owned(),
+                    serde_json::json!("Video Creator"),
+                ),
+                (
+                    "source_page_url".to_owned(),
+                    serde_json::json!("https://www.pexels.com/video/example-2499611/"),
+                ),
+            ]),
+        }
+    }
+
+    #[test]
+    fn selected_output_builds_core_owned_promotion_with_provenance() {
+        let selected = selected_output();
+        let promotion = selected
+            .promotion(LogicalUri::parse("project://video/SC17.mp4").unwrap())
+            .unwrap();
+
+        assert_eq!(
+            promotion.relative_output,
+            "selected/pexels-video-2499611.mp4"
+        );
+        assert_eq!(promotion.artifact_type, "video");
+        assert_eq!(promotion.metadata["source_provider"], "pexels");
+        assert_eq!(
+            promotion.metadata["provenance"]["creator_name"],
+            "Video Creator"
+        );
+    }
+
+    #[test]
+    fn selected_output_rejects_workspace_traversal() {
+        let mut selected = selected_output();
+        selected.relative_output = "../outside.mp4".to_owned();
+
+        let error = selected.validate().unwrap_err();
+        assert!(error.to_string().contains("relative_output"));
     }
 
     #[test]

@@ -13,9 +13,10 @@ import os
 import socket
 import sys
 from dataclasses import dataclass
+from pathlib import Path, PurePosixPath
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 
 API_VERSION = 1
@@ -23,8 +24,11 @@ PROVIDER_ID = "pexels"
 PEXELS_API_BASE = "https://api.pexels.com"
 PEXELS_HOST = "api.pexels.com"
 REQUEST_TIMEOUT_SECONDS = 20
+STANDARD_VIDEO_SHORT_SIDE = 1080
 
 SUPPORTED_MEDIA_TYPES = {"video", "image", "both"}
+SUPPORTED_QUALITY_MODES = {"standard", "high"}
+ALLOWED_MEDIA_HOSTS = {"images.pexels.com", "player.vimeo.com"}
 SUPPORTED_ORIENTATIONS = {"auto", "landscape", "portrait", "square"}
 SUPPORTED_SIZES = {"small", "medium", "large"}
 SUPPORTED_LOCALES = {
@@ -149,6 +153,49 @@ class PexelsClient:
         )
         return self._get_json("/v1/search", params)
 
+    def get_video(self, asset_id: str) -> PexelsResponse:
+        return self._get_json(f"/v1/videos/videos/{asset_id}", {})
+
+    def get_photo(self, asset_id: str) -> PexelsResponse:
+        return self._get_json(f"/v1/photos/{asset_id}", {})
+
+    def download_to_path(self, url: str, destination: Path) -> None:
+        validate_media_url(url)
+        request = Request(
+            url,
+            method="GET",
+            headers={
+                "Accept": "*/*",
+                "User-Agent": "OmniCreator-Pexels/1.0",
+            },
+        )
+
+        try:
+            with self._opener(request, timeout=self._timeout_seconds) as response:
+                with destination.open("wb") as output:
+                    while True:
+                        chunk = response.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        output.write(chunk)
+        except HTTPError as error:
+            raise map_http_error(error) from error
+        except (URLError, TimeoutError, socket.timeout, OSError) as error:
+            raise PluginFailure(
+                "PEXELS_DOWNLOAD_ERROR",
+                f"Pexels media download failed: {error}",
+                retryable=True,
+                suggested_fallback="retry-selected-asset",
+            ) from error
+
+        if not destination.is_file() or destination.stat().st_size == 0:
+            raise PluginFailure(
+                "PEXELS_EMPTY_DOWNLOAD",
+                "Pexels media download produced an empty file.",
+                retryable=True,
+                suggested_fallback="retry-selected-asset",
+            )
+
     @staticmethod
     def _search_params(
         *,
@@ -170,7 +217,8 @@ class PexelsClient:
         return params
 
     def _get_json(self, path: str, params: dict[str, Any]) -> PexelsResponse:
-        url = f"{self._api_base}{path}?{urlencode(params)}"
+        query = urlencode(params)
+        url = f"{self._api_base}{path}" + (f"?{query}" if query else "")
         request = Request(
             url,
             method="GET",
@@ -288,6 +336,7 @@ def parse_optional_positive_int(value: Any) -> int | None:
 class PluginState:
     def __init__(self) -> None:
         self.settings = dict(DEFAULT_SETTINGS)
+        self.job_workspace: dict[str, str] | None = None
         self.shutdown_requested = False
 
     def initialize(self, params: Any) -> dict[str, Any]:
@@ -299,7 +348,13 @@ class PluginState:
                 "plugin.initialize params must be an object when present.",
             )
 
-        raw_settings = params.get("settings", params)
+        if "job_workspace" in params:
+            self.job_workspace = validate_job_workspace(params.get("job_workspace"))
+
+        if any(key in params for key in ("settings", "job_workspace", "permissions")):
+            raw_settings = params.get("settings", {})
+        else:
+            raw_settings = params
         if raw_settings is None:
             raw_settings = {}
         self.settings = merge_settings(DEFAULT_SETTINGS, raw_settings)
@@ -307,6 +362,7 @@ class PluginState:
             "plugin_id": PROVIDER_ID,
             "api_version": API_VERSION,
             "settings": public_settings(self.settings),
+            "workspace_ready": self.job_workspace is not None,
         }
 
 
@@ -403,8 +459,13 @@ def health_result(state: PluginState) -> dict[str, Any]:
 def capabilities_result() -> dict[str, Any]:
     return {
         "types": ["visual"],
-        "capabilities": ["stock_video", "stock_image", "preview_first_search"],
-        "operations": ["visual.resolve"],
+        "capabilities": [
+            "stock_video",
+            "stock_image",
+            "preview_first_search",
+            "selected_asset_download",
+        ],
+        "operations": ["visual.resolve", "visual.fetch_selected"],
         "scene_types": ["literal", "emotional", "conceptual"],
     }
 
@@ -647,6 +708,349 @@ def normalize_photo(scene_id: str, raw: Any) -> dict[str, Any]:
     }
 
 
+
+def validate_job_workspace(raw: Any) -> dict[str, str]:
+    if not isinstance(raw, dict):
+        raise PluginFailure(
+            "INVALID_WORKSPACE",
+            "job_workspace must be an object.",
+        )
+
+    workspace: dict[str, str] = {}
+    for key in ("output", "temp"):
+        value = raw.get(key)
+        if not isinstance(value, str) or not value.strip():
+            raise PluginFailure(
+                "INVALID_WORKSPACE",
+                f"job_workspace.{key} must be a non-empty path.",
+            )
+        path = Path(value).expanduser()
+        if not path.is_absolute():
+            raise PluginFailure(
+                "INVALID_WORKSPACE",
+                f"job_workspace.{key} must be an absolute path.",
+            )
+        if not path.is_dir():
+            raise PluginFailure(
+                "INVALID_WORKSPACE",
+                f"job_workspace.{key} does not exist or is not a directory.",
+            )
+        workspace[key] = str(path.resolve())
+    return workspace
+
+
+def parse_selection_ref(selection_ref: Any) -> tuple[str, str]:
+    value = require_non_empty_string(selection_ref, "selection_ref")
+    parts = value.split(":")
+    if len(parts) != 3 or parts[0] != PROVIDER_ID or parts[1] not in {"video", "image"}:
+        raise PluginFailure(
+            "INVALID_SELECTION_REF",
+            "selection_ref must be pexels:video:<id> or pexels:image:<id>.",
+        )
+    asset_id = parts[2]
+    if not asset_id.isdigit() or int(asset_id) <= 0:
+        raise PluginFailure(
+            "INVALID_SELECTION_REF",
+            "selection_ref asset id must be a positive integer.",
+        )
+    return parts[1], asset_id
+
+
+def validate_media_url(url: Any) -> str:
+    value = require_non_empty_string(url, "media URL")
+    parsed = urlparse(value)
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme != "https" or host not in ALLOWED_MEDIA_HOSTS:
+        raise PluginFailure(
+            "PEXELS_MEDIA_HOST_NOT_ALLOWED",
+            f"Pexels media URL must use HTTPS on an allowed host, found {host or 'unknown'}.",
+            retryable=False,
+        )
+    return value
+
+
+def select_video_file(raw_video: Any, quality_mode: str) -> dict[str, Any]:
+    if quality_mode not in SUPPORTED_QUALITY_MODES:
+        raise PluginFailure(
+            "INVALID_REQUEST",
+            f"quality_mode must be one of {sorted(SUPPORTED_QUALITY_MODES)}.",
+        )
+    if not isinstance(raw_video, dict):
+        raise PluginFailure(
+            "PEXELS_INVALID_RESPONSE",
+            "Pexels video detail must be an object.",
+            retryable=True,
+        )
+
+    candidates: list[dict[str, Any]] = []
+    for raw_file in require_list(raw_video.get("video_files"), "video_files"):
+        if not isinstance(raw_file, dict):
+            continue
+        file_type = raw_file.get("file_type")
+        if file_type != "video/mp4":
+            continue
+        width = raw_file.get("width")
+        height = raw_file.get("height")
+        link = raw_file.get("link")
+        if (
+            isinstance(width, bool)
+            or isinstance(height, bool)
+            or not isinstance(width, int)
+            or not isinstance(height, int)
+            or width <= 0
+            or height <= 0
+            or not isinstance(link, str)
+            or not link.strip()
+        ):
+            continue
+        validate_media_url(link)
+        candidates.append(
+            {
+                "id": require_provider_id(raw_file.get("id"), "video_file.id"),
+                "quality": raw_file.get("quality"),
+                "file_type": file_type,
+                "width": width,
+                "height": height,
+                "fps": raw_file.get("fps"),
+                "link": link.strip(),
+                "pixels": width * height,
+                "short_side": min(width, height),
+            }
+        )
+
+    if not candidates:
+        raise PluginFailure(
+            "PEXELS_NO_DOWNLOADABLE_VIDEO",
+            "Pexels returned no downloadable MP4 video source.",
+            retryable=True,
+            suggested_fallback="retry-selected-asset",
+        )
+
+    if quality_mode == "high":
+        selected = max(
+            candidates,
+            key=lambda item: (
+                item["pixels"],
+                item["short_side"],
+                item["id"],
+            ),
+        )
+    else:
+        full_hd_or_better = [
+            item for item in candidates if item["short_side"] >= STANDARD_VIDEO_SHORT_SIDE
+        ]
+        if full_hd_or_better:
+            selected = min(
+                full_hd_or_better,
+                key=lambda item: (
+                    item["short_side"] - STANDARD_VIDEO_SHORT_SIDE,
+                    item["pixels"],
+                    item["id"],
+                ),
+            )
+        else:
+            selected = max(
+                candidates,
+                key=lambda item: (
+                    item["pixels"],
+                    item["short_side"],
+                    item["id"],
+                ),
+            )
+
+    return selected
+
+
+def output_paths_for_selection(
+    state: PluginState,
+    media_type: str,
+    asset_id: str,
+    extension: str,
+) -> tuple[str, Path, Path]:
+    if state.job_workspace is None:
+        raise PluginFailure(
+            "WORKSPACE_REQUIRED",
+            "visual.fetch_selected requires plugin.initialize with a job_workspace.",
+            retryable=False,
+        )
+
+    relative_output = f"selected/pexels-{media_type}-{asset_id}.{extension}"
+    relative = PurePosixPath(relative_output)
+    if relative.is_absolute() or any(part in {"", ".", ".."} for part in relative.parts):
+        raise PluginFailure(
+            "INVALID_OUTPUT_PATH",
+            "selected asset output path is invalid.",
+        )
+
+    output_root = Path(state.job_workspace["output"]).resolve()
+    temp_root = Path(state.job_workspace["temp"]).resolve()
+    destination = output_root.joinpath(*relative.parts)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    resolved_parent = destination.parent.resolve()
+    if output_root != resolved_parent and output_root not in resolved_parent.parents:
+        raise PluginFailure(
+            "INVALID_OUTPUT_PATH",
+            "selected asset output escaped the job workspace.",
+        )
+
+    temp_path = temp_root / f"pexels-{media_type}-{asset_id}.{extension}.part"
+    return relative_output, destination, temp_path
+
+
+def image_extension_from_url(url: str) -> str:
+    suffix = Path(urlparse(url).path).suffix.lower().lstrip(".")
+    if suffix in {"jpg", "jpeg", "png", "webp"}:
+        return suffix
+    return "jpg"
+
+
+def execute_fetch_selected(
+    payload: Any,
+    state: PluginState,
+    client_factory: Callable[[str], Any] = PexelsClient,
+) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise PluginFailure(
+            "INVALID_REQUEST",
+            "visual.fetch_selected payload must be an object.",
+        )
+
+    selection_ref = require_non_empty_string(payload.get("selection_ref"), "selection_ref")
+    media_type, asset_id = parse_selection_ref(selection_ref)
+    quality_mode = payload.get("quality_mode", "standard")
+    if quality_mode not in SUPPORTED_QUALITY_MODES:
+        raise PluginFailure(
+            "INVALID_REQUEST",
+            f"quality_mode must be one of {sorted(SUPPORTED_QUALITY_MODES)}.",
+        )
+
+    api_key_env = state.settings["api_key_env"]
+    api_key = os.environ.get(api_key_env, "").strip()
+    if not api_key:
+        raise PluginFailure(
+            "CREDENTIAL_MISSING",
+            f"Pexels API key is missing. Set machine-local environment variable {api_key_env}.",
+            retryable=False,
+            suggested_fallback="local-library",
+        )
+
+    client = client_factory(api_key)
+
+    if media_type == "video":
+        response = client.get_video(asset_id)
+        raw = response.data
+        source_asset_id = require_provider_id(raw.get("id"), "video.id")
+        if source_asset_id != asset_id:
+            raise PluginFailure(
+                "PEXELS_INVALID_RESPONSE",
+                f"Pexels returned video id {source_asset_id}, expected {asset_id}.",
+                retryable=True,
+            )
+        selected_file = select_video_file(raw, quality_mode)
+        relative_output, destination, temp_path = output_paths_for_selection(
+            state,
+            "video",
+            asset_id,
+            "mp4",
+        )
+        client.download_to_path(selected_file["link"], temp_path)
+        os.replace(temp_path, destination)
+
+        user = raw.get("user") if isinstance(raw.get("user"), dict) else {}
+        creator_name = optional_non_empty_string(user.get("name"), "video.user.name")
+        creator_url = optional_non_empty_string(user.get("url"), "video.user.url")
+        source_page_url = optional_non_empty_string(raw.get("url"), "video.url")
+        attribution = (
+            f"Video by {creator_name} on Pexels"
+            if creator_name
+            else "Video provided by Pexels"
+        )
+
+        return {
+            "source_provider": PROVIDER_ID,
+            "source_asset_id": asset_id,
+            "selection_ref": selection_ref,
+            "media_type": "video",
+            "relative_output": relative_output,
+            "width": selected_file["width"],
+            "height": selected_file["height"],
+            "duration": optional_positive_number(raw.get("duration"), "video.duration"),
+            "provenance": {
+                "provider": PROVIDER_ID,
+                "provider_asset_id": asset_id,
+                "source_page_url": source_page_url,
+                "creator_name": creator_name,
+                "creator_url": creator_url,
+                "attribution": attribution,
+                "quality_mode": quality_mode,
+                "provider_file_id": selected_file["id"],
+                "provider_quality": selected_file["quality"],
+                "file_type": selected_file["file_type"],
+                "fps": selected_file["fps"],
+            },
+        }
+
+    response = client.get_photo(asset_id)
+    raw = response.data
+    source_asset_id = require_provider_id(raw.get("id"), "photo.id")
+    if source_asset_id != asset_id:
+        raise PluginFailure(
+            "PEXELS_INVALID_RESPONSE",
+            f"Pexels returned photo id {source_asset_id}, expected {asset_id}.",
+            retryable=True,
+        )
+
+    src = raw.get("src")
+    if not isinstance(src, dict):
+        raise PluginFailure(
+            "PEXELS_INVALID_RESPONSE",
+            "Pexels photo detail has no src object.",
+            retryable=True,
+        )
+    original_url = validate_media_url(src.get("original"))
+    extension = image_extension_from_url(original_url)
+    relative_output, destination, temp_path = output_paths_for_selection(
+        state,
+        "image",
+        asset_id,
+        extension,
+    )
+    client.download_to_path(original_url, temp_path)
+    os.replace(temp_path, destination)
+
+    creator_name = optional_non_empty_string(raw.get("photographer"), "photo.photographer")
+    creator_url = optional_non_empty_string(
+        raw.get("photographer_url"),
+        "photo.photographer_url",
+    )
+    source_page_url = optional_non_empty_string(raw.get("url"), "photo.url")
+    attribution = (
+        f"Photo by {creator_name} on Pexels"
+        if creator_name
+        else "Photo provided by Pexels"
+    )
+
+    return {
+        "source_provider": PROVIDER_ID,
+        "source_asset_id": asset_id,
+        "selection_ref": selection_ref,
+        "media_type": "image",
+        "relative_output": relative_output,
+        "width": optional_positive_int(raw.get("width"), "photo.width"),
+        "height": optional_positive_int(raw.get("height"), "photo.height"),
+        "duration": None,
+        "provenance": {
+            "provider": PROVIDER_ID,
+            "provider_asset_id": asset_id,
+            "source_page_url": source_page_url,
+            "creator_name": creator_name,
+            "creator_url": creator_url,
+            "attribution": attribution,
+            "quality_mode": "original",
+        },
+    }
+
+
 def resolved_orientation(configured: str, aspect_ratio: Any) -> str | None:
     if configured != "auto":
         return configured
@@ -705,16 +1109,23 @@ def handle_request(
                     "plugin.execute params must be an object.",
                 )
             operation = require_non_empty_string(params.get("operation"), "operation")
-            if operation != "visual.resolve":
+            if operation == "visual.resolve":
+                result = execute_visual_resolve(
+                    params.get("payload"),
+                    state,
+                    client_factory=client_factory,
+                )
+            elif operation == "visual.fetch_selected":
+                result = execute_fetch_selected(
+                    params.get("payload"),
+                    state,
+                    client_factory=client_factory,
+                )
+            else:
                 raise PluginFailure(
                     "UNSUPPORTED_OPERATION",
                     f"Unsupported Pexels operation: {operation}.",
                 )
-            result = execute_visual_resolve(
-                params.get("payload"),
-                state,
-                client_factory=client_factory,
-            )
         elif method == "plugin.cancel":
             result = {
                 "cancelled": False,
