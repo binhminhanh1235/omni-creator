@@ -254,6 +254,12 @@ pub struct LlmChatResult {
     pub model: Option<String>,
     pub content: String,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LlmRoutedChatResult {
+    pub route_id: Option<String>,
+    pub chat: LlmChatResult,
+}
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LlmGatewayRouteCandidate {
     pub route_id: String,
@@ -285,6 +291,13 @@ impl LlmGatewayRouteTrace {
 
     pub fn selected_transport(&self) -> Option<&str> {
         self.selected_candidate()
+            .map(|candidate| candidate.transport.as_str())
+    }
+
+    pub fn transport_for_route(&self, route_id: &str) -> Option<&str> {
+        self.candidates
+            .iter()
+            .find(|candidate| candidate.route_id == route_id)
             .map(|candidate| candidate.transport.as_str())
     }
 }
@@ -377,9 +390,26 @@ impl LlmGatewayClient {
     }
 
     pub fn chat_raw(&self, body: &Value) -> Result<LlmChatResult> {
+        Ok(self.chat_raw_routed(body)?.chat)
+    }
+
+    pub fn chat_raw_routed(&self, body: &Value) -> Result<LlmRoutedChatResult> {
         validate_raw_chat_body(body)?;
-        let response = self.post_json("/v1/chat/completions", body)?;
-        parse_chat_result(response)
+        let credential = self.config.credential()?;
+        let authorization = format!("Bearer {credential}");
+        let payload = serde_json::to_string(body)?;
+        let url = self.config.endpoint("/v1/chat/completions");
+        let request = self
+            .agent
+            .post(&url)
+            .set("Authorization", &authorization)
+            .set("Content-Type", "application/json");
+        let (value, route_id) =
+            decode_http_response_with_route(request.send_string(&payload))?;
+        Ok(LlmRoutedChatResult {
+            route_id,
+            chat: parse_chat_result(value)?,
+        })
     }
 
     pub fn explain_routes_for_body(
@@ -504,6 +534,33 @@ impl LlmGatewayClient {
             .set("Authorization", &authorization)
             .set("Content-Type", "application/json");
         decode_http_response(request.send_string(&payload))
+    }
+}
+
+fn decode_http_response_with_route(
+    response: std::result::Result<ureq::Response, ureq::Error>,
+) -> Result<(Value, Option<String>)> {
+    match response {
+        Ok(response) => {
+            let status = response.status();
+            let route_id = response
+                .header("x-llmgateway-route")
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned);
+            let body = response.into_string()?;
+            let value = serde_json::from_str(&body).map_err(|error| {
+                Error::InvalidLlmGatewayResponse(format!(
+                    "HTTP {status} returned invalid JSON: {error}"
+                ))
+            })?;
+            Ok((value, route_id))
+        }
+        Err(ureq::Error::Status(status, response)) => {
+            let body = response.into_string().unwrap_or_default();
+            Err(parse_gateway_error(status, &body))
+        }
+        Err(ureq::Error::Transport(error)) => Err(Error::LlmGatewayTransport(error.to_string())),
     }
 }
 
@@ -875,6 +932,8 @@ mod tests {
         .unwrap();
 
         assert_eq!(trace.selected_transport(), Some("api"));
+        assert_eq!(trace.transport_for_route("gemini-browser"), Some("browser"));
+        assert_eq!(trace.transport_for_route("openrouter-vision"), Some("api"));
         assert_eq!(
             trace.selected_candidate().map(|candidate| candidate.route_id.as_str()),
             Some("openrouter-vision")
