@@ -430,9 +430,25 @@ pub fn evaluate_gpu_queue(
         preparation.requirements.model_group.as_deref(),
     );
 
-    let selected_provider = providers
+    let matching_providers = providers
         .iter()
         .filter(|provider| provider.session.identity.provider_id == provider_id)
+        .collect::<Vec<_>>();
+
+    if matching_providers.is_empty() {
+        return Ok(not_ready(
+            job,
+            vec![reason(
+                GpuNotReadyReasonCodeV1::ProviderUnavailable,
+                format!("Selected compute provider {provider_id} is not connected."),
+            )],
+        ));
+    }
+
+    let provider = matching_providers
+        .iter()
+        .copied()
+        .filter(|provider| provider.state == ComputeProviderConnectionState::Ready)
         .min_by(|left, right| {
             left.session
                 .identity
@@ -440,31 +456,23 @@ pub fn evaluate_gpu_queue(
                 .cmp(&right.session.identity.session_id)
         });
 
-    let provider = match selected_provider {
+    let provider = match provider {
         Some(provider) => provider,
         None => {
+            let state = matching_providers
+                .iter()
+                .map(|provider| provider.state.as_str())
+                .min()
+                .unwrap_or("UNKNOWN");
             return Ok(not_ready(
                 job,
                 vec![reason(
-                    GpuNotReadyReasonCodeV1::ProviderUnavailable,
-                    format!("Selected compute provider {provider_id} is not connected."),
+                    GpuNotReadyReasonCodeV1::ProviderNotReady,
+                    format!("Selected compute provider {provider_id} has no READY session; observed {state}."),
                 )],
             ));
         }
     };
-
-    if provider.state != ComputeProviderConnectionState::Ready {
-        return Ok(not_ready(
-            job,
-            vec![reason(
-                GpuNotReadyReasonCodeV1::ProviderNotReady,
-                format!(
-                    "Selected compute provider {provider_id} is {}.",
-                    provider.state.as_str()
-                ),
-            )],
-        ));
-    }
 
     if let Some(model_group) = preparation.requirements.model_group.as_deref() {
         if !provider
