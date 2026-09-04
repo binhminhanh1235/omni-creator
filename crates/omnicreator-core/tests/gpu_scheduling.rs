@@ -394,6 +394,46 @@ fn non_parallelizable_group_cannot_run_concurrently() {
 }
 
 #[test]
+fn ready_reconnect_session_wins_over_stale_session_for_same_provider() {
+    let job = logical_job("job-1");
+    let mut stale = provider_snapshot();
+    stale.state = ComputeProviderConnectionState::Stale;
+    stale.session.identity.session_id = "session-a-stale".to_owned();
+
+    let mut ready = provider_snapshot();
+    ready.session.identity.session_id = "session-b-ready".to_owned();
+
+    let decision = evaluate_gpu_queue(
+        &job,
+        &facts(),
+        &preparation(&job.job_id),
+        &[stale, ready],
+        &[],
+    )
+    .unwrap();
+
+    assert!(decision.is_gpu_ready());
+    assert_eq!(
+        decision.selection.as_ref().unwrap().session_id,
+        "session-b-ready"
+    );
+}
+
+#[test]
+fn missing_selected_provider_is_not_gpu_ready() {
+    let job = logical_job("job-1");
+
+    let decision =
+        evaluate_gpu_queue(&job, &facts(), &preparation(&job.job_id), &[], &[]).unwrap();
+
+    assert!(codes(&decision).contains(&GpuNotReadyReasonCodeV1::ProviderUnavailable));
+    assert!(decision
+        .reasons
+        .iter()
+        .all(|reason| !reason.message.trim().is_empty()));
+}
+
+#[test]
 fn stale_provider_cannot_claim_new_gpu_job() {
     let job = logical_job("job-1");
     let mut provider = provider_snapshot();
