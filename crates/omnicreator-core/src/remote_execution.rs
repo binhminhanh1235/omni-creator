@@ -656,7 +656,6 @@ pub fn sync_remote_artifact(
     result
 }
 
-
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum RemoteRetryActionV1 {
@@ -899,8 +898,7 @@ pub fn reconcile_remote_session_v1(
             for attempt in attempts {
                 if attempt.attempt_status == StepStatus::Retryable {
                     summary.attempts_already_retryable += 1;
-                    if attempt.error_code.as_deref()
-                        != Some("LOCAL_RESTART_PENDING_RECONCILIATION")
+                    if attempt.error_code.as_deref() != Some("LOCAL_RESTART_PENDING_RECONCILIATION")
                     {
                         continue;
                     }
@@ -987,8 +985,7 @@ pub fn reconcile_remote_session_v1(
                 None
             }
         }) {
-            let next =
-                state_store.reconcile_remote_failure_v1(&attempt.attempt_id, error_code)?;
+            let next = state_store.reconcile_remote_failure_v1(&attempt.attempt_id, error_code)?;
             match next {
                 StepStatus::Retryable => summary.attempts_marked_retryable += 1,
                 StepStatus::Fatal => summary.attempts_marked_fatal += 1,
