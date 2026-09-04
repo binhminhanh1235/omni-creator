@@ -6,9 +6,7 @@ use std::{
 use chrono::Utc;
 use uuid::Uuid;
 
-use crate::{
-    fs_util::sha256_file, Artifact, Error, LogicalUri, PathResolver, Result, StateStore,
-};
+use crate::{fs_util::sha256_file, Artifact, Error, LogicalUri, PathResolver, Result, StateStore};
 
 #[derive(Debug, Clone)]
 pub struct ArtifactStore {
@@ -50,14 +48,14 @@ impl ArtifactStore {
             ));
         }
 
-        if matches!(target_uri, LogicalUri::Artifact(_)) {
+        if matches!(&target_uri, LogicalUri::Artifact(_)) {
             return Err(Error::InvalidArtifact(
                 "artifact:// cannot be used as a physical promotion target".to_owned(),
             ));
         }
 
         let job = state_store.get_job(job_id)?;
-        let project_context = match target_uri {
+        let project_context = match &target_uri {
             LogicalUri::Project(_) => Some(job.project_id.as_str()),
             _ => None,
         };
@@ -130,7 +128,7 @@ impl ArtifactStore {
     }
 
     pub fn verify_artifact(&self, artifact: &Artifact) -> Result<bool> {
-        let project_context = match artifact.uri {
+        let project_context = match &artifact.uri {
             LogicalUri::Project(_) => artifact.project_id.as_deref(),
             _ => None,
         };
@@ -157,7 +155,10 @@ impl ArtifactStore {
 
 fn copy_and_sync(source: &Path, destination: &Path) -> Result<()> {
     fs::copy(source, destination)?;
-    let file = fs::OpenOptions::new().read(true).write(true).open(destination)?;
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(destination)?;
     file.sync_all()?;
     Ok(())
 }
@@ -201,7 +202,10 @@ mod tests {
             persisted_job.selected_artifact.as_deref(),
             Some(artifact.artifact_id.as_str())
         );
-        assert!(!artifact.uri.as_str().contains(root.to_string_lossy().as_ref()));
+        assert!(!artifact
+            .uri
+            .as_str()
+            .contains(root.to_string_lossy().as_ref()));
 
         let cached = artifacts
             .lookup_verified_cache(&state, &input_hash)
