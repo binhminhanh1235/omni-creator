@@ -4,6 +4,7 @@ use serde_json::Value;
 use omnicreator_core::{
     ArtifactIrV1, AssetV1, AttemptIrV1, ComputeProviderCapabilitiesV1, JobIrV1,
     PluginManifest, PluginProgressEvent, PluginRequest, PluginResponse, ProjectIrV1, SceneIntentV1,
+    StepIrV1,
 };
 
 fn assert_fixture<T>(
@@ -41,6 +42,10 @@ fn durable_ir_v1_fixtures_are_compatible() {
     assert_fixture::<ArtifactIrV1>(
         include_str!("fixtures/contracts/v1/artifact.json"),
         ArtifactIrV1::validate_v1,
+    );
+    assert_fixture::<StepIrV1>(
+        include_str!("fixtures/contracts/v1/step.json"),
+        StepIrV1::validate_v1,
     );
     assert_fixture::<JobIrV1>(
         include_str!("fixtures/contracts/v1/job.json"),
@@ -83,6 +88,7 @@ fn canonical_fixtures_do_not_embed_machine_absolute_paths() {
         include_str!("fixtures/contracts/v1/scene-intent.json"),
         include_str!("fixtures/contracts/v1/asset.json"),
         include_str!("fixtures/contracts/v1/artifact.json"),
+        include_str!("fixtures/contracts/v1/step.json"),
         include_str!("fixtures/contracts/v1/job.json"),
         include_str!("fixtures/contracts/v1/attempt.json"),
         include_str!("fixtures/contracts/v1/compute-capabilities.json"),
