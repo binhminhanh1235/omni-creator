@@ -2,6 +2,7 @@ import importlib.util
 import json
 import os
 import pathlib
+import sys
 import unittest
 from unittest.mock import patch
 from urllib.error import HTTPError
@@ -10,6 +11,7 @@ PLUGIN_PATH = pathlib.Path(__file__).resolve().parents[1] / "plugin.py"
 SPEC = importlib.util.spec_from_file_location("pexels_plugin", PLUGIN_PATH)
 plugin = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
+sys.modules[SPEC.name] = plugin
 SPEC.loader.exec_module(plugin)
 
 
