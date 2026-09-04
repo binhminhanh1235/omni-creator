@@ -1,19 +1,21 @@
 use std::{fs, path::Path};
 
 use omnicreator_core::{
-    dispatch_remote_job, parse_remote_journal_jsonl, sync_remote_artifact, ArtifactStore,
-    ComputeDeviceSelectionV1, ComputeJobDispatchAckV1, ComputeJobDispatchV1,
+    dispatch_remote_job, parse_remote_journal_jsonl, reconcile_remote_session_v1,
+    remote_retry_policy_v1, sync_remote_artifact, ArtifactStore, ComputeDeviceSelectionV1,
+    ComputeJobDispatchAckV1, ComputeJobDispatchV1, ComputeProviderConnectionState,
     ComputeProviderExecution, ComputeRemoteArtifactV1, ComputeRemoteJournalEntryV1,
-    ComputeRemoteJournalEventV1, ComputeRequirements, Error, GpuJobPreparationV1,
-    GpuQueueEligibilityStatusV1, GpuQueueEligibilityV1, LogicalUri, RemoteArtifactSyncOutcomeV1,
-    RemoteComputeJobSpecV1, ResourceRequirement, StateStore, StepStatus, Workspace,
-    REMOTE_JOURNAL_SCHEMA_V1,
+    ComputeRemoteJournalEventV1, ComputeRequirements, Error, FailureDisposition,
+    GpuJobPreparationV1, GpuQueueEligibilityStatusV1, GpuQueueEligibilityV1, LogicalUri,
+    RemoteArtifactSyncOutcomeV1, RemoteComputeJobSpecV1, RemoteRetryActionV1, ResourceRequirement,
+    StateStore, StepStatus, Workspace, REMOTE_JOURNAL_SCHEMA_V1,
 };
 use sha2::{Digest, Sha256};
 
 #[derive(Default)]
 struct FakeExecutor {
     dispatched: Vec<ComputeJobDispatchV1>,
+    journal: Vec<ComputeRemoteJournalEntryV1>,
     transfer_bytes: Vec<u8>,
     transfer_calls: usize,
     fail_dispatch: bool,
@@ -39,11 +41,23 @@ impl ComputeProviderExecution for FakeExecutor {
 
     fn read_journal(
         &mut self,
-        _provider_id: &str,
-        _session_id: &str,
-        _after_sequence: Option<u64>,
+        provider_id: &str,
+        session_id: &str,
+        after_sequence: Option<u64>,
     ) -> omnicreator_core::Result<Vec<ComputeRemoteJournalEntryV1>> {
-        Ok(Vec::new())
+        Ok(self
+            .journal
+            .iter()
+            .filter(|entry| {
+                entry.provider_id == provider_id
+                    && entry.session_id == session_id
+                    && match after_sequence {
+                        None => true,
+                        Some(sequence) => entry.sequence > sequence,
+                    }
+            })
+            .cloned()
+            .collect())
     }
 
     fn transfer_artifact(
@@ -148,6 +162,26 @@ fn artifact_entry(
                 transfer_ref: "artifact/S01.wav".to_owned(),
             },
         },
+    }
+}
+
+fn journal_entry(
+    job_id: &str,
+    attempt_id: &str,
+    input_hash: &str,
+    sequence: u64,
+    event: ComputeRemoteJournalEventV1,
+) -> ComputeRemoteJournalEntryV1 {
+    ComputeRemoteJournalEntryV1 {
+        schema: REMOTE_JOURNAL_SCHEMA_V1.to_owned(),
+        version: 1,
+        sequence,
+        provider_id: "compute-provider".to_owned(),
+        session_id: "session-p2".to_owned(),
+        job_id: job_id.to_owned(),
+        attempt_id: attempt_id.to_owned(),
+        input_hash: input_hash.to_owned(),
+        event,
     }
 }
 
@@ -489,4 +523,422 @@ fn conflicting_duplicate_delivery_is_rejected_without_refetch() {
         Err(Error::InvalidArtifact(_))
     ));
     assert_eq!(executor.transfer_calls, 1);
+}
+
+#[test]
+fn retry_policy_is_error_aware_for_remote_failures() {
+    let cases = [
+        (
+            "NETWORK_TIMEOUT",
+            FailureDisposition::Retryable,
+            RemoteRetryActionV1::AutomaticRetry,
+        ),
+        (
+            "WORKER_LOST",
+            FailureDisposition::Retryable,
+            RemoteRetryActionV1::Requeue,
+        ),
+        (
+            "MODEL_LOAD_ERROR",
+            FailureDisposition::Retryable,
+            RemoteRetryActionV1::RestartWorkerThenRetry,
+        ),
+        (
+            "CUDA_OOM",
+            FailureDisposition::Retryable,
+            RemoteRetryActionV1::RetryWithSupportedFallback,
+        ),
+        (
+            "BAD_INPUT",
+            FailureDisposition::Fatal,
+            RemoteRetryActionV1::RequiresUserAction,
+        ),
+    ];
+
+    for (error_code, disposition, action) in cases {
+        let policy = remote_retry_policy_v1(error_code);
+        assert_eq!(policy.disposition, disposition);
+        assert_eq!(policy.action, action);
+        assert!(!policy.message.trim().is_empty());
+    }
+}
+
+#[test]
+fn reconnect_recovers_remote_artifact_after_local_restart_before_regenerating() {
+    let temp = tempfile::tempdir().unwrap();
+    let workspace = Workspace::create(temp.path().join("data")).unwrap();
+    let mut state = StateStore::open(workspace.sqlite_path()).unwrap();
+    let project = state.create_project("Reconnect Recovery").unwrap();
+    let job = state
+        .create_job(&project.id, "tts", "S01", "input-hash-001")
+        .unwrap();
+
+    let bytes = b"artifact completed while local app was restarting".to_vec();
+    let mut executor = FakeExecutor {
+        transfer_bytes: bytes.clone(),
+        ..FakeExecutor::default()
+    };
+    let started = dispatch_remote_job(
+        &mut state,
+        &mut executor,
+        &gpu_ready(&job.job_id),
+        &preparation(&job.job_id),
+        &spec(&job.job_id),
+    )
+    .unwrap();
+
+    state.reconcile_interrupted_jobs().unwrap();
+    assert_eq!(
+        state.get_job(&job.job_id).unwrap().status,
+        StepStatus::Retryable
+    );
+    assert_eq!(
+        state.get_attempt(&started.attempt_id).unwrap().status,
+        StepStatus::Retryable
+    );
+
+    executor.journal = vec![artifact_entry(
+        &job.job_id,
+        &started.attempt_id,
+        &job.input_hash,
+        &bytes,
+    )];
+    let artifacts = ArtifactStore::new(workspace.data_root()).unwrap();
+
+    let summary = reconcile_remote_session_v1(
+        &mut state,
+        &artifacts,
+        &mut executor,
+        "compute-provider",
+        "session-p2",
+        ComputeProviderConnectionState::Ready,
+        temp.path().join("reconcile-staging"),
+    )
+    .unwrap();
+
+    assert_eq!(summary.artifacts_recovered, 1);
+    assert_eq!(summary.attempts_marked_retryable, 0);
+    let persisted = state.get_job(&job.job_id).unwrap();
+    assert_eq!(persisted.status, StepStatus::Succeeded);
+    assert_eq!(
+        persisted.selected_attempt.as_deref(),
+        Some(started.attempt_id.as_str())
+    );
+    let artifact = state
+        .get_artifact(persisted.selected_artifact.as_deref().unwrap())
+        .unwrap();
+    assert!(artifacts.verify_artifact(&artifact).unwrap());
+    assert_eq!(state.list_attempts(&job.job_id).unwrap().len(), 1);
+}
+
+#[test]
+fn reconnect_restores_same_retryable_attempt_when_remote_worker_is_still_running() {
+    let temp = tempfile::tempdir().unwrap();
+    let workspace = Workspace::create(temp.path().join("data")).unwrap();
+    let mut state = StateStore::open(workspace.sqlite_path()).unwrap();
+    let project = state.create_project("Reconnect Running").unwrap();
+    let job = state
+        .create_job(&project.id, "tts", "S01", "input-hash-001")
+        .unwrap();
+    let mut executor = FakeExecutor::default();
+    let started = dispatch_remote_job(
+        &mut state,
+        &mut executor,
+        &gpu_ready(&job.job_id),
+        &preparation(&job.job_id),
+        &spec(&job.job_id),
+    )
+    .unwrap();
+
+    state.reconcile_interrupted_jobs().unwrap();
+    executor.journal = vec![journal_entry(
+        &job.job_id,
+        &started.attempt_id,
+        &job.input_hash,
+        1,
+        ComputeRemoteJournalEventV1::Running,
+    )];
+    let artifacts = ArtifactStore::new(workspace.data_root()).unwrap();
+
+    let summary = reconcile_remote_session_v1(
+        &mut state,
+        &artifacts,
+        &mut executor,
+        "compute-provider",
+        "session-p2",
+        ComputeProviderConnectionState::Ready,
+        temp.path().join("reconcile-staging"),
+    )
+    .unwrap();
+
+    assert_eq!(summary.attempts_restored_running, 1);
+    assert_eq!(
+        state.get_job(&job.job_id).unwrap().status,
+        StepStatus::Running
+    );
+    let attempt = state.get_attempt(&started.attempt_id).unwrap();
+    assert_eq!(attempt.status, StepStatus::Running);
+    assert!(attempt.error_code.is_none());
+    assert_eq!(state.list_attempts(&job.job_id).unwrap().len(), 1);
+}
+
+#[test]
+fn ready_reconnect_requeues_running_attempt_missing_from_full_remote_journal() {
+    let temp = tempfile::tempdir().unwrap();
+    let workspace = Workspace::create(temp.path().join("data")).unwrap();
+    let mut state = StateStore::open(workspace.sqlite_path()).unwrap();
+    let project = state.create_project("Missing Journal Work").unwrap();
+    let job = state
+        .create_job(&project.id, "tts", "S01", "input-hash-001")
+        .unwrap();
+    let mut executor = FakeExecutor::default();
+    let started = dispatch_remote_job(
+        &mut state,
+        &mut executor,
+        &gpu_ready(&job.job_id),
+        &preparation(&job.job_id),
+        &spec(&job.job_id),
+    )
+    .unwrap();
+    let artifacts = ArtifactStore::new(workspace.data_root()).unwrap();
+
+    let summary = reconcile_remote_session_v1(
+        &mut state,
+        &artifacts,
+        &mut executor,
+        "compute-provider",
+        "session-p2",
+        ComputeProviderConnectionState::Ready,
+        temp.path().join("reconcile-staging"),
+    )
+    .unwrap();
+
+    assert_eq!(summary.attempts_marked_retryable, 1);
+    assert_eq!(
+        state.get_job(&job.job_id).unwrap().status,
+        StepStatus::Retryable
+    );
+    assert_eq!(
+        state
+            .get_attempt(&started.attempt_id)
+            .unwrap()
+            .error_code
+            .as_deref(),
+        Some("WORKER_LOST")
+    );
+}
+
+#[test]
+fn lost_session_requeues_only_unfinished_running_work_and_preserves_history() {
+    let temp = tempfile::tempdir().unwrap();
+    let workspace = Workspace::create(temp.path().join("data")).unwrap();
+    let mut state = StateStore::open(workspace.sqlite_path()).unwrap();
+    let project = state.create_project("Lost Session").unwrap();
+    let job = state
+        .create_job(&project.id, "tts", "S01", "input-hash-001")
+        .unwrap();
+    let mut executor = FakeExecutor::default();
+    let started = dispatch_remote_job(
+        &mut state,
+        &mut executor,
+        &gpu_ready(&job.job_id),
+        &preparation(&job.job_id),
+        &spec(&job.job_id),
+    )
+    .unwrap();
+    let artifacts = ArtifactStore::new(workspace.data_root()).unwrap();
+
+    let summary = reconcile_remote_session_v1(
+        &mut state,
+        &artifacts,
+        &mut executor,
+        "compute-provider",
+        "session-p2",
+        ComputeProviderConnectionState::Lost,
+        temp.path().join("reconcile-staging"),
+    )
+    .unwrap();
+
+    assert_eq!(summary.attempts_marked_retryable, 1);
+    assert_eq!(
+        state.get_job(&job.job_id).unwrap().status,
+        StepStatus::Retryable
+    );
+    let attempts = state.list_attempts(&job.job_id).unwrap();
+    assert_eq!(attempts.len(), 1);
+    assert_eq!(attempts[0].attempt_id, started.attempt_id);
+    assert_eq!(attempts[0].error_code.as_deref(), Some("WORKER_LOST"));
+}
+
+#[test]
+fn remote_failed_journal_uses_error_aware_retry_without_new_logical_job() {
+    for error_code in [
+        "NETWORK_TIMEOUT",
+        "WORKER_LOST",
+        "MODEL_LOAD_ERROR",
+        "CUDA_OOM",
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let workspace = Workspace::create(temp.path().join("data")).unwrap();
+        let mut state = StateStore::open(workspace.sqlite_path()).unwrap();
+        let project = state.create_project("Retryable Remote Failure").unwrap();
+        let job = state
+            .create_job(&project.id, "tts", "S01", "input-hash-001")
+            .unwrap();
+        let mut executor = FakeExecutor::default();
+        let started = dispatch_remote_job(
+            &mut state,
+            &mut executor,
+            &gpu_ready(&job.job_id),
+            &preparation(&job.job_id),
+            &spec(&job.job_id),
+        )
+        .unwrap();
+        executor.journal = vec![journal_entry(
+            &job.job_id,
+            &started.attempt_id,
+            &job.input_hash,
+            1,
+            ComputeRemoteJournalEventV1::Failed {
+                error_code: error_code.to_owned(),
+                message: Some("fixture retryable failure".to_owned()),
+            },
+        )];
+        let artifacts = ArtifactStore::new(workspace.data_root()).unwrap();
+
+        let summary = reconcile_remote_session_v1(
+            &mut state,
+            &artifacts,
+            &mut executor,
+            "compute-provider",
+            "session-p2",
+            ComputeProviderConnectionState::Ready,
+            temp.path().join("reconcile-staging"),
+        )
+        .unwrap();
+
+        assert_eq!(summary.attempts_marked_retryable, 1);
+        let persisted = state.get_job(&job.job_id).unwrap();
+        assert_eq!(persisted.job_id, job.job_id);
+        assert_eq!(persisted.status, StepStatus::Retryable);
+        let attempt = state.get_attempt(&started.attempt_id).unwrap();
+        assert_eq!(attempt.status, StepStatus::Retryable);
+        assert_eq!(attempt.error_code.as_deref(), Some(error_code));
+        assert_eq!(state.list_attempts(&job.job_id).unwrap().len(), 1);
+    }
+}
+
+#[test]
+fn fatal_remote_failure_requires_input_or_configuration_change() {
+    let temp = tempfile::tempdir().unwrap();
+    let workspace = Workspace::create(temp.path().join("data")).unwrap();
+    let mut state = StateStore::open(workspace.sqlite_path()).unwrap();
+    let project = state.create_project("Fatal Remote Failure").unwrap();
+    let job = state
+        .create_job(&project.id, "tts", "S01", "input-hash-001")
+        .unwrap();
+    let mut executor = FakeExecutor::default();
+    let started = dispatch_remote_job(
+        &mut state,
+        &mut executor,
+        &gpu_ready(&job.job_id),
+        &preparation(&job.job_id),
+        &spec(&job.job_id),
+    )
+    .unwrap();
+    executor.journal = vec![journal_entry(
+        &job.job_id,
+        &started.attempt_id,
+        &job.input_hash,
+        1,
+        ComputeRemoteJournalEventV1::Failed {
+            error_code: "BAD_INPUT".to_owned(),
+            message: Some("fixture fatal failure".to_owned()),
+        },
+    )];
+    let artifacts = ArtifactStore::new(workspace.data_root()).unwrap();
+
+    let summary = reconcile_remote_session_v1(
+        &mut state,
+        &artifacts,
+        &mut executor,
+        "compute-provider",
+        "session-p2",
+        ComputeProviderConnectionState::Ready,
+        temp.path().join("reconcile-staging"),
+    )
+    .unwrap();
+
+    assert_eq!(summary.attempts_marked_fatal, 1);
+    assert_eq!(
+        state.get_job(&job.job_id).unwrap().status,
+        StepStatus::Fatal
+    );
+    assert_eq!(
+        state.get_attempt(&started.attempt_id).unwrap().status,
+        StepStatus::Fatal
+    );
+}
+
+#[test]
+fn artifact_ready_wins_over_later_failure_during_reconciliation() {
+    let temp = tempfile::tempdir().unwrap();
+    let workspace = Workspace::create(temp.path().join("data")).unwrap();
+    let mut state = StateStore::open(workspace.sqlite_path()).unwrap();
+    let project = state
+        .create_project("Artifact First Reconciliation")
+        .unwrap();
+    let job = state
+        .create_job(&project.id, "tts", "S01", "input-hash-001")
+        .unwrap();
+    let bytes = b"recover me before considering regeneration".to_vec();
+    let mut executor = FakeExecutor {
+        transfer_bytes: bytes.clone(),
+        ..FakeExecutor::default()
+    };
+    let started = dispatch_remote_job(
+        &mut state,
+        &mut executor,
+        &gpu_ready(&job.job_id),
+        &preparation(&job.job_id),
+        &spec(&job.job_id),
+    )
+    .unwrap();
+
+    let mut ready = artifact_entry(&job.job_id, &started.attempt_id, &job.input_hash, &bytes);
+    ready.sequence = 1;
+    let failed = journal_entry(
+        &job.job_id,
+        &started.attempt_id,
+        &job.input_hash,
+        2,
+        ComputeRemoteJournalEventV1::Failed {
+            error_code: "WORKER_LOST".to_owned(),
+            message: Some("session vanished after artifact creation".to_owned()),
+        },
+    );
+    executor.journal = vec![ready, failed];
+    let artifacts = ArtifactStore::new(workspace.data_root()).unwrap();
+
+    let summary = reconcile_remote_session_v1(
+        &mut state,
+        &artifacts,
+        &mut executor,
+        "compute-provider",
+        "session-p2",
+        ComputeProviderConnectionState::Ready,
+        temp.path().join("reconcile-staging"),
+    )
+    .unwrap();
+
+    assert_eq!(summary.artifacts_recovered, 1);
+    assert_eq!(summary.attempts_marked_retryable, 0);
+    assert_eq!(
+        state.get_job(&job.job_id).unwrap().status,
+        StepStatus::Succeeded
+    );
+    assert_eq!(
+        state.get_attempt(&started.attempt_id).unwrap().status,
+        StepStatus::Succeeded
+    );
 }
