@@ -162,6 +162,25 @@ CREATE INDEX IF NOT EXISTS idx_voice_take_timing_artifacts_artifact
 ON voice_take_timing_artifacts(artifact_id);
 "#;
 
+const MIGRATION_V7: &str = r#"
+CREATE TABLE IF NOT EXISTS compute_weekly_budgets (
+    provider_id TEXT PRIMARY KEY,
+    allowance_seconds REAL NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS compute_session_usage (
+    provider_id TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    connected_at TEXT NOT NULL,
+    finished_at TEXT,
+    PRIMARY KEY(provider_id,session_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_compute_session_usage_window
+ON compute_session_usage(provider_id,connected_at,finished_at);
+"#;
+
 pub struct StateStore {
     pub(crate) connection: Connection,
 }
@@ -207,6 +226,7 @@ impl StateStore {
         self.apply_migration(4, MIGRATION_V4)?;
         self.apply_migration(5, MIGRATION_V5)?;
         self.apply_migration(6, MIGRATION_V6)?;
+        self.apply_migration(7, MIGRATION_V7)?;
         Ok(())
     }
 
