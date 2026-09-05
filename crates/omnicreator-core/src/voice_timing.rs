@@ -140,7 +140,11 @@ pub struct RemoteVoiceArtifactBundleV1 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE", tag = "status", content = "bundle")]
+#[serde(
+    rename_all = "SCREAMING_SNAKE_CASE",
+    tag = "status",
+    content = "bundle"
+)]
 pub enum RemoteVoiceBundleSyncOutcomeV1 {
     Committed(RemoteVoiceArtifactBundleV1),
     AlreadyCommitted(RemoteVoiceArtifactBundleV1),
@@ -199,18 +203,8 @@ impl StateStore {
         let runtime_seconds = runtime_micros as f64 / 1_000_000.0;
 
         let transaction = self.connection.transaction()?;
-        insert_artifact_transaction_v1(
-            &transaction,
-            audio,
-            audio_size,
-            &audio_metadata,
-        )?;
-        insert_artifact_transaction_v1(
-            &transaction,
-            timing,
-            timing_size,
-            &timing_metadata,
-        )?;
+        insert_artifact_transaction_v1(&transaction, audio, audio_size, &audio_metadata)?;
+        insert_artifact_transaction_v1(&transaction, timing, timing_size, &timing_metadata)?;
 
         if !attach_voice_take_artifact_transaction_v1(
             &transaction,
@@ -460,17 +454,23 @@ pub fn sync_remote_voice_artifact_bundle_v1(
     }
 
     let mut audio_metadata = metadata.clone();
-    merge_metadata_v1(&mut audio_metadata, serde_json::json!({
-        "voice_bundle_role":"audio"
-    }));
+    merge_metadata_v1(
+        &mut audio_metadata,
+        serde_json::json!({
+            "voice_bundle_role":"audio"
+        }),
+    );
     let mut timing_metadata = metadata;
-    merge_metadata_v1(&mut timing_metadata, serde_json::json!({
-        "voice_bundle_role":"timing",
-        "timing_schema":VOICE_TIMING_SCHEMA_V1,
-        "segment_id":timing_contract.segment_id,
-        "duration_ms":timing_contract.duration_ms,
-        "cue_count":timing_contract.cues.len()
-    }));
+    merge_metadata_v1(
+        &mut timing_metadata,
+        serde_json::json!({
+            "voice_bundle_role":"timing",
+            "timing_schema":VOICE_TIMING_SCHEMA_V1,
+            "segment_id":timing_contract.segment_id,
+            "duration_ms":timing_contract.duration_ms,
+            "cue_count":timing_contract.cues.len()
+        }),
+    );
 
     let audio = remote_to_local_artifact_v1(&job, entry, remote_audio, audio_metadata);
     let timing = remote_to_local_artifact_v1(&job, entry, remote_timing, timing_metadata);
@@ -637,10 +637,7 @@ fn prepare_destination_temp_v1(source: &Path, destination: &Path) -> Result<Path
     fs::create_dir_all(parent)?;
     let temp = parent.join(format!(".voice-bundle-{}.tmp", Uuid::new_v4().simple()));
     fs::copy(source, &temp)?;
-    let file = fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(&temp)?;
+    let file = fs::OpenOptions::new().read(true).write(true).open(&temp)?;
     file.sync_all()?;
     Ok(temp)
 }
