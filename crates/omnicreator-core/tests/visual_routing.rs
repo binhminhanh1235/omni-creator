@@ -1,9 +1,10 @@
 use std::{collections::BTreeMap, fs, path::PathBuf};
 
 use omnicreator_core::{
-    attach_visual_routing_to_promotion_v1, execute_generated_image_plugin_with_context_v1,
+    attach_visual_routing_to_promotion_v1, execute_generated_image_plugin_with_options_v1,
     route_scene_visual_v1, route_thumbnail_background_v1, scan_plugin_roots, ArtifactStore,
-    GeneratedImageExecutionContextV1, GeneratedImagePreparationV1, GeneratedImageRequestV1,
+    GeneratedImageExecutionContextV1, GeneratedImageExecutionOptionsV1,
+    GeneratedImagePreparationV1, GeneratedImageRequestV1,
     GeneratedImageResolutionV1, GeneratedImageStyleV1, LogicalUri, PluginJobWorkspace,
     PluginProcessOptions, RankedVisualCandidate, SceneIntentV1, SelectedVisualOutput, StateStore,
     StepStatus, StockDiscoveryStatusV1, VisualCandidate, VisualCandidatePreview,
@@ -218,18 +219,20 @@ fn below_threshold_stock_fallback_is_persisted_by_generated_core_path() {
         .unwrap();
 
     let artifacts = ArtifactStore::new(workspace.data_root()).unwrap();
-    let execution = execute_generated_image_plugin_with_context_v1(
+    let execution = execute_generated_image_plugin_with_options_v1(
         &mut state,
         &artifacts,
         &generated_plugin(),
         temp.path().join("plugin-runtime"),
         &job.job_id,
         &preparation,
-        &GeneratedImageExecutionContextV1 {
-            use_case: VisualUseCaseV1::SceneVisual,
-            routing: Some(routing),
+        GeneratedImageExecutionOptionsV1 {
+            context: GeneratedImageExecutionContextV1 {
+                use_case: VisualUseCaseV1::SceneVisual,
+                routing: Some(routing),
+            },
+            process: PluginProcessOptions::default(),
         },
-        PluginProcessOptions::default(),
     )
     .unwrap();
 
@@ -279,18 +282,20 @@ fn thumbnail_background_uses_same_generated_job_attempt_artifact_model() {
         .unwrap();
 
     let artifacts = ArtifactStore::new(workspace.data_root()).unwrap();
-    let execution = execute_generated_image_plugin_with_context_v1(
+    let execution = execute_generated_image_plugin_with_options_v1(
         &mut state,
         &artifacts,
         &generated_plugin(),
         temp.path().join("plugin-runtime"),
         &job.job_id,
         &preparation,
-        &GeneratedImageExecutionContextV1 {
-            use_case: VisualUseCaseV1::ThumbnailBackground,
-            routing: Some(routing),
+        GeneratedImageExecutionOptionsV1 {
+            context: GeneratedImageExecutionContextV1 {
+                use_case: VisualUseCaseV1::ThumbnailBackground,
+                routing: Some(routing),
+            },
+            process: PluginProcessOptions::default(),
         },
-        PluginProcessOptions::default(),
     )
     .unwrap();
 
