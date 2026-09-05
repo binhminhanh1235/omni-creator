@@ -409,7 +409,7 @@ fn generated_image_worker_loss_requeues_same_logical_job_and_retry_appends_attem
     );
 
     let retry_snapshot = state
-        .gpu_workbench_queue_snapshot_v1(&[project.id.clone()])
+        .gpu_workbench_queue_snapshot_v1(std::slice::from_ref(&project.id))
         .unwrap();
     assert_eq!(retry_snapshot.retryable.len(), 1);
     assert!(retry_snapshot.running.is_empty());
@@ -443,7 +443,7 @@ fn generated_image_worker_loss_requeues_same_logical_job_and_retry_appends_attem
     assert_eq!(state.get_job(&job.job_id).unwrap().job_id, job.job_id);
 
     let resumed_snapshot = state
-        .gpu_workbench_queue_snapshot_v1(&[project.id.clone()])
+        .gpu_workbench_queue_snapshot_v1(std::slice::from_ref(&project.id))
         .unwrap();
     assert!(resumed_snapshot.retryable.is_empty());
     assert_eq!(resumed_snapshot.running.len(), 1);
