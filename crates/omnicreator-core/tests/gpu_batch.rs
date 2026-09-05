@@ -25,7 +25,7 @@ fn provider_snapshot() -> ComputeProviderSchedulingSnapshotV1 {
         state: ComputeProviderConnectionState::Ready,
         session: ComputeProviderSessionV1 {
             identity: ComputeProviderSessionIdentityV1 {
-                provider_id: "compute-provider".to_owned(),
+                provider_id: "kaggle-session".to_owned(),
                 session_id: "batch-session".to_owned(),
             },
             connected_at: fixed_time(),
@@ -42,7 +42,7 @@ fn preparation(job_id: &str, unit: &str) -> GpuJobPreparationV1 {
         input_resolved: true,
         input_immutable: true,
         plugin_id: Some("voice-provider".to_owned()),
-        provider_id: Some("compute-provider".to_owned()),
+        provider_id: Some("kaggle-session".to_owned()),
         model_id: Some("omnivoice-v3".to_owned()),
         model_version: Some("3.2".to_owned()),
         settings_fingerprint: Some("settings-v1".to_owned()),
