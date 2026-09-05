@@ -568,6 +568,7 @@ pub fn execute_generated_image_plugin_v1(
             artifact_type: "image".to_owned(),
             metadata,
         },
+        &plugin_result.sha256,
     ) {
         Ok(artifact) => artifact,
         Err(error) => {
