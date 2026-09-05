@@ -56,7 +56,9 @@ impl PortableStudioPackCatalogV1 {
     pub fn canonical_json_v1(&self) -> Result<String> {
         self.validate_v1()?;
         let mut canonical = self.clone();
-        canonical.packs.sort_by(|left, right| left.id.cmp(&right.id));
+        canonical
+            .packs
+            .sort_by(|left, right| left.id.cmp(&right.id));
         Ok(serde_json::to_string(&canonical)?)
     }
 
@@ -176,11 +178,7 @@ pub struct StudioPackRuntimeSnapshotV1 {
 }
 
 impl StudioPackRuntimeSnapshotV1 {
-    pub fn set_v1(
-        &mut self,
-        plugin_id: impl Into<String>,
-        readiness: PluginRuntimeReadinessV1,
-    ) {
+    pub fn set_v1(&mut self, plugin_id: impl Into<String>, readiness: PluginRuntimeReadinessV1) {
         self.plugins.insert(plugin_id.into(), readiness);
     }
 
@@ -415,10 +413,9 @@ fn bible_illustrated_v1() -> StudioPackV1 {
             ]),
         );
     }
-    pack.overrides.presets.insert(
-        "visual_style".to_owned(),
-        "bible-illustrated".to_owned(),
-    );
+    pack.overrides
+        .presets
+        .insert("visual_style".to_owned(), "bible-illustrated".to_owned());
     pack.overrides
         .quality_thresholds
         .insert("visual".to_owned(), 84);
@@ -531,8 +528,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        scan_plugin_roots, PLUGIN_MANIFEST_SCHEMA, PLUGIN_MANIFEST_SCHEMA_VERSION,
-        PLUGIN_API_VERSION,
+        scan_plugin_roots, PLUGIN_API_VERSION, PLUGIN_MANIFEST_SCHEMA,
+        PLUGIN_MANIFEST_SCHEMA_VERSION,
     };
 
     fn checked_in_registry_v1() -> PluginRegistry {
@@ -660,16 +657,12 @@ mod tests {
             .unwrap();
 
         for forbidden in [
-            "/Users/",
-            "/home/",
-            "C:\\",
-            "api_key",
-            "secret",
-            "endpoint",
-            "model_id",
-            "base_url",
+            "/Users/", "/home/", "C:\\", "api_key", "secret", "endpoint", "model_id", "base_url",
         ] {
-            assert!(!json.contains(forbidden), "found forbidden token: {forbidden}");
+            assert!(
+                !json.contains(forbidden),
+                "found forbidden token: {forbidden}"
+            );
         }
     }
 
@@ -727,10 +720,8 @@ mod tests {
     #[test]
     fn missing_preferred_plugin_uses_compatible_fallback() {
         let generated = ["generated_still"];
-        let registry = registry_with_v1(
-            &[("generated-only", "visual", generated.as_slice())],
-            false,
-        );
+        let registry =
+            registry_with_v1(&[("generated-only", "visual", generated.as_slice())], false);
         let catalog = initial_studio_pack_catalog_v1().unwrap();
         let availability = catalog
             .evaluate_availability_v1(
@@ -864,7 +855,8 @@ mod tests {
 
     #[test]
     fn catalog_version_and_unknown_fields_are_rejected() {
-        let future = r#"{"schema":"omnicreator.studio-pack-catalog","schema_version":2,"packs":[]}"#;
+        let future =
+            r#"{"schema":"omnicreator.studio-pack-catalog","schema_version":2,"packs":[]}"#;
         assert!(matches!(
             PortableStudioPackCatalogV1::from_json_v1(future),
             Err(Error::InvalidContract(message)) if message.contains("unsupported")
