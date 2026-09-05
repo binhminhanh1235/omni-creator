@@ -597,7 +597,7 @@ fn project_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Project> {
     })
 }
 
-fn job_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Job> {
+pub(crate) fn job_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Job> {
     let status: String = row.get(4)?;
     Ok(Job {
         job_id: row.get(0)?,
