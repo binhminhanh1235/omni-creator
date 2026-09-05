@@ -323,7 +323,7 @@ impl GeneratedImagePreparationV1 {
                 if requirements
                     .model_group
                     .as_deref()
-                    .is_none_or(|value| value.trim().is_empty())
+                    .map_or(true, |value| value.trim().is_empty())
                 {
                     push_issue(
                         &mut issues,
