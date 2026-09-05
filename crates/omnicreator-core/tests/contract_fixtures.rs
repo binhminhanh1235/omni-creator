@@ -67,7 +67,6 @@ fn durable_ir_v1_fixtures_are_compatible() {
 fn plugin_api_v1_fixtures_are_compatible() {
     assert_fixture::<PluginManifest>(
         include_str!("fixtures/contracts/v1/plugin-manifest.json"),
-        include_str!("fixtures/contracts/v1/studio-pack.json"),
         PluginManifest::validate_v1,
     );
     assert_fixture::<PluginRequest>(
@@ -96,6 +95,7 @@ fn canonical_fixtures_do_not_embed_machine_absolute_paths() {
         include_str!("fixtures/contracts/v1/attempt.json"),
         include_str!("fixtures/contracts/v1/compute-capabilities.json"),
         include_str!("fixtures/contracts/v1/plugin-manifest.json"),
+        include_str!("fixtures/contracts/v1/studio-pack.json"),
     ];
 
     for fixture in fixtures {
