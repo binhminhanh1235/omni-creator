@@ -619,7 +619,7 @@ fn retryable_api_error_appends_attempt_then_same_logical_job_can_succeed() {
     const SECRET_ENV: &str = "OMNICREATOR_P2B_TEST_API_KEY_RETRY";
     const SECRET: &str = "OMNICREATOR_P2B_SECRET_SENTINEL";
     const PNG_1X1_B64: &str =
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 
     std::env::set_var(SECRET_ENV, SECRET);
     let (rate_endpoint, rate_server) = spawn_mock_api(
