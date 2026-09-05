@@ -5,11 +5,11 @@ use omnicreator_core::{
     route_scene_visual_v1, route_thumbnail_background_v1, scan_plugin_roots, ArtifactStore,
     GeneratedImageExecutionContextV1, GeneratedImagePreparationV1, GeneratedImageRequestV1,
     GeneratedImageResolutionV1, GeneratedImageStyleV1, LogicalUri, PluginJobWorkspace,
-    PluginProcessOptions, RankedVisualCandidate, SceneIntentV1, SelectedVisualOutput,
-    StateStore, StepStatus, StockDiscoveryStatusV1, VisualCandidate, VisualCandidatePreview,
-    VisualCandidateScore, VisualMediaType, VisualPreviewKind, VisualRouteV1,
-    VisualRoutingPolicyV1, VisualRoutingReasonV1, VisualUseCaseV1, Workspace,
-    SCENE_INTENT_SCHEMA, SCENE_INTENT_SCHEMA_VERSION,
+    PluginProcessOptions, RankedVisualCandidate, SceneIntentV1, SelectedVisualOutput, StateStore,
+    StepStatus, StockDiscoveryStatusV1, VisualCandidate, VisualCandidatePreview,
+    VisualCandidateScore, VisualMediaType, VisualPreviewKind, VisualRouteV1, VisualRoutingPolicyV1,
+    VisualRoutingReasonV1, VisualUseCaseV1, Workspace, SCENE_INTENT_SCHEMA,
+    SCENE_INTENT_SCHEMA_VERSION,
 };
 
 fn plugin_root() -> PathBuf {
@@ -175,19 +175,14 @@ fn viable_stock_stays_preview_first_and_routing_provenance_commits_with_artifact
 
     let artifacts = ArtifactStore::new(workspace.data_root()).unwrap();
     let artifact = artifacts
-        .promote_plugin_output(
-            &mut state,
-            &job.job_id,
-            &plugin_workspace,
-            promotion,
-        )
+        .promote_plugin_output(&mut state, &job.job_id, &plugin_workspace, promotion)
         .unwrap();
 
-    assert_eq!(state.get_job(&job.job_id).unwrap().status, StepStatus::Succeeded);
     assert_eq!(
-        artifact.metadata["visual_routing"]["route"],
-        "stock_review"
+        state.get_job(&job.job_id).unwrap().status,
+        StepStatus::Succeeded
     );
+    assert_eq!(artifact.metadata["visual_routing"]["route"], "stock_review");
     assert_eq!(
         artifact.metadata["visual_routing"]["reason"],
         "stock_meets_quality_threshold"
@@ -238,7 +233,10 @@ fn below_threshold_stock_fallback_is_persisted_by_generated_core_path() {
     )
     .unwrap();
 
-    assert_eq!(state.get_job(&job.job_id).unwrap().status, StepStatus::Succeeded);
+    assert_eq!(
+        state.get_job(&job.job_id).unwrap().status,
+        StepStatus::Succeeded
+    );
     assert_eq!(execution.artifact.metadata["use_case"], "scene_visual");
     assert_eq!(
         execution.artifact.metadata["visual_routing"]["route"],
