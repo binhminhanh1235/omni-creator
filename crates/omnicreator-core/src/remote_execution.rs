@@ -750,6 +750,14 @@ pub fn sync_remote_artifact(
     let result =
         artifact_store.promote_remote_artifact(state_store, entry, &staging_path, metadata);
     let _ = fs::remove_file(&staging_path);
+
+    if matches!(
+        &result,
+        Err(Error::ArtifactHashMismatch(_)) | Err(Error::InvalidArtifact(_))
+    ) {
+        state_store.finish_attempt_failure(&entry.attempt_id, "INVALID_REMOTE_ARTIFACT")?;
+    }
+
     result
 }
 

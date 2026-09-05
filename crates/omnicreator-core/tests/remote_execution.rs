@@ -474,11 +474,13 @@ fn corrupted_transfer_never_marks_attempt_or_job_succeeded() {
 
     assert_eq!(
         state.get_job(&job.job_id).unwrap().status,
-        StepStatus::Running
+        StepStatus::Fatal
     );
+    let failed_attempt = state.get_attempt(&started.attempt_id).unwrap();
+    assert_eq!(failed_attempt.status, StepStatus::Fatal);
     assert_eq!(
-        state.get_attempt(&started.attempt_id).unwrap().status,
-        StepStatus::Running
+        failed_attempt.error_code.as_deref(),
+        Some("INVALID_REMOTE_ARTIFACT")
     );
     assert!(!workspace
         .data_root()

@@ -245,6 +245,12 @@ The target resolver consumes readiness facts, not secret values. API credential 
 
 A GPU request does not silently fall back to API/local execution when canonical ComputeProvider readiness is blocked. The caller must resolve the blocking GPU preflight/reconciliation condition or explicitly prepare a non-GPU execution request. This prevents expensive work from starting on an unintended target and preserves the reviewed Phase 7 scheduling decision.
 
+### Generated-image ComputeProvider execution
+
+Phase 8 P2C maps a generated-image request selected for `compute_provider` into the existing Phase 5–7 remote execution contracts. Core derives the canonical `GpuJobPreparationV1`, keeps the same logical Job/input hash, and dispatches `visual.generate` through `dispatch_remote_job`. The remote `plugin_payload` is the same provider-neutral generated-image semantic request used by local execution; machine-local credentials and provider adapter configuration are not part of that payload.
+
+Remote workers report progress and completion through the existing append-only compute journal. `ARTIFACT_READY` is transferred into local staging, verified against the declared size/hash, and promoted through ArtifactStore before Job/Attempt success. Invalid or hash-mismatched remote artifacts are fatal and never become canonical artifacts. Restart, reconnect, worker loss and retry reuse the canonical reconciliation path; retries append Attempts under the same logical Job rather than creating image-specific state.
+
 ## Resource declarations
 
 Plugins should expose resource requirements.
