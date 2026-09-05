@@ -1151,33 +1151,6 @@ fn clean_shutdown(state: &DesktopState) {
     }
 }
 
-#[cfg(test)]
-mod desktop_tests {
-    use super::*;
-
-    #[test]
-    fn compute_provider_defaults_keep_secrets_out_of_machine_config() {
-        let config = default_compute_provider_config();
-        config.validate_v1().unwrap();
-        let json = serde_json::to_string(&config).unwrap();
-
-        assert_eq!(config.provider_id, "remote-gpu");
-        assert_eq!(
-            config.bearer_token_env.as_deref(),
-            Some("OMNICREATOR_COMPUTE_TOKEN")
-        );
-        assert!(json.contains("OMNICREATOR_COMPUTE_TOKEN"));
-        assert!(!json.contains("Bearer "));
-        assert!(!json.to_lowercase().contains("kaggle"));
-    }
-
-    #[test]
-    fn gpu_week_start_parser_requires_explicit_rfc3339_time() {
-        assert!(parse_utc("2026-09-05T00:00:00Z", "week_start").is_ok());
-        assert!(parse_utc("2026-09-05", "week_start").is_err());
-    }
-}
-
 fn main() {
     let app = tauri::Builder::default()
         .manage(DesktopState::default())
@@ -1213,4 +1186,31 @@ fn main() {
             clean_shutdown(&state);
         }
     });
+}
+
+#[cfg(test)]
+mod desktop_tests {
+    use super::*;
+
+    #[test]
+    fn compute_provider_defaults_keep_secrets_out_of_machine_config() {
+        let config = default_compute_provider_config();
+        config.validate_v1().unwrap();
+        let json = serde_json::to_string(&config).unwrap();
+
+        assert_eq!(config.provider_id, "remote-gpu");
+        assert_eq!(
+            config.bearer_token_env.as_deref(),
+            Some("OMNICREATOR_COMPUTE_TOKEN")
+        );
+        assert!(json.contains("OMNICREATOR_COMPUTE_TOKEN"));
+        assert!(!json.contains("Bearer "));
+        assert!(!json.to_lowercase().contains("kaggle"));
+    }
+
+    #[test]
+    fn gpu_week_start_parser_requires_explicit_rfc3339_time() {
+        assert!(parse_utc("2026-09-05T00:00:00Z", "week_start").is_ok());
+        assert!(parse_utc("2026-09-05", "week_start").is_err());
+    }
 }
