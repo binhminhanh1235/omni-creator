@@ -519,7 +519,7 @@ function renderGpuWorkbench(review, readOnly) {
     '<div class="metric-grid">' +
     '<div class="metric"><span>CANDIDATES</span><div class="metric-value">' +
     escapeHtml(batch.candidate_jobs) +
-    "</div><div class="metric-note">" +
+    '</div><div class="metric-note">' +
     escapeHtml(batch.ready_jobs.length) +
     " ready · " +
     escapeHtml(batch.blocked_jobs.length) +
