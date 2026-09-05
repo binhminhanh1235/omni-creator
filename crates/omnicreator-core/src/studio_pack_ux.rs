@@ -4,9 +4,9 @@ use serde::Serialize;
 
 use crate::{
     Attempt, EffectiveStudioPackV1, Error, Job, Project, Result, StepStatus,
-    StudioAutomationLevelV1, StudioPackAvailabilityReasonCodeV1,
-    StudioPackAvailabilityReasonV1, StudioPackAvailabilityStatusV1, StudioPackAvailabilityV1,
-    StudioPackRouteTargetV1, StudioPackV1, WorkflowStep,
+    StudioAutomationLevelV1, StudioPackAvailabilityReasonCodeV1, StudioPackAvailabilityReasonV1,
+    StudioPackAvailabilityStatusV1, StudioPackAvailabilityV1, StudioPackRouteTargetV1,
+    StudioPackV1, WorkflowStep,
 };
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
@@ -152,13 +152,15 @@ pub fn build_studio_pack_ux_view_v1(
         })
         .collect();
 
-    let reasons_by_route = availability
-        .reasons
-        .iter()
-        .fold(BTreeMap::<String, Vec<StudioPackAvailabilityReasonV1>>::new(), |mut map, reason| {
-            map.entry(reason.route.clone()).or_default().push(reason.clone());
+    let reasons_by_route = availability.reasons.iter().fold(
+        BTreeMap::<String, Vec<StudioPackAvailabilityReasonV1>>::new(),
+        |mut map, reason| {
+            map.entry(reason.route.clone())
+                .or_default()
+                .push(reason.clone());
             map
-        });
+        },
+    );
 
     let routes = effective
         .config
@@ -247,7 +249,12 @@ pub struct StudioJobReviewSnapshotV1 {
 }
 
 pub fn build_studio_review_center_v1(
-    projects: &[(Project, Vec<StudioJobReviewSnapshotV1>, Vec<WorkflowStep>, Option<StudioPackAvailabilityV1>)],
+    projects: &[(
+        Project,
+        Vec<StudioJobReviewSnapshotV1>,
+        Vec<WorkflowStep>,
+        Option<StudioPackAvailabilityV1>,
+    )],
 ) -> StudioReviewCenterV1 {
     let mut items = Vec::new();
     for (project, jobs, steps, availability) in projects {
@@ -394,7 +401,10 @@ fn append_step_review_items_v1(
             project_title: project.title.clone(),
             kind: StudioReviewKindV1::BlockedWorkflow,
             severity: StudioReviewSeverityV1::Info,
-            reason: format!("{} / {} is waiting on canonical dependencies.", step.step, step.unit),
+            reason: format!(
+                "{} / {} is waiting on canonical dependencies.",
+                step.step, step.unit
+            ),
             canonical_source: "WorkflowStep".to_owned(),
             source_id: step.step_id.clone(),
             action: None,
@@ -576,10 +586,7 @@ mod tests {
                 job_id: "job-retry".to_owned(),
             })
         );
-        assert_eq!(
-            review.items[0].canonical_source,
-            "Job / Attempt".to_owned()
-        );
+        assert_eq!(review.items[0].canonical_source, "Job / Attempt".to_owned());
     }
 
     #[test]
