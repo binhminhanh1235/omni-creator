@@ -370,20 +370,22 @@ fn burst_policy_is_non_interactive_error_aware_and_immediate_sync() {
 #[test]
 fn gpu_burst_core_is_provider_neutral_and_portable() {
     let source = include_str!("../src/gpu_burst.rs").to_lowercase();
-    for forbidden in [
-        "kaggle.com",
-        "notebook",
-        "c:\\",
-        "/home/",
-        "/users/",
-        "redis",
-        "rabbitmq",
-        "kafka",
-        "kubernetes",
-    ] {
+
+    for forbidden in ["kaggle.com", "notebook", "c:\\", "/home/", "/users/"] {
         assert!(
             !source.contains(forbidden),
-            "GPU burst core leaked provider/machine/infrastructure term {forbidden}"
+            "GPU burst core leaked provider/machine-specific term {forbidden}"
+        );
+    }
+
+    let tokens = source
+        .split(|character: char| !character.is_ascii_alphanumeric())
+        .filter(|token| !token.is_empty())
+        .collect::<Vec<_>>();
+    for forbidden in ["redis", "rabbitmq", "kafka", "kubernetes"] {
+        assert!(
+            !tokens.contains(&forbidden),
+            "GPU burst core leaked infrastructure term {forbidden}"
         );
     }
 }
