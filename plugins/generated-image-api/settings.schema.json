@@ -1,0 +1,42 @@
+{
+  "type": "object",
+  "title": "Generated Image API",
+  "description": "API-backed generated still provider. Secret values remain machine-local and are resolved only through the symbolic api_key_env reference.",
+  "properties": {
+    "api_endpoint": {
+      "type": "string",
+      "title": "API endpoint",
+      "description": "HTTPS image-generation endpoint. Loopback HTTP is accepted only for local testing.",
+      "default": "https://api.openai.com/v1/images/generations",
+      "x-omnicreator-visibility": "advanced"
+    },
+    "api_key_env": {
+      "type": "string",
+      "title": "API key environment variable",
+      "description": "Name of the machine-local environment variable containing the API key. The secret value is never stored in OmniCreator portable data.",
+      "default": "OPENAI_API_KEY",
+      "x-omnicreator-visibility": "advanced"
+    },
+    "timeout_seconds": {
+      "type": "integer",
+      "title": "Request timeout (seconds)",
+      "minimum": 1,
+      "maximum": 300,
+      "default": 60,
+      "x-omnicreator-visibility": "advanced"
+    },
+    "model": {
+      "type": "string",
+      "title": "Provider model",
+      "description": "Provider-specific model identity kept inside the plugin configuration boundary.",
+      "default": "gpt-image-2"
+    },
+    "model_version": {
+      "type": "string",
+      "title": "Model version / revision",
+      "description": "Provider revision recorded in safe provenance and verified by core.",
+      "default": "provider-managed",
+      "x-omnicreator-visibility": "advanced"
+    }
+  }
+}
