@@ -118,7 +118,8 @@ class GeneratedImageApiTests(unittest.TestCase):
         )
 
     def generate_with_error(self, error):
-        def opener(_request, _timeout):
+        def opener(_request, timeout):
+            del timeout
             raise error
 
         return self.client(opener).generate(
