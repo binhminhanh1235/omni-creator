@@ -141,7 +141,6 @@ impl ArtifactStore {
         )
     }
 
-
     pub fn promote_plugin_output_for_attempt(
         &self,
         state_store: &mut StateStore,
@@ -229,9 +228,7 @@ impl ArtifactStore {
             metadata: promotion.metadata,
         };
 
-        if let Err(error) =
-            state_store.commit_attempt_artifact_success(attempt_id, &artifact)
-        {
+        if let Err(error) = state_store.commit_attempt_artifact_success(attempt_id, &artifact) {
             let _ = fs::remove_file(&destination);
             return Err(error);
         }
