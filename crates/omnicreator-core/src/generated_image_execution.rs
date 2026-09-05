@@ -58,12 +58,10 @@ pub fn generated_image_api_availability_from_health_v1(
         Some("not_required") => GeneratedImageCredentialAvailabilityV1::NotRequired,
         Some("available") => GeneratedImageCredentialAvailabilityV1::Available,
         Some("missing") => GeneratedImageCredentialAvailabilityV1::Missing,
-        _ => {
-            return Err(Error::InvalidContract(
-                "generated image api_execution.credential must be not_required, available or missing"
-                    .to_owned(),
-            ))
-        }
+        _ => return Err(Error::InvalidContract(
+            "generated image api_execution.credential must be not_required, available or missing"
+                .to_owned(),
+        )),
     };
     Ok(GeneratedImageApiExecutionAvailabilityV1 {
         configured,
@@ -791,18 +789,22 @@ mod tests {
 
     #[test]
     fn api_health_rejects_secret_or_provider_specific_readiness_shapes() {
-        assert!(generated_image_api_availability_from_health_v1(&serde_json::json!({
-            "configured": true,
-            "credential": "available"
-        }))
-        .is_err());
-        assert!(generated_image_api_availability_from_health_v1(&serde_json::json!({
-            "api_execution": {
+        assert!(
+            generated_image_api_availability_from_health_v1(&serde_json::json!({
                 "configured": true,
-                "credential": "token-value"
-            }
-        }))
-        .is_err());
+                "credential": "available"
+            }))
+            .is_err()
+        );
+        assert!(
+            generated_image_api_availability_from_health_v1(&serde_json::json!({
+                "api_execution": {
+                    "configured": true,
+                    "credential": "token-value"
+                }
+            }))
+            .is_err()
+        );
     }
 
     #[test]
