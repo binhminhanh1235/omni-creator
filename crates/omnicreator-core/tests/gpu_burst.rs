@@ -81,7 +81,9 @@ fn create_job(
     state
         .create_step(project_id, step, unit, StepStatus::Ready, Some(input_hash))
         .unwrap();
-    state.create_job(project_id, step, unit, input_hash).unwrap()
+    state
+        .create_job(project_id, step, unit, input_hash)
+        .unwrap()
 }
 
 fn voice_preparation(job_id: &str, unit: &str) -> GpuJobPreparationV1 {
@@ -297,7 +299,9 @@ fn burst_rechecks_current_state_and_blocks_stale_reviewed_job() {
         .unwrap();
     assert_eq!(batch.ready_jobs.len(), 1);
 
-    state.start_attempt(&job.job_id, Some("other-worker")).unwrap();
+    state
+        .start_attempt(&job.job_id, Some("other-worker"))
+        .unwrap();
 
     let burst = state
         .plan_gpu_burst_v1(&batch, &[provider_snapshot()])
@@ -308,7 +312,8 @@ fn burst_rechecks_current_state_and_blocks_stale_reviewed_job() {
         .decision
         .reasons
         .iter()
-        .any(|reason| reason.code == omnicreator_core::GpuNotReadyReasonCodeV1::JobStateNotSchedulable));
+        .any(|reason| reason.code
+            == omnicreator_core::GpuNotReadyReasonCodeV1::JobStateNotSchedulable));
 }
 
 #[test]
@@ -345,7 +350,10 @@ fn preflight_vram_failure_never_enters_burst_schedule() {
 fn burst_policy_is_non_interactive_error_aware_and_immediate_sync() {
     let policy = omnicreator_core::GpuBurstExecutionPolicyV1::default_v1();
 
-    assert_eq!(policy.interaction, GpuBurstInteractionPolicyV1::NonInteractive);
+    assert_eq!(
+        policy.interaction,
+        GpuBurstInteractionPolicyV1::NonInteractive
+    );
     assert_eq!(policy.retry, GpuBurstRetryPolicyV1::ErrorAware);
     assert_eq!(
         policy.artifact_sync,
