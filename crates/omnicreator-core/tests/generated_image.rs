@@ -355,7 +355,7 @@ fn api_request() -> GeneratedImageRequestV1 {
             width: 1,
             height: 1,
         },
-        Some(7),
+        None,
         BTreeMap::new(),
     )
     .unwrap()
