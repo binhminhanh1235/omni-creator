@@ -408,6 +408,20 @@ fn generated_image_worker_loss_requeues_same_logical_job_and_retry_appends_attem
         StepStatus::Retryable
     );
 
+    let retry_snapshot = state
+        .gpu_workbench_queue_snapshot_v1(std::slice::from_ref(&project.id))
+        .unwrap();
+    assert_eq!(retry_snapshot.retryable.len(), 1);
+    assert!(retry_snapshot.running.is_empty());
+    assert_eq!(retry_snapshot.retryable[0].job.job_id, job.job_id);
+    assert_eq!(retry_snapshot.retryable[0].attempts.len(), 1);
+    assert_eq!(
+        retry_snapshot.retryable[0].attempts[0]
+            .error_code
+            .as_deref(),
+        Some("WORKER_LOST")
+    );
+
     let second = dispatch_generated_image_compute_provider_v1(
         &mut state,
         &mut executor,
@@ -427,6 +441,24 @@ fn generated_image_worker_loss_requeues_same_logical_job_and_retry_appends_attem
     assert_eq!(attempts[1].attempt_id, second.attempt_id);
     assert_eq!(attempts[1].status, StepStatus::Running);
     assert_eq!(state.get_job(&job.job_id).unwrap().job_id, job.job_id);
+
+    let resumed_snapshot = state
+        .gpu_workbench_queue_snapshot_v1(std::slice::from_ref(&project.id))
+        .unwrap();
+    assert!(resumed_snapshot.retryable.is_empty());
+    assert_eq!(resumed_snapshot.running.len(), 1);
+    assert_eq!(resumed_snapshot.running[0].job.job_id, job.job_id);
+    assert_eq!(resumed_snapshot.running[0].attempts.len(), 2);
+    assert_eq!(
+        resumed_snapshot.running[0].attempts[0]
+            .error_code
+            .as_deref(),
+        Some("WORKER_LOST")
+    );
+    assert_eq!(
+        resumed_snapshot.running[0].attempts[1].attempt_id,
+        second.attempt_id
+    );
 }
 
 #[test]
