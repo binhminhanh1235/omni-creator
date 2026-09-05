@@ -96,6 +96,16 @@ Estimated workload:
 
 The app can recommend preparing more projects before starting Kaggle when the queue is too small.
 
+### Generated-image Workbench bridge
+
+Generated-image GPU work does not introduce a separate image queue or scheduler. Core maps `GeneratedImagePreparationV1` into the canonical `GpuJobPreparationV1` using the selected plugin's resource declaration, then reuses the same READY/preflight, batch planning, model affinity, workload estimation, Burst scheduling, remote execution and Workbench queue paths as every other GPU-capable plugin.
+
+The generated-image resource declaration may use a workload metric such as `megapixels`, while runtime history remains keyed by the canonical provider/device/plugin/model/model-version identity. Missing runtime history stays visible as unknown workload instead of inventing an estimate.
+
+Worker/session loss follows the existing remote reconciliation path. An unfinished generated-image attempt becomes `WORKER_LOST` / RETRYABLE, the Workbench derives that state from canonical Job/Attempt history, and retry keeps the logical job ID while appending a new attempt. On reconnect, the remote journal and verified artifact transfer path are reconciled before regeneration.
+
+Multiple GPUs remain independent devices. A generated-image job must fit one selected device's declared memory; VRAM from multiple devices is never pooled. This bridge adds no provider-specific field to SceneIntent, no generated-image scheduler, and no Plugin API v1 wire-format change.
+
 ## Group by model
 
 Avoid repeated model loading/unloading.
