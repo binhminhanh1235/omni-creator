@@ -409,9 +409,9 @@ impl StateStore {
             let job = self.get_job(&job_id)?;
             let attempts = self.list_attempts(&job_id)?;
             let artifact_ids = {
-                let mut statement = self.connection.prepare(
-                    "SELECT id FROM artifacts WHERE producer_job_id=?1 ORDER BY uri,id",
-                )?;
+                let mut statement = self
+                    .connection
+                    .prepare("SELECT id FROM artifacts WHERE producer_job_id=?1 ORDER BY uri,id")?;
                 statement
                     .query_map([job_id.as_str()], |row| row.get::<_, String>(0))?
                     .collect::<std::result::Result<Vec<_>, _>>()?
@@ -1021,7 +1021,10 @@ mod tests {
         let attempts = state.list_attempts(&job_id).unwrap();
         assert_eq!(attempts.len(), 2);
         assert_eq!(attempts[0].status, StepStatus::Retryable);
-        assert_eq!(attempts[0].error_code.as_deref(), Some("LOCAL_EXPORT_ERROR"));
+        assert_eq!(
+            attempts[0].error_code.as_deref(),
+            Some("LOCAL_EXPORT_ERROR")
+        );
         assert_eq!(attempts[1].status, StepStatus::Succeeded);
 
         let history = state.production_export_history_v1(&project.id).unwrap();
@@ -1029,7 +1032,9 @@ mod tests {
         assert_eq!(history[0].job.job_id, job_id);
         assert_eq!(history[0].attempts.len(), 2);
         assert_eq!(history[0].artifacts.len(), 4);
-        assert!(history[0].package_base_uri.starts_with("project://production/"));
+        assert!(history[0]
+            .package_base_uri
+            .starts_with("project://production/"));
 
         drop(state);
         let reopened = StateStore::open(workspace.sqlite_path()).unwrap();
