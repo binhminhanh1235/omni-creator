@@ -54,12 +54,10 @@ impl Default for VisualRoutingPolicyV1 {
 
 impl VisualRoutingPolicyV1 {
     pub fn validate(&self) -> Result<()> {
-        if !self.minimum_stock_score.is_finite()
-            || !(0.0..=1.0).contains(&self.minimum_stock_score)
+        if !self.minimum_stock_score.is_finite() || !(0.0..=1.0).contains(&self.minimum_stock_score)
         {
             return Err(Error::InvalidContract(
-                "visual routing minimum_stock_score must be finite and within 0.0..=1.0"
-                    .to_owned(),
+                "visual routing minimum_stock_score must be finite and within 0.0..=1.0".to_owned(),
             ));
         }
         Ok(())
@@ -135,8 +133,7 @@ impl VisualRoutingDecisionV1 {
             (
                 VisualUseCaseV1::SceneVisual,
                 VisualRouteV1::GeneratedStill,
-                VisualRoutingReasonV1::NoStockCandidates
-                | VisualRoutingReasonV1::StockUnavailable,
+                VisualRoutingReasonV1::NoStockCandidates | VisualRoutingReasonV1::StockUnavailable,
             ) => {
                 if self.stock_candidate_id.is_some()
                     || self.stock_score.is_some()
@@ -214,8 +211,7 @@ pub fn route_scene_visual_v1(
                 ranked.candidate.candidate_id, ranked.candidate.scene_id, scene.id
             )));
         }
-        if !ranked.score.final_score.is_finite()
-            || !(0.0..=1.0).contains(&ranked.score.final_score)
+        if !ranked.score.final_score.is_finite() || !(0.0..=1.0).contains(&ranked.score.final_score)
         {
             return Err(Error::InvalidContract(format!(
                 "visual routing candidate {} has invalid final_score",
@@ -316,10 +312,7 @@ pub fn attach_visual_routing_to_promotion_v1(
             "visual routing provenance requires object-shaped artifact metadata".to_owned(),
         )
     })?;
-    object.insert(
-        "visual_routing".to_owned(),
-        serde_json::to_value(routing)?,
-    );
+    object.insert("visual_routing".to_owned(), serde_json::to_value(routing)?);
     Ok(promotion)
 }
 
@@ -349,9 +342,7 @@ fn decision(
     Ok(decision)
 }
 
-pub fn visual_routing_provenance_value_v1(
-    routing: &VisualRoutingDecisionV1,
-) -> Result<Value> {
+pub fn visual_routing_provenance_value_v1(routing: &VisualRoutingDecisionV1) -> Result<Value> {
     routing.validate_v1()?;
     Ok(serde_json::to_value(routing)?)
 }
@@ -497,14 +488,8 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(
-            no_stock.reason,
-            VisualRoutingReasonV1::NoStockCandidates
-        );
-        assert_eq!(
-            unavailable.reason,
-            VisualRoutingReasonV1::StockUnavailable
-        );
+        assert_eq!(no_stock.reason, VisualRoutingReasonV1::NoStockCandidates);
+        assert_eq!(unavailable.reason, VisualRoutingReasonV1::StockUnavailable);
         assert!(no_stock.is_generated());
         assert!(unavailable.is_generated());
     }
@@ -548,6 +533,8 @@ mod tests {
         )
         .unwrap_err();
 
-        assert!(error.to_string().contains("must not include ranked candidates"));
+        assert!(error
+            .to_string()
+            .contains("must not include ranked candidates"));
     }
 }
