@@ -30,10 +30,7 @@ pub struct GpuWorkbenchQueueSnapshotV1 {
 
 impl GpuWorkbenchQueueSnapshotV1 {
     pub fn total_jobs(&self) -> usize {
-        self.running.len()
-            + self.completed.len()
-            + self.remaining.len()
-            + self.retryable.len()
+        self.running.len() + self.completed.len() + self.remaining.len() + self.retryable.len()
     }
 }
 
@@ -117,12 +114,16 @@ mod tests {
         let running = store
             .create_job(&project.id, "tts", "running", "hash-running")
             .unwrap();
-        let running_attempt = store.start_attempt(&running.job_id, Some("worker-a")).unwrap();
+        let running_attempt = store
+            .start_attempt(&running.job_id, Some("worker-a"))
+            .unwrap();
 
         let retryable = store
             .create_job(&project.id, "tts", "retryable", "hash-retryable")
             .unwrap();
-        let retry_attempt = store.start_attempt(&retryable.job_id, Some("worker-b")).unwrap();
+        let retry_attempt = store
+            .start_attempt(&retryable.job_id, Some("worker-b"))
+            .unwrap();
         store
             .finish_attempt_failure(&retry_attempt.attempt_id, "NETWORK_TIMEOUT")
             .unwrap();
