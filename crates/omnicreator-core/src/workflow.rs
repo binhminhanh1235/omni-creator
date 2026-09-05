@@ -505,7 +505,7 @@ impl StateStore {
         ensure_transition(job.status, StepStatus::Ready, "job", job_id)?;
         self.connection
             .execute("UPDATE jobs SET status='READY' WHERE id=?1", [job_id])?;
-        Ok(self.get_job(job_id)?)
+        self.get_job(job_id)
     }
 
     pub fn derive_project_status(&self, project_id: &str) -> Result<ProjectDisplayStatus> {
