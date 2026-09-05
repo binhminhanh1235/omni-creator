@@ -99,7 +99,9 @@ impl ArtifactStore {
         let (sha256, size_bytes) = sha256_file(&temp)?;
         if sha256 != expected_sha256 {
             let _ = fs::remove_file(&temp);
-            return Err(Error::ArtifactHashMismatch(promotion.target_uri.to_string()));
+            return Err(Error::ArtifactHashMismatch(
+                promotion.target_uri.to_string(),
+            ));
         }
         if let Err(error) = fs::rename(&temp, &destination) {
             let _ = fs::remove_file(&temp);
