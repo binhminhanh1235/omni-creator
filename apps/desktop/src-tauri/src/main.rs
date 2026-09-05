@@ -1,14 +1,19 @@
 use std::{
+    collections::BTreeSet,
     env, fs,
     path::{Path, PathBuf},
     sync::Mutex,
 };
 
+use chrono::{DateTime, Utc};
 use omnicreator_core::{
-    Error as CoreError, HandoffManifest, LlmGatewayClient, LlmGatewayConfig, LlmGatewayModel,
-    MachineBinding, Project, ProjectDisplayStatus, StateStore, Workspace, WorkspaceSession,
+    ComputeProviderSchedulingSnapshotV1, ComputeRunningAssignmentV1, Error as CoreError,
+    GpuBatchBudgetOverviewV1, GpuBatchPlanRequestV1, GpuBatchPlanV1, GpuBurstPlanV1,
+    GpuJobPreparationV1, GpuWorkbenchQueueSnapshotV1, HandoffManifest, LlmGatewayClient,
+    LlmGatewayConfig, LlmGatewayModel, MachineBinding, Project, ProjectDisplayStatus,
+    RuntimeWorkloadEstimateV1, StateStore, Workspace, WorkspaceSession,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 use uuid::Uuid;
 
@@ -108,6 +113,43 @@ struct LlmGatewayModelView {
     id: String,
     display_name: String,
     is_virtual: bool,
+}
+
+
+#[derive(Debug, Deserialize)]
+struct GpuWorkbenchPrepareInputV1 {
+    project_ids: Vec<String>,
+    #[serde(default)]
+    preparations: Vec<GpuJobPreparationV1>,
+    #[serde(default)]
+    providers: Vec<ComputeProviderSchedulingSnapshotV1>,
+    #[serde(default)]
+    running: Vec<ComputeRunningAssignmentV1>,
+    week_start: String,
+}
+
+#[derive(Debug, Serialize)]
+struct GpuWorkbenchReviewViewV1 {
+    batch: GpuBatchPlanV1,
+    workload: RuntimeWorkloadEstimateV1,
+    budget: Option<GpuBatchBudgetOverviewV1>,
+    burst: GpuBurstPlanV1,
+    queues: GpuWorkbenchQueueSnapshotV1,
+    startable: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct GpuBurstStartInputV1 {
+    reviewed_batch: GpuBatchPlanV1,
+    #[serde(default)]
+    providers: Vec<ComputeProviderSchedulingSnapshotV1>,
+    expected_schedule_hash: String,
+}
+
+#[derive(Debug, Serialize)]
+struct GpuBurstStartViewV1 {
+    burst: GpuBurstPlanV1,
+    queues: GpuWorkbenchQueueSnapshotV1,
 }
 
 #[tauri::command]
@@ -271,6 +313,133 @@ fn save_llmgateway_settings(
     llmgateway_status_for_app(&app)
 }
 
+
+#[tauri::command]
+fn gpu_workbench_review(
+    state: State<'_, DesktopState>,
+    input: GpuWorkbenchPrepareInputV1,
+) -> Result<GpuWorkbenchReviewViewV1, String> {
+    let store = readable_store(&state)?;
+    let week_start = parse_utc(&input.week_start, "GPU weekly budget week_start")?;
+    let now = Utc::now();
+    let batch = store
+        .plan_gpu_batch_v1(
+            &GpuBatchPlanRequestV1 {
+                project_ids: input.project_ids.clone(),
+                preparations: input.preparations,
+            },
+            &input.providers,
+            &input.running,
+        )
+        .map_err(error_string)?;
+    let workload = store
+        .estimate_gpu_batch_workload_v1(&batch)
+        .map_err(error_string)?;
+    let burst = store
+        .plan_gpu_burst_v1(&batch, &input.providers)
+        .map_err(error_string)?;
+    let queues = store
+        .gpu_workbench_queue_snapshot_v1(&input.project_ids)
+        .map_err(error_string)?;
+
+    let ready_provider_ids = batch
+        .ready_jobs
+        .iter()
+        .filter_map(|job| {
+            job.eligibility
+                .selection
+                .as_ref()
+                .map(|selection| selection.provider_id.clone())
+        })
+        .collect::<BTreeSet<_>>();
+    let budget = if ready_provider_ids.len() == 1 {
+        let provider_id = ready_provider_ids
+            .iter()
+            .next()
+            .expect("one provider id was just counted");
+        store
+            .assess_gpu_batch_budget_v1(&batch, provider_id, week_start, now)
+            .map_err(error_string)?
+    } else {
+        None
+    };
+
+    let startable = batch.is_ready_to_start()
+        && burst.blocked.is_empty()
+        && burst.preflight_blocked_job_ids.is_empty()
+        && burst.scheduled_job_count() == batch.ready_jobs.len();
+
+    Ok(GpuWorkbenchReviewViewV1 {
+        batch,
+        workload,
+        budget,
+        burst,
+        queues,
+        startable,
+    })
+}
+
+#[tauri::command]
+fn set_gpu_weekly_budget(
+    state: State<'_, DesktopState>,
+    provider_id: String,
+    allowance_hours: f64,
+) -> Result<(), String> {
+    if !allowance_hours.is_finite() || allowance_hours <= 0.0 {
+        return Err("Weekly GPU allowance must be greater than zero hours.".to_owned());
+    }
+    let store = writable_store(&state)?;
+    store
+        .set_gpu_weekly_budget_v1(&provider_id, allowance_hours * 3600.0, Utc::now())
+        .map(|_| ())
+        .map_err(error_string)
+}
+
+#[tauri::command]
+fn start_gpu_burst(
+    state: State<'_, DesktopState>,
+    input: GpuBurstStartInputV1,
+) -> Result<GpuBurstStartViewV1, String> {
+    if input.expected_schedule_hash.trim().is_empty() {
+        return Err("Reviewed Burst schedule hash is required.".to_owned());
+    }
+    if !input.reviewed_batch.is_ready_to_start() {
+        return Err(
+            "The reviewed GPU batch still contains blocked work. Resolve preflight actions before Burst Mode."
+                .to_owned(),
+        );
+    }
+
+    let store = writable_store(&state)?;
+    let burst = store
+        .plan_gpu_burst_v1(&input.reviewed_batch, &input.providers)
+        .map_err(error_string)?;
+    if burst.schedule_hash != input.expected_schedule_hash {
+        return Err(
+            "The provider capability or current job state changed after review. Prepare the GPU batch again before starting Burst Mode."
+                .to_owned(),
+        );
+    }
+    if !burst.blocked.is_empty()
+        || !burst.preflight_blocked_job_ids.is_empty()
+        || burst.scheduled_job_count() != input.reviewed_batch.ready_jobs.len()
+    {
+        return Err(
+            "Burst Mode was blocked by the canonical preflight re-check. Review the batch again."
+                .to_owned(),
+        );
+    }
+    if burst.policy.requires_human_prompt_after_start() {
+        return Err("Burst Mode policy must remain non-interactive after start.".to_owned());
+    }
+
+    let queues = store
+        .gpu_workbench_queue_snapshot_v1(&input.reviewed_batch.selected_project_ids)
+        .map_err(error_string)?;
+
+    Ok(GpuBurstStartViewV1 { burst, queues })
+}
+
 #[tauri::command]
 fn prepare_device_handoff(state: State<'_, DesktopState>) -> Result<AppSnapshot, String> {
     let active = {
@@ -424,6 +593,42 @@ fn snapshot_from_active(state: &State<'_, DesktopState>) -> Result<AppSnapshot, 
         },
         projects,
     })
+}
+
+
+fn readable_store(state: &State<'_, DesktopState>) -> Result<StateStore, String> {
+    let guard = state.active.lock().map_err(lock_error)?;
+    let active = guard
+        .as_ref()
+        .ok_or_else(|| "No Data Folder is currently open.".to_owned())?;
+    if active.is_read_only() {
+        StateStore::open_read_only(active.workspace().sqlite_path()).map_err(error_string)
+    } else {
+        StateStore::open(active.workspace().sqlite_path()).map_err(error_string)
+    }
+}
+
+fn writable_store(state: &State<'_, DesktopState>) -> Result<StateStore, String> {
+    let sqlite_path = {
+        let mut guard = state.active.lock().map_err(lock_error)?;
+        let active = guard
+            .as_mut()
+            .ok_or_else(|| "No Data Folder is currently open.".to_owned())?;
+        active.refresh_lease()?;
+        match active {
+            ActiveWorkspace::Writable(session) => session.sqlite_path(),
+            ActiveWorkspace::ReadOnly(_) => {
+                return Err("This workspace is open read-only.".to_owned());
+            }
+        }
+    };
+    StateStore::open(sqlite_path).map_err(error_string)
+}
+
+fn parse_utc(raw: &str, label: &str) -> Result<DateTime<Utc>, String> {
+    DateTime::parse_from_rfc3339(raw)
+        .map(|value| value.with_timezone(&Utc))
+        .map_err(|error| format!("{label} must be RFC3339: {error}"))
 }
 
 fn with_writable_store(
@@ -673,6 +878,9 @@ fn main() {
             delete_project,
             llmgateway_status,
             save_llmgateway_settings,
+            gpu_workbench_review,
+            set_gpu_weekly_budget,
+            start_gpu_burst,
             prepare_device_handoff
         ])
         .build(tauri::generate_context!())
