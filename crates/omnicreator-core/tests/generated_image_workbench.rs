@@ -113,9 +113,7 @@ fn preparation(scene_id: &str) -> GeneratedImagePreparationV1 {
             BTreeMap::new(),
         )
         .unwrap(),
-        output_uri: Some(
-            LogicalUri::parse(&format!("project://visual/{scene_id}.png")).unwrap(),
-        ),
+        output_uri: Some(LogicalUri::parse(&format!("project://visual/{scene_id}.png")).unwrap()),
         provider_id: Some("compute-provider".to_owned()),
         model_id: Some("reference-svg".to_owned()),
         model_version: Some("1".to_owned()),
@@ -186,10 +184,7 @@ fn generated_image_manifest_resources_flow_through_batch_workload_and_two_device
         .plan_gpu_batch_v1(
             &GpuBatchPlanRequestV1 {
                 project_ids: vec![project.id.clone()],
-                preparations: preparations
-                    .iter()
-                    .map(|(_, gpu)| gpu.clone())
-                    .collect(),
+                preparations: preparations.iter().map(|(_, gpu)| gpu.clone()).collect(),
             },
             &[provider_snapshot()],
             &[],
@@ -222,7 +217,11 @@ fn generated_image_manifest_resources_flow_through_batch_workload_and_two_device
     assert_eq!(workload.estimated_jobs, 0);
     assert_eq!(workload.unknown_jobs, 2);
     assert_eq!(
-        workload.lines.iter().map(|line| line.job_count).sum::<u64>(),
+        workload
+            .lines
+            .iter()
+            .map(|line| line.job_count)
+            .sum::<u64>(),
         2
     );
     assert!(workload.lines.iter().all(|line| {
@@ -254,7 +253,10 @@ fn generated_image_manifest_resources_flow_through_batch_workload_and_two_device
     }));
 
     for (job, _) in preparations {
-        assert_eq!(state.get_job(&job.job_id).unwrap().status, StepStatus::Ready);
+        assert_eq!(
+            state.get_job(&job.job_id).unwrap().status,
+            StepStatus::Ready
+        );
     }
 }
 
