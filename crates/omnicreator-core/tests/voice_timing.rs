@@ -7,7 +7,7 @@ use omnicreator_core::{
     ComputeProviderConnectionState, ComputeProviderExecution, ComputeRemoteArtifactV1,
     ComputeRemoteJournalEntryV1, ComputeRemoteJournalEventV1, ComputeRequirements, Error,
     GpuJobPreparationV1, GpuQueueEligibilityStatusV1, GpuQueueEligibilityV1, LogicalUri,
-    RemoteArtifactSyncOutcomeV1, RemoteComputeJobSpecV1, RemoteVoiceBundleSyncOutcomeV1,
+    RemoteComputeJobSpecV1, RemoteVoiceBundleSyncOutcomeV1,
     ResourceRequirement, StateStore, StepStatus, VoiceTimingCueV1, VoiceTimingV1, Workspace,
     REMOTE_JOURNAL_SCHEMA_V1, VOICE_TIMING_SCHEMA_V1,
 };
