@@ -1,12 +1,19 @@
-use std::{collections::BTreeMap, path::PathBuf};
+use std::{
+    collections::BTreeMap,
+    io::{Read, Write},
+    net::TcpListener,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use chrono::{TimeZone, Utc};
 use omnicreator_core::{
     evaluate_gpu_queue, scan_plugin_roots, ArtifactStore, CacheLookupV1, ComputeDeviceV1,
     ComputeProviderCapabilitiesV1, ComputeProviderConnectionState,
     ComputeProviderSchedulingSnapshotV1, ComputeProviderSessionIdentityV1,
-    ComputeProviderSessionV1, GeneratedImagePreparationV1, GeneratedImageRequestV1,
-    GeneratedImageResolutionV1, GeneratedImageStyleV1, GpuQueueEligibilityStatusV1,
+    ComputeProviderSessionV1, GeneratedImageExecutionContextV1, GeneratedImageExecutionOptionsV1,
+    GeneratedImagePreparationV1, GeneratedImageRequestV1, GeneratedImageResolutionV1,
+    GeneratedImageStyleV1, GpuQueueEligibilityStatusV1,
     GpuReadinessFactsV1, LogicalUri, PluginProcessOptions, SceneIntentV1, StateStore, StepStatus,
     Workspace, SCENE_INTENT_SCHEMA, SCENE_INTENT_SCHEMA_VERSION,
 };
@@ -26,6 +33,20 @@ fn generated_plugin() -> omnicreator_core::DiscoveredPlugin {
         .registry
         .get("generated-image-reference")
         .expect("generated image reference plugin")
+        .clone()
+}
+
+fn api_plugin() -> omnicreator_core::DiscoveredPlugin {
+    let report = scan_plugin_roots(&[plugin_root()]);
+    assert!(
+        report.diagnostics.is_empty(),
+        "plugin discovery diagnostics: {:?}",
+        report.diagnostics
+    );
+    report
+        .registry
+        .get("generated-image-api")
+        .expect("generated image API plugin")
         .clone()
 }
 
@@ -321,4 +342,367 @@ fn generated_image_resource_declaration_is_phase7_scheduler_compatible() {
     let decision = evaluate_gpu_queue(&job, &facts, &gpu_preparation, &[provider], &[]).unwrap();
     assert_eq!(decision.status, GpuQueueEligibilityStatusV1::GpuReady);
     assert_eq!(decision.selection.unwrap().device_id, "gpu0");
+}
+
+
+fn api_request() -> GeneratedImageRequestV1 {
+    GeneratedImageRequestV1::from_scene_v1(
+        scene(),
+        GeneratedImageStyleV1 {
+            preset: "api-fixture".to_owned(),
+            description: None,
+        },
+        GeneratedImageResolutionV1 {
+            width: 1,
+            height: 1,
+        },
+        Some(7),
+        BTreeMap::new(),
+    )
+    .unwrap()
+}
+
+fn api_preparation() -> GeneratedImagePreparationV1 {
+    GeneratedImagePreparationV1 {
+        request: api_request(),
+        output_uri: Some(LogicalUri::parse("project://visual/SC01.png").unwrap()),
+        provider_id: None,
+        model_id: Some("fixture-image".to_owned()),
+        model_version: Some("fixture-v1".to_owned()),
+        approval_required: false,
+        approval_complete: true,
+        production_lock_required: false,
+        gpu_execution_requested: false,
+    }
+}
+
+fn api_runtime_settings(endpoint: &str, env_name: &str) -> BTreeMap<String, serde_json::Value> {
+    BTreeMap::from([
+        (
+            "api_endpoint".to_owned(),
+            serde_json::Value::String(endpoint.to_owned()),
+        ),
+        (
+            "api_key_env".to_owned(),
+            serde_json::Value::String(env_name.to_owned()),
+        ),
+        (
+            "timeout_seconds".to_owned(),
+            serde_json::Value::Number(3.into()),
+        ),
+        (
+            "model".to_owned(),
+            serde_json::Value::String("fixture-image".to_owned()),
+        ),
+        (
+            "model_version".to_owned(),
+            serde_json::Value::String("fixture-v1".to_owned()),
+        ),
+    ])
+}
+
+fn spawn_mock_api(
+    status: &'static str,
+    body: String,
+    expected_authorization: Option<String>,
+    retry_after: Option<u64>,
+) -> (String, std::thread::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let handle = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+        let mut request = Vec::new();
+        let mut buffer = [0_u8; 4096];
+        loop {
+            match stream.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(count) => {
+                    request.extend_from_slice(&buffer[..count]);
+                    if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                        break;
+                    }
+                }
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                    ) =>
+                {
+                    break;
+                }
+                Err(error) => panic!("mock API request read failed: {error}"),
+            }
+        }
+
+        let request_text = String::from_utf8_lossy(&request);
+        if let Some(expected) = expected_authorization {
+            assert!(
+                request_text.contains(&format!("Authorization: {expected}"))
+                    || request_text.contains(&format!("Authorization: {}\r", expected)),
+                "Authorization header was not forwarded only to the provider request: {request_text}"
+            );
+        }
+
+        let retry_header = retry_after
+            .map(|seconds| format!("Retry-After: {seconds}\r\n"))
+            .unwrap_or_default();
+        let response = format!(
+            "HTTP/1.1 {status}\r\nContent-Type: application/json\r\n{retry_header}Content-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        stream.write_all(response.as_bytes()).unwrap();
+        stream.flush().unwrap();
+    });
+    (
+        format!("http://{address}/v1/images/generations"),
+        handle,
+    )
+}
+
+fn assert_tree_does_not_contain(root: &Path, needle: &str) {
+    fn visit(path: &Path, needle: &[u8]) {
+        for entry in std::fs::read_dir(path).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            let metadata = entry.metadata().unwrap();
+            if metadata.is_dir() {
+                visit(&path, needle);
+            } else if metadata.is_file() {
+                let bytes = std::fs::read(&path).unwrap();
+                assert!(
+                    !bytes.windows(needle.len()).any(|window| window == needle),
+                    "secret sentinel leaked into {}",
+                    path.display()
+                );
+            }
+        }
+    }
+    visit(root, needle.as_bytes());
+}
+
+#[test]
+fn api_only_generated_image_resource_does_not_require_fake_gpu_model_group() {
+    let plugin = api_plugin();
+    let requirements = plugin.manifest.resources.as_ref().unwrap();
+    assert!(requirements.model_group.is_none());
+    assert!(requirements.min_vram_mb.is_none());
+    assert!(api_preparation().preflight_v1(&plugin).is_ready());
+}
+
+#[test]
+fn api_missing_credential_blocks_before_attempt_and_http_execution() {
+    const MISSING_ENV: &str = "OMNICREATOR_P2B_MISSING_CREDENTIAL";
+    std::env::remove_var(MISSING_ENV);
+
+    let temp = tempfile::tempdir().unwrap();
+    let workspace = Workspace::create(temp.path().join("data")).unwrap();
+    let mut state = StateStore::open(workspace.sqlite_path()).unwrap();
+    let project = state.create_project("Generated Image API Missing Credential").unwrap();
+    let plugin = api_plugin();
+    let preparation = api_preparation();
+    let job = state
+        .create_job(
+            &project.id,
+            "visual.generate",
+            &preparation.request.scene.id,
+            &preparation.request.input_hash_v1().unwrap(),
+        )
+        .unwrap();
+    let artifact_store = ArtifactStore::new(workspace.data_root()).unwrap();
+
+    let error = omnicreator_core::execute_generated_image_plugin_with_options_v1(
+        &mut state,
+        &artifact_store,
+        &plugin,
+        temp.path().join("plugin-runtime"),
+        &job.job_id,
+        &preparation,
+        GeneratedImageExecutionOptionsV1 {
+            context: GeneratedImageExecutionContextV1::default(),
+            process: PluginProcessOptions::default(),
+            runtime_plugin_settings: api_runtime_settings(
+                "http://127.0.0.1:9/v1/images/generations",
+                MISSING_ENV,
+            ),
+        },
+    )
+    .unwrap_err();
+
+    assert!(error.to_string().contains("ApiCredentialMissing"));
+    assert!(state.list_attempts(&job.job_id).unwrap().is_empty());
+    assert_eq!(state.get_job(&job.job_id).unwrap().status, StepStatus::Ready);
+}
+
+#[test]
+fn api_generated_image_executes_through_process_and_core_promotes_verified_artifact_without_secret_leak() {
+    const SECRET_ENV: &str = "OMNICREATOR_P2B_TEST_API_KEY_CORE";
+    const SECRET: &str = "OMNICREATOR_P2B_SECRET_SENTINEL";
+    const PNG_1X1_B64: &str =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+
+    std::env::set_var(SECRET_ENV, SECRET);
+    let body = serde_json::json!({
+        "data": [{"b64_json": PNG_1X1_B64}],
+        "request_id": "provider-request-core-1"
+    })
+    .to_string();
+    let (endpoint, server) = spawn_mock_api(
+        "200 OK",
+        body,
+        Some(format!("Bearer {SECRET}")),
+        None,
+    );
+
+    let temp = tempfile::tempdir().unwrap();
+    let workspace = Workspace::create(temp.path().join("data")).unwrap();
+    let mut state = StateStore::open(workspace.sqlite_path()).unwrap();
+    let project = state.create_project("Generated Image API Success").unwrap();
+    let plugin = api_plugin();
+    let preparation = api_preparation();
+    let job = state
+        .create_job(
+            &project.id,
+            "visual.generate",
+            &preparation.request.scene.id,
+            &preparation.request.input_hash_v1().unwrap(),
+        )
+        .unwrap();
+    let artifact_store = ArtifactStore::new(workspace.data_root()).unwrap();
+
+    let execution = omnicreator_core::execute_generated_image_plugin_with_options_v1(
+        &mut state,
+        &artifact_store,
+        &plugin,
+        temp.path().join("plugin-runtime"),
+        &job.job_id,
+        &preparation,
+        GeneratedImageExecutionOptionsV1 {
+            context: GeneratedImageExecutionContextV1::default(),
+            process: PluginProcessOptions::default(),
+            runtime_plugin_settings: api_runtime_settings(&endpoint, SECRET_ENV),
+        },
+    )
+    .unwrap();
+    server.join().unwrap();
+    std::env::remove_var(SECRET_ENV);
+
+    let persisted = state.get_job(&job.job_id).unwrap();
+    assert_eq!(persisted.status, StepStatus::Succeeded);
+    assert_eq!(state.list_attempts(&job.job_id).unwrap().len(), 1);
+    assert!(artifact_store.verify_artifact(&execution.artifact).unwrap());
+    assert_eq!(execution.artifact.metadata["provider"], "generated-image-api");
+    assert_eq!(execution.artifact.metadata["model"]["id"], "fixture-image");
+    assert_eq!(
+        execution.artifact.metadata["provenance"]["execution_target"],
+        "api"
+    );
+    assert_eq!(
+        execution.artifact.metadata["provider_metadata"]["provider_request_id"],
+        "provider-request-core-1"
+    );
+
+    let serialized_request = serde_json::to_string(&preparation.request).unwrap();
+    let serialized_result = serde_json::to_string(&execution.plugin_result).unwrap();
+    let serialized_metadata = serde_json::to_string(&execution.artifact.metadata).unwrap();
+    assert!(!serialized_request.contains(SECRET));
+    assert!(!serialized_result.contains(SECRET));
+    assert!(!serialized_metadata.contains(SECRET));
+    assert_tree_does_not_contain(workspace.data_root(), SECRET);
+}
+
+#[test]
+fn retryable_api_error_appends_attempt_then_same_logical_job_can_succeed() {
+    const SECRET_ENV: &str = "OMNICREATOR_P2B_TEST_API_KEY_RETRY";
+    const SECRET: &str = "OMNICREATOR_P2B_SECRET_SENTINEL";
+    const PNG_1X1_B64: &str =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+
+    std::env::set_var(SECRET_ENV, SECRET);
+    let (rate_endpoint, rate_server) = spawn_mock_api(
+        "429 Too Many Requests",
+        "{}".to_owned(),
+        Some(format!("Bearer {SECRET}")),
+        Some(1),
+    );
+
+    let temp = tempfile::tempdir().unwrap();
+    let workspace = Workspace::create(temp.path().join("data")).unwrap();
+    let mut state = StateStore::open(workspace.sqlite_path()).unwrap();
+    let project = state.create_project("Generated Image API Retry").unwrap();
+    let plugin = api_plugin();
+    let preparation = api_preparation();
+    let job = state
+        .create_job(
+            &project.id,
+            "visual.generate",
+            &preparation.request.scene.id,
+            &preparation.request.input_hash_v1().unwrap(),
+        )
+        .unwrap();
+    let artifact_store = ArtifactStore::new(workspace.data_root()).unwrap();
+
+    let first = omnicreator_core::execute_generated_image_plugin_with_options_v1(
+        &mut state,
+        &artifact_store,
+        &plugin,
+        temp.path().join("plugin-runtime"),
+        &job.job_id,
+        &preparation,
+        GeneratedImageExecutionOptionsV1 {
+            context: GeneratedImageExecutionContextV1::default(),
+            process: PluginProcessOptions::default(),
+            runtime_plugin_settings: api_runtime_settings(&rate_endpoint, SECRET_ENV),
+        },
+    )
+    .unwrap_err();
+    rate_server.join().unwrap();
+    assert!(first.to_string().contains("RATE_LIMITED"));
+
+    let attempts = state.list_attempts(&job.job_id).unwrap();
+    assert_eq!(attempts.len(), 1);
+    assert_eq!(attempts[0].status, StepStatus::Retryable);
+    assert_eq!(state.get_job(&job.job_id).unwrap().status, StepStatus::Retryable);
+
+    let success_body = serde_json::json!({
+        "data": [{"b64_json": PNG_1X1_B64}],
+        "request_id": "provider-request-retry-2"
+    })
+    .to_string();
+    let (success_endpoint, success_server) = spawn_mock_api(
+        "200 OK",
+        success_body,
+        Some(format!("Bearer {SECRET}")),
+        None,
+    );
+    let execution = omnicreator_core::execute_generated_image_plugin_with_options_v1(
+        &mut state,
+        &artifact_store,
+        &plugin,
+        temp.path().join("plugin-runtime"),
+        &job.job_id,
+        &preparation,
+        GeneratedImageExecutionOptionsV1 {
+            context: GeneratedImageExecutionContextV1::default(),
+            process: PluginProcessOptions::default(),
+            runtime_plugin_settings: api_runtime_settings(&success_endpoint, SECRET_ENV),
+        },
+    )
+    .unwrap();
+    success_server.join().unwrap();
+    std::env::remove_var(SECRET_ENV);
+
+    let attempts = state.list_attempts(&job.job_id).unwrap();
+    assert_eq!(attempts.len(), 2);
+    assert_eq!(attempts[0].status, StepStatus::Retryable);
+    assert_eq!(attempts[1].status, StepStatus::Succeeded);
+    assert_eq!(attempts[0].job_id, job.job_id);
+    assert_eq!(attempts[1].job_id, job.job_id);
+    assert_eq!(
+        state.get_job(&job.job_id).unwrap().selected_attempt.as_deref(),
+        Some(execution.attempt_id.as_str())
+    );
 }
