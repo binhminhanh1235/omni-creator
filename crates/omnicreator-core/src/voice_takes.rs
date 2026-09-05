@@ -9,8 +9,8 @@ use crate::{
     Artifact, ArtifactStore, Attempt, CacheLookupV1, ComputeAttemptRuntimeContextV1,
     ComputeJobDispatchV1, ComputeProviderExecution, Error, GpuJobPreparationV1,
     GpuQueueEligibilityV1, GpuReadinessFactsV1, Job, LogicalUri, RemoteComputeJobSpecV1,
-    RemoteDispatchStartedV1, Result, StateStore, StepStatus, VOICE_TIMING_SCHEMA_V1,
-    REMOTE_EXECUTION_SCHEMA_V1,
+    RemoteDispatchStartedV1, Result, StateStore, StepStatus, REMOTE_EXECUTION_SCHEMA_V1,
+    VOICE_TIMING_SCHEMA_V1,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -521,9 +521,7 @@ pub fn dispatch_remote_voice_take_v1(
     let timing_output_uri = crate::voice_timing_output_uri_v1(&output_uri)?;
     let mut plugin_payload = spec.plugin_payload.clone();
     let payload = plugin_payload.as_object_mut().ok_or_else(|| {
-        Error::InvalidContract(
-            "voice remote job plugin_payload must be a JSON object".to_owned(),
-        )
+        Error::InvalidContract("voice remote job plugin_payload must be a JSON object".to_owned())
     })?;
     payload.insert(
         "timing".to_owned(),
