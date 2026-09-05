@@ -176,3 +176,14 @@ OmniCreator is not:
 - a local large-model workstation
 
 If a future feature proposal conflicts with these decisions, require an explicit new ADR with evidence that the tradeoff has changed.
+
+
+## ADR-027: Studio Pack availability is derived runtime state
+
+**Decision:** Portable Studio Pack catalog data stores only versioned pack definitions. Availability is evaluated from the resolved Studio Pack against the canonical PluginRegistry and ephemeral machine-local runtime readiness facts.
+
+**Reason:** Plugin installation, health and credential readiness can differ between machines that share the same portable Data Root. Persisting those facts would turn a transient setup condition into false project truth and would duplicate PluginRegistry ownership.
+
+The P1 evaluator exposes `AVAILABLE`, `AVAILABLE_WITH_SETUP` and `UNAVAILABLE` with machine-readable reasons. Missing preferred or fallback implementations are non-corrupting diagnostics when another compatible target is usable.
+
+`Christian Stick Explainer` uses `stick_figure_visual` as its semantic capability gate. The definition may ship before Phase 11, but it remains unavailable until a compatible visual plugin advertises that exact capability. Generic generated still/image capability does not satisfy the stick-figure semantic contract.
