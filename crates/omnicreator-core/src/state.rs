@@ -713,6 +713,37 @@ mod tests {
     }
 
     #[test]
+    fn project_studio_pack_binding_persists_canonically() {
+        let temp = tempfile::tempdir().unwrap();
+        let workspace = Workspace::create(temp.path().join("data")).unwrap();
+        let store = StateStore::open(workspace.sqlite_path()).unwrap();
+
+        let project = store
+            .create_project_with_studio_pack("Pack Project", Some("christian-cinematic"))
+            .unwrap();
+        assert_eq!(
+            project.studio_pack.as_deref(),
+            Some("christian-cinematic")
+        );
+
+        let updated = store
+            .update_project_studio_pack(&project.id, Some("night-devotional"))
+            .unwrap();
+        assert_eq!(updated.studio_pack.as_deref(), Some("night-devotional"));
+
+        drop(store);
+        let reopened = StateStore::open(workspace.sqlite_path()).unwrap();
+        assert_eq!(
+            reopened
+                .get_project(&project.id)
+                .unwrap()
+                .studio_pack
+                .as_deref(),
+            Some("night-devotional")
+        );
+    }
+
+    #[test]
     fn project_update_and_delete_are_persisted() {
         let temp = tempfile::tempdir().unwrap();
         let workspace = Workspace::create(temp.path().join("data")).unwrap();
