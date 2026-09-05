@@ -313,6 +313,26 @@ impl StateStore {
         Ok(project)
     }
 
+    pub fn update_project_studio_pack(
+        &self,
+        id: &str,
+        studio_pack: Option<&str>,
+    ) -> Result<Project> {
+        if studio_pack.is_some_and(|value| value.trim().is_empty()) {
+            return Err(Error::InvalidContract(
+                "project studio_pack must not be empty when present".to_owned(),
+            ));
+        }
+        let changed = self.connection.execute(
+            "UPDATE projects SET studio_pack=?1, updated_at=?2 WHERE id=?3",
+            params![studio_pack, Utc::now().to_rfc3339(), id],
+        )?;
+        if changed == 0 {
+            return Err(Error::ProjectNotFound(id.to_owned()));
+        }
+        self.get_project(id)
+    }
+
     pub fn update_project_title(&self, id: &str, title: &str) -> Result<Project> {
         let changed = self.connection.execute(
             "UPDATE projects SET title=?1, updated_at=?2 WHERE id=?3",
