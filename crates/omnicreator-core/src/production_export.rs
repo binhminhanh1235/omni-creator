@@ -1,7 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
-    path::{Path, PathBuf},
 };
 
 use serde::{Deserialize, Serialize};
@@ -10,7 +9,7 @@ use serde_json::Value;
 use crate::{
     deterministic_input_hash, Artifact, ArtifactStore, AttemptOutputPromotion,
     AttemptPromotionRequest, Error, FcpxmlExportProfileV1, FcpxmlExporterV1, LogicalUri,
-    ProductionPackV1, Result, StateStore, TimelineTrackRoleV1,
+    ProductionPackV1, Result, StateStore,
 };
 
 pub const PRODUCTION_PACKAGE_LAYOUT_VERSION_V1: u32 = 1;
@@ -133,7 +132,6 @@ pub struct AssetSourceReportV1 {
 struct PreparedProductionExportV1 {
     normalized_pack: ProductionPackV1,
     production_pack_json: Vec<u8>,
-    source_report: AssetSourceReportV1,
     source_report_json: Vec<u8>,
     semantic_hash: String,
     execution_hash: String,
@@ -239,7 +237,6 @@ impl ProductionPackageExporterV1 {
         Ok(PreparedProductionExportV1 {
             normalized_pack,
             production_pack_json,
-            source_report,
             source_report_json,
             semantic_hash,
             execution_hash,
@@ -584,10 +581,13 @@ pub fn sanitize_filename_v1(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::*;
     use crate::{
         ProductionPackV1, StepStatus, SubtitleCueV1, TimelineClipV1, TimelineFrameRateV1,
-        TimelineTrackV1, Workspace, PRODUCTION_PACK_SCHEMA_V1, PRODUCTION_PACK_VERSION_V1,
+        TimelineTrackRoleV1, TimelineTrackV1, Workspace, PRODUCTION_PACK_SCHEMA_V1,
+        PRODUCTION_PACK_VERSION_V1,
     };
 
     fn promote_source_artifact(
