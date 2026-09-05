@@ -92,8 +92,15 @@ impl TimelineClipV1 {
         validate_optional_text_v1("timeline clip label", self.label.as_deref())
     }
 
-    pub fn timeline_end_ms_v1(&self) -> u64 {
-        self.timeline_start_ms.saturating_add(self.duration_ms)
+    pub fn timeline_end_ms_v1(&self) -> Result<u64> {
+        self.timeline_start_ms
+            .checked_add(self.duration_ms)
+            .ok_or_else(|| {
+                Error::InvalidContract(format!(
+                    "timeline clip {} end time overflows u64 milliseconds",
+                    self.clip_id
+                ))
+            })
     }
 }
 
@@ -289,7 +296,7 @@ fn validate_ordered_clips_v1(clips: &[TimelineClipV1]) -> Result<()> {
                 clip.clip_id
             )));
         }
-        previous_end_ms = clip.timeline_end_ms_v1();
+        previous_end_ms = clip.timeline_end_ms_v1()?;
     }
     Ok(())
 }
