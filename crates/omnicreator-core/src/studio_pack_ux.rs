@@ -548,6 +548,41 @@ mod tests {
     }
 
     #[test]
+    fn retryable_job_exposes_canonical_retry_action() {
+        let job = Job {
+            job_id: "job-retry".to_owned(),
+            project_id: "prj-1".to_owned(),
+            step: "visual".to_owned(),
+            unit: "SC01".to_owned(),
+            status: StepStatus::Retryable,
+            input_hash: "hash".to_owned(),
+            selected_attempt: None,
+            selected_artifact: None,
+        };
+        let review = build_studio_review_center_v1(&[(
+            project(),
+            vec![StudioJobReviewSnapshotV1 {
+                job,
+                attempts: Vec::new(),
+            }],
+            Vec::new(),
+            None,
+        )]);
+
+        assert_eq!(review.actionable_count, 1);
+        assert_eq!(
+            review.items[0].action,
+            Some(StudioReviewActionV1::RetryJob {
+                job_id: "job-retry".to_owned(),
+            })
+        );
+        assert_eq!(
+            review.items[0].canonical_source,
+            "Job / Attempt".to_owned()
+        );
+    }
+
+    #[test]
     fn resolved_job_disappears_without_review_state_storage() {
         let job = Job {
             job_id: "job-1".to_owned(),
