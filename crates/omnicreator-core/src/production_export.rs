@@ -7,9 +7,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
-    deterministic_input_hash, Artifact, ArtifactStore, AttemptOutputPromotion,
-    AttemptPromotionRequest, Error, FcpxmlExportProfileV1, FcpxmlExporterV1, LogicalUri,
-    ProductionPackV1, Result, StateStore,
+    artifact_store::{AttemptOutputPromotion, AttemptPromotionRequest},
+    deterministic_input_hash, Artifact, ArtifactStore, Error, FcpxmlExportProfileV1,
+    FcpxmlExporterV1, LogicalUri, ProductionPackV1, Result, StateStore,
 };
 
 pub const PRODUCTION_PACKAGE_LAYOUT_VERSION_V1: u32 = 1;
