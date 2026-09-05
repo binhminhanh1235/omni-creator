@@ -334,14 +334,15 @@ fn format_srt_timestamp_v1(milliseconds: u64) -> String {
 }
 
 fn normalize_srt_text_v1(value: &str) -> String {
-    value.replace("\r\n", "\n").replace('\r', "\n").trim().to_owned()
+    value
+        .replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .trim()
+        .to_owned()
 }
 
 fn require_identifier_v1(label: &str, value: &str) -> Result<()> {
-    if value.is_empty()
-        || value.trim() != value
-        || value.chars().any(char::is_control)
-    {
+    if value.is_empty() || value.trim() != value || value.chars().any(char::is_control) {
         return Err(Error::InvalidContract(format!(
             "{label} must be a non-empty identifier without surrounding whitespace or control characters"
         )));
