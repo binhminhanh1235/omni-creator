@@ -49,7 +49,10 @@ impl Fixture {
                 &input_hash,
             )
             .unwrap();
-        let source = self._temp.path().join(format!("source-{}.bin", self.counter));
+        let source = self
+            ._temp
+            .path()
+            .join(format!("source-{}.bin", self.counter));
         fs::write(&source, bytes).unwrap();
         self.artifacts
             .promote_job_output(
@@ -132,7 +135,9 @@ fn one_video_and_narration_produce_deterministic_interchange() {
         .unwrap();
 
     assert_eq!(first, second);
-    assert!(first.starts_with("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<fcpxml version=\"1.10\">"));
+    assert!(
+        first.starts_with("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<fcpxml version=\"1.10\">")
+    );
     assert!(first.contains("<event name=\"Export &amp; &lt;Project&gt; &quot;Quoted&quot;\">"));
     assert!(first.contains("videoRole=\"video.primary\""));
     assert!(first.contains("audioRole=\"dialogue.narration\""));
@@ -158,7 +163,11 @@ fn multiple_roles_preserve_stable_deterministic_lane_layout() {
             5,
             "video.typography-scripture",
         ),
-        (TimelineTrackRoleV1::AudioNarration, -1, "dialogue.narration"),
+        (
+            TimelineTrackRoleV1::AudioNarration,
+            -1,
+            "dialogue.narration",
+        ),
         (TimelineTrackRoleV1::AudioMusic, -2, "music.music"),
         (TimelineTrackRoleV1::AudioAmbience, -3, "effects.ambience"),
         (TimelineTrackRoleV1::AudioSfx, -4, "effects.sfx"),
@@ -195,7 +204,10 @@ fn multiple_roles_preserve_stable_deterministic_lane_layout() {
     for (role, lane, role_name) in roles {
         let stable_name = role.stable_name_v1();
         let index = xml.find(stable_name).unwrap();
-        assert!(index >= last_index, "{stable_name} must remain in stable order");
+        assert!(
+            index >= last_index,
+            "{stable_name} must remain in stable order"
+        );
         last_index = index;
         assert!(xml.contains(&format!("lane=\"{lane}\"")));
         assert!(xml.contains(role_name));
@@ -419,14 +431,8 @@ fn corrupt_physical_file_fails_hash_verification() {
 #[test]
 fn data_root_move_regenerates_new_file_urls_without_changing_canonical_pack() {
     let temp = tempfile::tempdir().unwrap();
-    let old_root = temp
-        .path()
-        .join("old path")
-        .join("OmniCreatorData");
-    let new_root = temp
-        .path()
-        .join("new path")
-        .join("OmniCreatorData");
+    let old_root = temp.path().join("old path").join("OmniCreatorData");
+    let new_root = temp.path().join("new path").join("OmniCreatorData");
 
     let workspace = Workspace::create(&old_root).unwrap();
     let mut state = StateStore::open(workspace.sqlite_path()).unwrap();
@@ -492,7 +498,10 @@ fn data_root_move_regenerates_new_file_urls_without_changing_canonical_pack() {
 
     assert!(xml_b.contains(&new_url_fragment));
     assert!(!xml_b.contains(&old_url_fragment));
-    assert_eq!(serde_json::to_string(&production_pack).unwrap(), canonical_before);
+    assert_eq!(
+        serde_json::to_string(&production_pack).unwrap(),
+        canonical_before
+    );
     assert!(!canonical_before.contains(old_root.to_string_lossy().as_ref()));
     assert!(!canonical_before.contains(new_root.to_string_lossy().as_ref()));
 }
