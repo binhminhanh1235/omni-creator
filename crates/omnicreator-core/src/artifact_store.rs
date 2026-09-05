@@ -141,6 +141,104 @@ impl ArtifactStore {
         )
     }
 
+
+    pub fn promote_plugin_output_for_attempt(
+        &self,
+        state_store: &mut StateStore,
+        attempt_id: &str,
+        job_id: &str,
+        workspace: &PluginJobWorkspace,
+        promotion: PluginOutputPromotion,
+    ) -> Result<Artifact> {
+        let verified = workspace.verify_output_file(&promotion.relative_output)?;
+        let source = verified.path();
+        if !source.is_file() {
+            return Err(Error::InvalidArtifact(format!(
+                "source file does not exist: {}",
+                source.display()
+            )));
+        }
+
+        if promotion.artifact_type.trim().is_empty() {
+            return Err(Error::InvalidArtifact(
+                "artifact_type must not be empty".to_owned(),
+            ));
+        }
+        if matches!(&promotion.target_uri, LogicalUri::Artifact(_)) {
+            return Err(Error::InvalidArtifact(
+                "artifact:// cannot be used as a physical promotion target".to_owned(),
+            ));
+        }
+
+        let job = state_store.get_job(job_id)?;
+        let attempt = state_store.get_attempt(attempt_id)?;
+        if attempt.job_id != job.job_id {
+            return Err(Error::InvalidArtifact(
+                "attempt does not belong to producer job".to_owned(),
+            ));
+        }
+
+        let project_context = match &promotion.target_uri {
+            LogicalUri::Project(_) => Some(job.project_id.as_str()),
+            _ => None,
+        };
+        let mut destination = self
+            .resolver
+            .resolve(&promotion.target_uri, project_context)?;
+        if destination.exists() {
+            return Err(Error::ArtifactTargetExists(destination));
+        }
+
+        let parent = destination
+            .parent()
+            .ok_or_else(|| Error::InvalidArtifact("target has no parent directory".to_owned()))?;
+        fs::create_dir_all(parent)?;
+        destination = self
+            .resolver
+            .resolve(&promotion.target_uri, project_context)?;
+        if destination.exists() {
+            return Err(Error::ArtifactTargetExists(destination));
+        }
+
+        let parent = destination
+            .parent()
+            .ok_or_else(|| Error::InvalidArtifact("target has no parent directory".to_owned()))?;
+        let temp = parent.join(format!(".artifact-{}.tmp", Uuid::new_v4().simple()));
+
+        if let Err(error) = copy_and_sync(source, &temp) {
+            let _ = fs::remove_file(&temp);
+            return Err(error);
+        }
+
+        let (sha256, size_bytes) = sha256_file(&temp)?;
+        if let Err(error) = fs::rename(&temp, &destination) {
+            let _ = fs::remove_file(&temp);
+            return Err(error.into());
+        }
+
+        let artifact = Artifact {
+            artifact_id: format!("art_{}", Uuid::new_v4().simple()),
+            project_id: Some(job.project_id.clone()),
+            artifact_type: promotion.artifact_type,
+            uri: promotion.target_uri,
+            sha256,
+            size_bytes,
+            input_hash: Some(job.input_hash.clone()),
+            producer_job: Some(job.job_id.clone()),
+            created_at: Utc::now(),
+            metadata: promotion.metadata,
+        };
+
+        if let Err(error) =
+            state_store.commit_attempt_artifact_success(attempt_id, &artifact)
+        {
+            let _ = fs::remove_file(&destination);
+            return Err(error);
+        }
+
+        Ok(artifact)
+    }
+
     pub fn lookup_verified_cache(
         &self,
         state_store: &StateStore,
