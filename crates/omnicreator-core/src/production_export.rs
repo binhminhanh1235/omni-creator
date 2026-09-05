@@ -8,8 +8,8 @@ use serde_json::Value;
 
 use crate::{
     artifact_store::{AttemptOutputPromotion, AttemptPromotionRequest},
-    deterministic_input_hash, Artifact, ArtifactStore, Error, FcpxmlExportProfileV1,
-    FcpxmlExporterV1, LogicalUri, ProductionPackV1, Result, StateStore,
+    deterministic_input_hash, Artifact, ArtifactStore, Attempt, Error, FcpxmlExportProfileV1,
+    FcpxmlExporterV1, Job, LogicalUri, ProductionPackV1, Result, StateStore,
 };
 
 pub const PRODUCTION_PACKAGE_LAYOUT_VERSION_V1: u32 = 1;
@@ -143,6 +143,14 @@ pub struct ProductionPackageExportOutcomeV1 {
     pub artifacts: Vec<Artifact>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProductionExportHistoryEntryV1 {
+    pub job: Job,
+    pub attempts: Vec<Attempt>,
+    pub artifacts: Vec<Artifact>,
+    pub package_base_uri: String,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct ProductionPackageExporterV1 {
     fcpxml_profile: FcpxmlExportProfileV1,
@@ -177,12 +185,18 @@ impl ProductionPackageExporterV1 {
             });
         }
 
-        let job = state_store.create_job(
+        let job = match state_store.find_retryable_production_export_job_v1(
             &prepared.normalized_pack.project_id,
-            "export.production-pack",
-            &prepared.layout.stable_project_folder,
             &prepared.execution_hash,
-        )?;
+        )? {
+            Some(job) => job,
+            None => state_store.create_job(
+                &prepared.normalized_pack.project_id,
+                "export.production-pack",
+                &prepared.layout.stable_project_folder,
+                &prepared.execution_hash,
+            )?,
+        };
         self.execute_job_v1(state_store, artifact_store, &job.job_id, prepared)
     }
 
@@ -371,6 +385,92 @@ impl ProductionPackageExporterV1 {
         let _ = fs::remove_dir_all(&staging);
         result
     }
+}
+
+impl StateStore {
+    pub fn production_export_history_v1(
+        &self,
+        project_id: &str,
+    ) -> Result<Vec<ProductionExportHistoryEntryV1>> {
+        self.get_project(project_id)?;
+        let job_ids = {
+            let mut statement = self.connection.prepare(
+                "SELECT id FROM jobs \
+                 WHERE project_id=?1 AND step_key='export.production-pack' \
+                 ORDER BY rowid DESC",
+            )?;
+            statement
+                .query_map([project_id], |row| row.get::<_, String>(0))?
+                .collect::<std::result::Result<Vec<_>, _>>()?
+        };
+
+        let mut history = Vec::with_capacity(job_ids.len());
+        for job_id in job_ids {
+            let job = self.get_job(&job_id)?;
+            let attempts = self.list_attempts(&job_id)?;
+            let artifact_ids = {
+                let mut statement = self.connection.prepare(
+                    "SELECT id FROM artifacts WHERE producer_job_id=?1 ORDER BY uri,id",
+                )?;
+                statement
+                    .query_map([job_id.as_str()], |row| row.get::<_, String>(0))?
+                    .collect::<std::result::Result<Vec<_>, _>>()?
+            };
+            let artifacts = artifact_ids
+                .into_iter()
+                .map(|artifact_id| self.get_artifact(&artifact_id))
+                .collect::<Result<Vec<_>>>()?;
+
+            history.push(ProductionExportHistoryEntryV1 {
+                package_base_uri: production_package_base_uri_v1(&job)?,
+                job,
+                attempts,
+                artifacts,
+            });
+        }
+        Ok(history)
+    }
+
+    fn find_retryable_production_export_job_v1(
+        &self,
+        project_id: &str,
+        input_hash: &str,
+    ) -> Result<Option<Job>> {
+        let job_ids = {
+            let mut statement = self.connection.prepare(
+                "SELECT id FROM jobs \
+                 WHERE project_id=?1 AND step_key='export.production-pack' \
+                   AND input_hash=?2 AND status='RETRYABLE' \
+                 ORDER BY rowid DESC LIMIT 1",
+            )?;
+            statement
+                .query_map([project_id, input_hash], |row| row.get::<_, String>(0))?
+                .collect::<std::result::Result<Vec<_>, _>>()?
+        };
+        job_ids
+            .into_iter()
+            .next()
+            .map(|job_id| self.get_job(&job_id))
+            .transpose()
+    }
+}
+
+fn production_package_base_uri_v1(job: &Job) -> Result<String> {
+    require_sha256_v1("production export job input hash", &job.input_hash)?;
+    if job.unit.is_empty()
+        || job.unit.contains('/')
+        || job.unit.contains('\\')
+        || job.unit.contains("..")
+    {
+        return Err(Error::InvalidJobState(
+            "production export job unit is not a stable package folder".to_owned(),
+        ));
+    }
+    Ok(format!(
+        "project://production/{}/exports/{}/",
+        job.unit,
+        &job.input_hash[..12]
+    ))
 }
 
 impl Default for ProductionPackageExporterV1 {
@@ -910,6 +1010,31 @@ mod tests {
             )
             .unwrap();
         assert_eq!(artifact_count, 0);
+
+        let source_path = store.resolve_artifact_path(&artifact).unwrap();
+        fs::write(&source_path, b"asset").unwrap();
+        let recovered = ProductionPackageExporterV1::default()
+            .export_v1(&mut state, &store, &production_pack)
+            .unwrap();
+
+        assert_eq!(recovered.job_id.as_deref(), Some(job_id.as_str()));
+        let attempts = state.list_attempts(&job_id).unwrap();
+        assert_eq!(attempts.len(), 2);
+        assert_eq!(attempts[0].status, StepStatus::Retryable);
+        assert_eq!(attempts[0].error_code.as_deref(), Some("LOCAL_EXPORT_ERROR"));
+        assert_eq!(attempts[1].status, StepStatus::Succeeded);
+
+        let history = state.production_export_history_v1(&project.id).unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].job.job_id, job_id);
+        assert_eq!(history[0].attempts.len(), 2);
+        assert_eq!(history[0].artifacts.len(), 4);
+        assert!(history[0].package_base_uri.starts_with("project://production/"));
+
+        drop(state);
+        let reopened = StateStore::open(workspace.sqlite_path()).unwrap();
+        let after_restart = reopened.production_export_history_v1(&project.id).unwrap();
+        assert_eq!(after_restart, history);
     }
 
     #[test]
