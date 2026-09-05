@@ -412,9 +412,10 @@ fn require_portable_identifier_v1(label: &str, value: &str) -> Result<()> {
             "{label} must not contain surrounding whitespace"
         )));
     }
-    if !value.chars().all(|ch| {
-        ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.')
-    }) {
+    if !value
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
+    {
         return Err(Error::InvalidContract(format!(
             "{label} must be a portable identifier using only ASCII letters, digits, '.', '_' or '-'"
         )));
@@ -458,14 +459,14 @@ mod tests {
     #[test]
     fn studio_pack_serialization_is_deterministic() {
         let mut first = pack("christian-cinematic", "Christian Cinematic", None);
-        first.overrides.presets.insert(
-            "voice".to_owned(),
-            "warm-narrator".to_owned(),
-        );
-        first.overrides.presets.insert(
-            "thumbnail".to_owned(),
-            "cinematic".to_owned(),
-        );
+        first
+            .overrides
+            .presets
+            .insert("voice".to_owned(), "warm-narrator".to_owned());
+        first
+            .overrides
+            .presets
+            .insert("thumbnail".to_owned(), "cinematic".to_owned());
         first.overrides.routes.insert(
             "visual.literal".to_owned(),
             route(vec![
@@ -484,14 +485,14 @@ mod tests {
                 target("visual", "generated_image", None, None),
             ]),
         );
-        second.overrides.presets.insert(
-            "thumbnail".to_owned(),
-            "cinematic".to_owned(),
-        );
-        second.overrides.presets.insert(
-            "voice".to_owned(),
-            "warm-narrator".to_owned(),
-        );
+        second
+            .overrides
+            .presets
+            .insert("thumbnail".to_owned(), "cinematic".to_owned());
+        second
+            .overrides
+            .presets
+            .insert("voice".to_owned(), "warm-narrator".to_owned());
 
         assert_eq!(
             first.canonical_json_v1().unwrap(),
@@ -552,7 +553,9 @@ mod tests {
         );
         assert_eq!(effective.config.routes.len(), 1);
         assert_eq!(
-            effective.config.routes["visual.literal"].targets[0].plugin_id.as_deref(),
+            effective.config.routes["visual.literal"].targets[0]
+                .plugin_id
+                .as_deref(),
             Some("generated-image")
         );
         assert_eq!(effective.config.presets["voice"], "gentle");
@@ -560,7 +563,11 @@ mod tests {
 
         assert_eq!(
             effective.canonical_json_v1().unwrap(),
-            catalog.resolve_v1("child").unwrap().canonical_json_v1().unwrap()
+            catalog
+                .resolve_v1("child")
+                .unwrap()
+                .canonical_json_v1()
+                .unwrap()
         );
     }
 
@@ -569,7 +576,9 @@ mod tests {
         let a = pack("a", "A", Some("b"));
         let b = pack("b", "B", Some("a"));
         let cycle = StudioPackCatalogV1::from_packs_v1(vec![a, b]);
-        assert!(matches!(cycle, Err(Error::InvalidContract(message)) if message.contains("a -> b -> a") || message.contains("b -> a -> b")));
+        assert!(
+            matches!(cycle, Err(Error::InvalidContract(message)) if message.contains("a -> b -> a") || message.contains("b -> a -> b"))
+        );
 
         let orphan = pack("orphan", "Orphan", Some("missing"));
         assert!(matches!(
@@ -616,7 +625,11 @@ mod tests {
 
         let catalog = StudioPackCatalogV1::from_packs_v1(vec![decoded]).unwrap();
         assert_eq!(
-            catalog.resolve_v1("minimal").unwrap().config.automation_level,
+            catalog
+                .resolve_v1("minimal")
+                .unwrap()
+                .config
+                .automation_level,
             StudioAutomationLevelV1::Balanced
         );
     }
@@ -645,10 +658,10 @@ mod tests {
         assert!(!json.contains("endpoint"));
         assert!(!json.contains("model_id"));
 
-        portable.overrides.presets.insert(
-            "voice".to_owned(),
-            "/Users/alice/private-voice".to_owned(),
-        );
+        portable
+            .overrides
+            .presets
+            .insert("voice".to_owned(), "/Users/alice/private-voice".to_owned());
         assert!(matches!(
             portable.validate_v1(),
             Err(Error::InvalidContract(_))
