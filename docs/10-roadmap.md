@@ -184,6 +184,14 @@ Implementation slices:
 
 `Christian Stick Explainer` is capability-gated. Its pack definition must not imply that a Stick Figure plugin exists before Phase 11.
 
+P1 catalog implementation notes:
+
+- portable catalog storage remains a composition of Studio Pack definitions, not another plugin registry
+- availability is evaluated from the canonical PluginRegistry plus ephemeral runtime readiness
+- initial usable packs target only capabilities present in checked-in manifests
+- `Christian Stick Explainer` is gated by `stick_figure_visual`; no generic generated-image fallback may satisfy that semantic requirement
+- runtime health, credential readiness and machine-local installation state are not persisted as portable catalog truth
+
 ## Phase 11 - Stick Figure Visual Plugin
 
 Use the existing SceneIntent contract.

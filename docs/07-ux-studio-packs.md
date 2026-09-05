@@ -453,3 +453,32 @@ This strictness applies to the portable Studio Pack contract. Plugin-specific lo
 A Studio Pack definition does not make a plugin available.
 
 In particular, `Christian Stick Explainer` must remain unavailable/blocked until a compatible stick-figure visual capability/plugin is actually installed and healthy. Phase 10 must not assume Phase 11 already exists.
+
+
+## Phase 10 P1 capability-aware catalog
+
+P1 adds a separate portable catalog document without changing the canonical Studio Pack v1 schema:
+
+- `schema: omnicreator.studio-pack-catalog`
+- `schema_version: 1`
+- ordered canonical serialization is derived by pack ID
+- catalog entries remain ordinary `StudioPackV1` definitions
+- effective configuration is still resolved by the P0 inheritance resolver
+
+Availability is not stored as portable truth. It is calculated from the resolved pack plus the canonical `PluginRegistry` and an ephemeral runtime readiness snapshot. The runtime snapshot may distinguish ready, setup-required and unavailable plugins, but it is machine-local state and is intentionally not serializable into the Data Root.
+
+P1 status values are:
+
+- `AVAILABLE`: every required route has at least one compatible ready implementation
+- `AVAILABLE_WITH_SETUP`: required capabilities are installed but at least one route needs runtime setup such as credentials
+- `UNAVAILABLE`: at least one required route has no compatible capability or only unavailable implementations
+
+Machine-readable reasons distinguish missing required capability, missing preferred plugin, plugin unavailable, setup required and unavailable optional fallback. Preferred/fallback misses do not corrupt the pack definition and do not block a route when another compatible target is usable.
+
+Checked-in runtime capability inventory for P1 is intentionally derived from real manifests:
+
+- Pexels: `stock_video`, `stock_image`, `preview_first_search`, `selected_asset_download`
+- Generated Image Reference: `generated_still`, `visual_generate`, `deterministic_seed`
+- Generated Image API: `generated_still`, `visual_generate`, `api_execution`
+
+There is no stick-figure plugin on current main. `Christian Stick Explainer` therefore requires the explicit semantic capability `stick_figure_visual` and remains unavailable until a compatible visual plugin advertises that capability. Generic generated-image capability is not treated as an equivalent substitute.
