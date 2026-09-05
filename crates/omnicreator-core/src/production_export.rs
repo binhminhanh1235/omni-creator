@@ -399,9 +399,10 @@ impl StateStore {
                  WHERE project_id=?1 AND step_key='export.production-pack' \
                  ORDER BY rowid DESC",
             )?;
-            statement
+            let rows = statement
                 .query_map([project_id], |row| row.get::<_, String>(0))?
-                .collect::<std::result::Result<Vec<_>, _>>()?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            rows
         };
 
         let mut history = Vec::with_capacity(job_ids.len());
@@ -412,9 +413,10 @@ impl StateStore {
                 let mut statement = self
                     .connection
                     .prepare("SELECT id FROM artifacts WHERE producer_job_id=?1 ORDER BY uri,id")?;
-                statement
+                let rows = statement
                     .query_map([job_id.as_str()], |row| row.get::<_, String>(0))?
-                    .collect::<std::result::Result<Vec<_>, _>>()?
+                    .collect::<std::result::Result<Vec<_>, _>>()?;
+                rows
             };
             let artifacts = artifact_ids
                 .into_iter()
@@ -443,9 +445,10 @@ impl StateStore {
                    AND input_hash=?2 AND status='RETRYABLE' \
                  ORDER BY rowid DESC LIMIT 1",
             )?;
-            statement
+            let rows = statement
                 .query_map([project_id, input_hash], |row| row.get::<_, String>(0))?
-                .collect::<std::result::Result<Vec<_>, _>>()?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            rows
         };
         job_ids
             .into_iter()
