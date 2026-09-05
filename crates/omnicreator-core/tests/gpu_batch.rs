@@ -2,9 +2,9 @@ use chrono::{DateTime, Utc};
 use omnicreator_core::{
     ComputeProviderCapabilitiesV1, ComputeProviderConnectionState,
     ComputeProviderSchedulingSnapshotV1, ComputeProviderSessionIdentityV1,
-    ComputeProviderSessionV1, ComputeRequirements, GpuBatchPlanRequestV1,
-    GpuJobPreparationV1, GpuNotReadyReasonCodeV1, LogicalUri, ResourceRequirement,
-    StateStore, StepStatus, Workspace, GPU_BATCH_PLAN_SCHEMA_V1,
+    ComputeProviderSessionV1, ComputeRequirements, GpuBatchPlanRequestV1, GpuJobPreparationV1,
+    GpuNotReadyReasonCodeV1, LogicalUri, ResourceRequirement, StateStore, StepStatus, Workspace,
+    GPU_BATCH_PLAN_SCHEMA_V1,
 };
 
 fn fixed_time() -> DateTime<Utc> {
@@ -46,9 +46,7 @@ fn preparation(job_id: &str, unit: &str) -> GpuJobPreparationV1 {
         model_id: Some("omnivoice-v3".to_owned()),
         model_version: Some("3.2".to_owned()),
         settings_fingerprint: Some("settings-v1".to_owned()),
-        output_uri: Some(
-            LogicalUri::parse(&format!("project://audio/{unit}.wav")).unwrap(),
-        ),
+        output_uri: Some(LogicalUri::parse(&format!("project://audio/{unit}.wav")).unwrap()),
         approval_required: false,
         approval_complete: true,
         production_lock_required: false,
@@ -72,13 +70,7 @@ fn create_tts_job(
     input_hash: &str,
 ) -> omnicreator_core::Job {
     state
-        .create_step(
-            project_id,
-            "tts",
-            unit,
-            StepStatus::Ready,
-            Some(input_hash),
-        )
+        .create_step(project_id, "tts", unit, StepStatus::Ready, Some(input_hash))
         .unwrap();
     state
         .create_job(project_id, "tts", unit, input_hash)
@@ -194,9 +186,7 @@ fn multi_project_plan_is_deterministic_and_non_mutating() {
 
     let blocked_job = &first.blocked_jobs[0];
     assert_eq!(blocked_job.job_id, job_a2.job_id);
-    assert!(
-        reason_codes(blocked_job).contains(&GpuNotReadyReasonCodeV1::PreflightPending)
-    );
+    assert!(reason_codes(blocked_job).contains(&GpuNotReadyReasonCodeV1::PreflightPending));
 
     for job_id in [&job_a1.job_id, &job_a2.job_id, &job_b1.job_id] {
         assert_eq!(state.get_job(job_id).unwrap().status, StepStatus::Ready);
@@ -225,8 +215,7 @@ fn canonical_provider_failures_are_preserved_in_batch_preflight() {
     assert!(plan.ready_jobs.is_empty());
     assert_eq!(plan.blocked_jobs.len(), 1);
     assert!(
-        reason_codes(&plan.blocked_jobs[0])
-            .contains(&GpuNotReadyReasonCodeV1::ProviderUnavailable)
+        reason_codes(&plan.blocked_jobs[0]).contains(&GpuNotReadyReasonCodeV1::ProviderUnavailable)
     );
 }
 
