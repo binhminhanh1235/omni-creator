@@ -362,13 +362,7 @@ fn export_production_pack(
         }
         Err(error) => {
             let diagnostic = production_export_diagnostic_v1(&error, &production_pack);
-            production_export_view_v1(
-                &store,
-                &artifacts,
-                &project_id,
-                None,
-                Some(diagnostic),
-            )
+            production_export_view_v1(&store, &artifacts, &project_id, None, Some(diagnostic))
         }
     }
 }
