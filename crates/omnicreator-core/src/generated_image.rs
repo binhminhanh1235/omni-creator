@@ -6,7 +6,8 @@ use serde_json::{json, Value};
 use crate::{
     artifact_store::PluginOutputPromotion, deterministic_input_hash, fs_util::sha256_file,
     Artifact, ArtifactStore, ComputeRequirements, DiscoveredPlugin, Error, GpuJobPreparationV1,
-    LogicalUri, PluginJobWorkspace, PluginProcess, PluginProcessOptions, PluginResponse, Result,
+    LogicalUri, PluginJobWorkspace, PluginProcess, PluginProcessOptions, PluginResponse,
+    ResourceRequirement, Result,
     SceneIntentV1, StateStore, VisualRouteV1, VisualRoutingDecisionV1, VisualUseCaseV1,
 };
 
@@ -320,7 +321,10 @@ impl GeneratedImagePreparationV1 {
                         "Generated image compute resource declaration is invalid.",
                     );
                 }
-                if requirements
+                if matches!(
+                    requirements.gpu,
+                    ResourceRequirement::Optional | ResourceRequirement::Required
+                ) && requirements
                     .model_group
                     .as_deref()
                     .map_or(true, |value| value.trim().is_empty())
@@ -328,7 +332,7 @@ impl GeneratedImagePreparationV1 {
                     push_issue(
                         &mut issues,
                         GeneratedImagePreflightIssueCodeV1::ModelGroupMissing,
-                        "Generated image resource declaration must expose a model_group for batch planning.",
+                        "GPU-capable generated image resource declarations must expose a model_group for batch planning.",
                     );
                 }
             }
@@ -501,6 +505,7 @@ impl GeneratedImageExecutionContextV1 {
 pub struct GeneratedImageExecutionOptionsV1 {
     pub context: GeneratedImageExecutionContextV1,
     pub process: PluginProcessOptions,
+    pub runtime_plugin_settings: BTreeMap<String, Value>,
 }
 
 pub fn execute_generated_image_plugin_v1(
@@ -522,6 +527,7 @@ pub fn execute_generated_image_plugin_v1(
         GeneratedImageExecutionOptionsV1 {
             context: GeneratedImageExecutionContextV1::default(),
             process: process_options,
+            runtime_plugin_settings: BTreeMap::new(),
         },
     )
 }
@@ -535,7 +541,11 @@ pub fn execute_generated_image_plugin_with_options_v1(
     preparation: &GeneratedImagePreparationV1,
     options: GeneratedImageExecutionOptionsV1,
 ) -> Result<GeneratedImageExecutionV1> {
-    let GeneratedImageExecutionOptionsV1 { context, process } = options;
+    let GeneratedImageExecutionOptionsV1 {
+        context,
+        process,
+        runtime_plugin_settings,
+    } = options;
     context.validate_for_scene_v1(&preparation.request.scene)?;
     let preflight = preparation.preflight_v1(plugin);
     if !preflight.is_ready() {
@@ -568,12 +578,65 @@ pub fn execute_generated_image_plugin_with_options_v1(
 
     let workspace = PluginJobWorkspace::create(runtime_root, job_id)?;
     let process = PluginProcess::spawn(plugin, process)?;
-    let initialize = process.initialize(workspace.initialization_context(plugin)?)?;
+    let mut initialization_context = workspace.initialization_context(plugin)?;
+    if !runtime_plugin_settings.is_empty() {
+        initialization_context
+            .as_object_mut()
+            .ok_or_else(|| {
+                Error::InvalidContract(
+                    "generated image plugin initialization context must be an object".to_owned(),
+                )
+            })?
+            .insert(
+                "settings".to_owned(),
+                serde_json::to_value(&runtime_plugin_settings)?,
+            );
+    }
+    let initialize = process.initialize(initialization_context)?;
     response_result_v1(plugin, initialize.response, "plugin.initialize")?;
 
     let capabilities = process.capabilities()?;
     let capabilities = response_result_v1(plugin, capabilities.response, "plugin.capabilities")?;
     validate_runtime_capabilities_v1(&capabilities)?;
+
+    if plugin
+        .manifest
+        .capabilities
+        .iter()
+        .any(|capability| capability == crate::GENERATED_IMAGE_API_EXECUTION_CAPABILITY_V1)
+    {
+        let health = process.health()?;
+        let health = response_result_v1(plugin, health.response, "plugin.health")?;
+        let api = crate::generated_image_api_availability_from_health_v1(&health)?;
+        let availability = crate::GeneratedImageExecutionAvailabilityV1 {
+            plugin_runtime_ready: true,
+            local_execution_ready: false,
+            api: Some(api),
+            compute_provider: None,
+        };
+        let policy = crate::GeneratedImageExecutionPolicyV1 {
+            target_order: vec![crate::GeneratedImageExecutionTargetV1::Api],
+        };
+        let decision = crate::resolve_generated_image_execution_target_v1(
+            job_id,
+            preparation,
+            plugin,
+            &availability,
+            &policy,
+        )?;
+        if !decision.is_ready() {
+            let codes = decision
+                .rejections
+                .iter()
+                .map(|rejection| format!("{:?}", rejection.code))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let _ = process.shutdown();
+            return Err(Error::InvalidContract(format!(
+                "generated image API preflight blocked before execution: {codes}"
+            )));
+        }
+    }
 
     let attempt =
         state_store.start_attempt(job_id, Some(&format!("plugin:{}", plugin.manifest.id)))?;
