@@ -9,8 +9,6 @@ use omnicreator_core::{
 
 struct Fixture {
     _temp: tempfile::TempDir,
-    root: std::path::PathBuf,
-    workspace: Workspace,
     state: StateStore,
     artifacts: ArtifactStore,
     project_id: String,
@@ -27,8 +25,6 @@ impl Fixture {
         let artifacts = ArtifactStore::new(workspace.data_root()).unwrap();
         Self {
             _temp: temp,
-            root,
-            workspace,
             state,
             artifacts,
             project_id: project.id,
@@ -172,7 +168,7 @@ fn multiple_roles_preserve_stable_deterministic_lane_layout() {
         let media = fixture.promote(
             &format!("project://media/role-{index}.bin"),
             if matches!(
-                role,
+                *role,
                 TimelineTrackRoleV1::AudioNarration
                     | TimelineTrackRoleV1::AudioMusic
                     | TimelineTrackRoleV1::AudioAmbience
