@@ -240,7 +240,9 @@ fn generated_image_dispatch_reuses_canonical_compute_contract_and_semantic_paylo
         serde_json::to_value(&preparation.request).unwrap()
     );
     assert_eq!(dispatch.plugin_payload["scene"]["id"], "SC01");
-    assert!(dispatch.plugin_payload["scene"].get("provider_id").is_none());
+    assert!(dispatch.plugin_payload["scene"]
+        .get("provider_id")
+        .is_none());
     assert_eq!(
         state.get_job(&job.job_id).unwrap().status,
         StepStatus::Running
@@ -288,7 +290,9 @@ fn generated_image_reconciliation_recovers_verified_remote_artifact_after_local_
     let temp = tempfile::tempdir().unwrap();
     let workspace = Workspace::create(temp.path().join("data")).unwrap();
     let mut state = StateStore::open(workspace.sqlite_path()).unwrap();
-    let project = state.create_project("Generated Image Remote Resume").unwrap();
+    let project = state
+        .create_project("Generated Image Remote Resume")
+        .unwrap();
     let preparation = preparation();
     let job = state
         .create_job(
@@ -430,7 +434,9 @@ fn generated_image_remote_hash_mismatch_never_commits_success() {
     let temp = tempfile::tempdir().unwrap();
     let workspace = Workspace::create(temp.path().join("data")).unwrap();
     let mut state = StateStore::open(workspace.sqlite_path()).unwrap();
-    let project = state.create_project("Generated Image Remote Hash Gate").unwrap();
+    let project = state
+        .create_project("Generated Image Remote Hash Gate")
+        .unwrap();
     let preparation = preparation();
     let job = state
         .create_job(
