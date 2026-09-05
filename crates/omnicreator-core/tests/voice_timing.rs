@@ -201,14 +201,12 @@ fn register_transfers(
     audio: &[u8],
     timing: &[u8],
 ) {
-    executor.transfers.insert(
-        format!("audio-{}", started.attempt_id),
-        audio.to_vec(),
-    );
-    executor.transfers.insert(
-        format!("timing-{}", started.attempt_id),
-        timing.to_vec(),
-    );
+    executor
+        .transfers
+        .insert(format!("audio-{}", started.attempt_id), audio.to_vec());
+    executor
+        .transfers
+        .insert(format!("timing-{}", started.attempt_id), timing.to_vec());
 }
 
 fn create_voice_job(
@@ -323,7 +321,10 @@ fn audio_and_timing_commit_atomically_only_after_both_verify() {
         other => panic!("expected committed bundle, got {other:?}"),
     };
 
-    assert_eq!(state.get_job(&job.job_id).unwrap().status, StepStatus::Succeeded);
+    assert_eq!(
+        state.get_job(&job.job_id).unwrap().status,
+        StepStatus::Succeeded
+    );
     assert_eq!(
         state.get_attempt(&started.attempt_id).unwrap().status,
         StepStatus::Succeeded
@@ -400,7 +401,10 @@ fn invalid_timing_content_cannot_mark_audio_successful() {
     )
     .is_err());
 
-    assert_eq!(state.get_job(&job.job_id).unwrap().status, StepStatus::Running);
+    assert_eq!(
+        state.get_job(&job.job_id).unwrap().status,
+        StepStatus::Running
+    );
     assert_eq!(
         state.get_attempt(&started.attempt_id).unwrap().status,
         StepStatus::Running
@@ -466,7 +470,10 @@ fn corrupt_timing_transfer_fails_hash_before_local_success() {
         ),
         Err(Error::ArtifactHashMismatch(_))
     ));
-    assert_eq!(state.get_job(&job.job_id).unwrap().status, StepStatus::Running);
+    assert_eq!(
+        state.get_job(&job.job_id).unwrap().status,
+        StepStatus::Running
+    );
     assert!(state
         .get_voice_take_v1(&started.attempt_id)
         .unwrap()
@@ -527,7 +534,10 @@ fn legacy_single_audio_event_is_rejected_for_voice_take() {
         serde_json::json!({}),
     )
     .is_err());
-    assert_eq!(state.get_job(&job.job_id).unwrap().status, StepStatus::Running);
+    assert_eq!(
+        state.get_job(&job.job_id).unwrap().status,
+        StepStatus::Running
+    );
 }
 
 #[test]
@@ -603,12 +613,7 @@ fn reconnect_recovers_audio_and_timing_bundle_before_regeneration() {
     let audio = b"completed while app was offline";
     let timing = timing_contract().to_json_bytes_v1().unwrap();
     register_transfers(&mut executor, &started, audio, &timing);
-    executor.journal = vec![bundle_entry(
-        &started,
-        &job.input_hash,
-        audio,
-        &timing,
-    )];
+    executor.journal = vec![bundle_entry(&started, &job.input_hash, audio, &timing)];
 
     state.reconcile_interrupted_jobs().unwrap();
     assert_eq!(
@@ -628,7 +633,10 @@ fn reconnect_recovers_audio_and_timing_bundle_before_regeneration() {
     .unwrap();
 
     assert_eq!(summary.artifacts_recovered, 2);
-    assert_eq!(state.get_job(&job.job_id).unwrap().status, StepStatus::Succeeded);
+    assert_eq!(
+        state.get_job(&job.job_id).unwrap().status,
+        StepStatus::Succeeded
+    );
     assert!(artifacts
         .load_voice_timing_v1(&state, &started.attempt_id)
         .unwrap()
@@ -744,7 +752,14 @@ fn timing_core_contract_is_provider_neutral_and_portable() {
     );
 
     let source = include_str!("../src/voice_timing.rs").to_lowercase();
-    for forbidden in ["kaggle", "notebook", "omnivoice", "c:\\", "/home/", "/users/"] {
+    for forbidden in [
+        "kaggle",
+        "notebook",
+        "omnivoice",
+        "c:\\",
+        "/home/",
+        "/users/",
+    ] {
         assert!(
             !source.contains(forbidden),
             "timing core leaked provider/machine-specific term {forbidden}"
