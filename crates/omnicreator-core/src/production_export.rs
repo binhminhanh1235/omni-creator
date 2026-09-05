@@ -674,9 +674,24 @@ mod tests {
                 }
             }),
         );
-        let report =
-            build_asset_source_report_v1(&state, &pack(&project.id, &artifact, "Report")).unwrap();
+        let mut production_pack = pack(&project.id, &artifact, "Report");
+        let first_clip = production_pack.tracks[0].clips[0].clone();
+        production_pack.tracks[0].clips = vec![
+            TimelineClipV1 {
+                clip_id: "SC02-V".to_owned(),
+                artifact_id: artifact.artifact_id.clone(),
+                uri: artifact.uri.clone(),
+                timeline_start_ms: 2_000,
+                source_start_ms: 0,
+                duration_ms: 1_000,
+                label: Some("Second".to_owned()),
+            },
+            first_clip,
+        ];
+        let report = build_asset_source_report_v1(&state, &production_pack).unwrap();
+        let report_again = build_asset_source_report_v1(&state, &production_pack).unwrap();
 
+        assert_eq!(report, report_again);
         assert_eq!(report.assets.len(), 1);
         assert_eq!(
             report.assets[0].source_metadata["source_provider"],
@@ -686,7 +701,14 @@ mod tests {
             report.assets[0].source_metadata["provenance"]["creator_name"],
             "Creator"
         );
-        assert_eq!(report.assets[0].timeline_usages[0].clip_id, "SC01-V");
+        assert_eq!(
+            report.assets[0]
+                .timeline_usages
+                .iter()
+                .map(|usage| usage.clip_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["SC01-V", "SC02-V"]
+        );
     }
 
     #[test]
@@ -810,6 +832,84 @@ mod tests {
             .prepare_v1(&state, &store, &pack(&project.id, &artifact, "Hash"))
             .unwrap();
         assert_ne!(original.semantic_hash, metadata_changed.semantic_hash);
+
+        state
+            .connection
+            .execute(
+                "UPDATE artifacts SET metadata_json=?1,sha256=?2 WHERE id=?3",
+                rusqlite::params![
+                    serde_json::json!({
+                        "source_provider": "fixture",
+                        "source_asset_id": "1"
+                    })
+                    .to_string(),
+                    "0".repeat(64),
+                    &artifact.artifact_id
+                ],
+            )
+            .unwrap();
+        let source_hash_changed = exporter
+            .prepare_v1(&state, &store, &pack(&project.id, &artifact, "Hash"))
+            .unwrap();
+        assert_ne!(original.semantic_hash, source_hash_changed.semantic_hash);
+    }
+
+    #[test]
+    fn failed_export_marks_attempt_and_job_retryable_without_artifacts() {
+        let temp = tempfile::tempdir().unwrap();
+        let workspace = Workspace::create(temp.path().join("data")).unwrap();
+        let mut state = StateStore::open(workspace.sqlite_path()).unwrap();
+        let project = state.create_project("Retryable export").unwrap();
+        let store = ArtifactStore::new(workspace.data_root()).unwrap();
+        let artifact = promote_source_artifact(
+            &mut state,
+            &store,
+            temp.path(),
+            &project.id,
+            b"asset",
+            serde_json::json!({"source_provider": "fixture"}),
+        );
+        let production_pack = pack(&project.id, &artifact, "Retryable export");
+        fs::remove_file(store.resolve_artifact_path(&artifact).unwrap()).unwrap();
+
+        let result = ProductionPackageExporterV1::default()
+            .export_v1(&mut state, &store, &production_pack);
+        assert!(result.is_err());
+
+        let (job_id, job_status, selected_artifact): (String, String, Option<String>) = state
+            .connection
+            .query_row(
+                "SELECT id,status,selected_artifact_id FROM jobs \
+                 WHERE project_id=?1 AND step_key='export.production-pack' \
+                 ORDER BY rowid DESC LIMIT 1",
+                [&project.id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(job_status, "RETRYABLE");
+        assert!(selected_artifact.is_none());
+
+        let (attempt_status, error_code): (String, Option<String>) = state
+            .connection
+            .query_row(
+                "SELECT status,error_code FROM attempts WHERE job_id=?1 \
+                 ORDER BY rowid DESC LIMIT 1",
+                [&job_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(attempt_status, "RETRYABLE");
+        assert_eq!(error_code.as_deref(), Some("LOCAL_EXPORT_ERROR"));
+
+        let artifact_count: i64 = state
+            .connection
+            .query_row(
+                "SELECT COUNT(*) FROM artifacts WHERE producer_job_id=?1",
+                [&job_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(artifact_count, 0);
     }
 
     #[test]

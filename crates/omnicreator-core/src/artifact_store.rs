@@ -159,36 +159,6 @@ impl ArtifactStore {
         )
     }
 
-    pub fn promote_job_output_for_attempt(
-        &self,
-        state_store: &mut StateStore,
-        attempt_id: &str,
-        job_id: &str,
-        source: impl AsRef<Path>,
-        target_uri: LogicalUri,
-        artifact_type: impl Into<String>,
-        metadata: serde_json::Value,
-    ) -> Result<Artifact> {
-        let artifacts = self.promote_attempt_outputs(
-            state_store,
-            AttemptPromotionRequest {
-                attempt_id: attempt_id.to_owned(),
-                job_id: job_id.to_owned(),
-                outputs: vec![AttemptOutputPromotion {
-                    source: source.as_ref().to_path_buf(),
-                    target_uri,
-                    artifact_type: artifact_type.into(),
-                    metadata,
-                    expected_sha256: None,
-                }],
-                selected_output_index: 0,
-            },
-        )?;
-        artifacts.into_iter().next().ok_or_else(|| {
-            Error::InvalidArtifact("attempt promotion produced no artifact".to_owned())
-        })
-    }
-
     pub fn promote_plugin_output_for_attempt(
         &self,
         state_store: &mut StateStore,
@@ -623,16 +593,27 @@ mod tests {
 
         let artifacts = ArtifactStore::new(workspace.data_root()).unwrap();
         let artifact = artifacts
-            .promote_job_output_for_attempt(
+            .promote_attempt_outputs(
                 &mut state,
-                &attempt.attempt_id,
-                &job.job_id,
-                &source,
-                LogicalUri::parse("project://production/test/metadata/production-pack.json")
-                    .unwrap(),
-                "production-pack-metadata",
-                serde_json::json!({"portable": true}),
+                AttemptPromotionRequest {
+                    attempt_id: attempt.attempt_id.clone(),
+                    job_id: job.job_id.clone(),
+                    outputs: vec![AttemptOutputPromotion {
+                        source,
+                        target_uri: LogicalUri::parse(
+                            "project://production/test/metadata/production-pack.json",
+                        )
+                        .unwrap(),
+                        artifact_type: "production-pack-metadata".to_owned(),
+                        metadata: serde_json::json!({"portable": true}),
+                        expected_sha256: None,
+                    }],
+                    selected_output_index: 0,
+                },
             )
+            .unwrap()
+            .into_iter()
+            .next()
             .unwrap();
 
         assert!(artifacts.verify_artifact(&artifact).unwrap());
