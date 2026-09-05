@@ -402,4 +402,3 @@ Phase 9 P3 makes local production export retry semantics explicit in the desktop
 Desktop status is queried from those canonical Jobs, Attempts and Artifacts. Restarting the app therefore reconstructs the same export state without a separate UI database. The latest verified portable `production-pack.json` artifact may be reloaded as the regenerate input.
 
 Missing-artifact UX uses artifact IDs and logical URIs. Physical absolute paths resolved at the current Data Root are transient export-boundary details and are not persisted in portable state or serialized as durable desktop diagnostics.
-\n
