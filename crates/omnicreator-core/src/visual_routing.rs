@@ -212,7 +212,12 @@ impl VisualRoutingStockFieldsV1 {
         }
     }
 
-    fn candidate(candidate_id: String, score: f64, minimum_score: f64, preview_first: bool) -> Self {
+    fn candidate(
+        candidate_id: String,
+        score: f64,
+        minimum_score: f64,
+        preview_first: bool,
+    ) -> Self {
         Self {
             candidate_id: Some(candidate_id),
             score: Some(score),
