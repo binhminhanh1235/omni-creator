@@ -497,6 +497,20 @@ impl GeneratedImageExecutionContextV1 {
     }
 }
 
+pub struct GeneratedImageExecutionOptionsV1 {
+    pub context: GeneratedImageExecutionContextV1,
+    pub process: PluginProcessOptions,
+}
+
+impl Default for GeneratedImageExecutionOptionsV1 {
+    fn default() -> Self {
+        Self {
+            context: GeneratedImageExecutionContextV1::default(),
+            process: PluginProcessOptions::default(),
+        }
+    }
+}
+
 pub fn execute_generated_image_plugin_v1(
     state_store: &mut StateStore,
     artifact_store: &ArtifactStore,
@@ -506,28 +520,30 @@ pub fn execute_generated_image_plugin_v1(
     preparation: &GeneratedImagePreparationV1,
     process_options: PluginProcessOptions,
 ) -> Result<GeneratedImageExecutionV1> {
-    execute_generated_image_plugin_with_context_v1(
+    execute_generated_image_plugin_with_options_v1(
         state_store,
         artifact_store,
         plugin,
         runtime_root,
         job_id,
         preparation,
-        &GeneratedImageExecutionContextV1::default(),
-        process_options,
+        GeneratedImageExecutionOptionsV1 {
+            context: GeneratedImageExecutionContextV1::default(),
+            process: process_options,
+        },
     )
 }
 
-pub fn execute_generated_image_plugin_with_context_v1(
+pub fn execute_generated_image_plugin_with_options_v1(
     state_store: &mut StateStore,
     artifact_store: &ArtifactStore,
     plugin: &DiscoveredPlugin,
     runtime_root: impl AsRef<Path>,
     job_id: &str,
     preparation: &GeneratedImagePreparationV1,
-    context: &GeneratedImageExecutionContextV1,
-    process_options: PluginProcessOptions,
+    options: GeneratedImageExecutionOptionsV1,
 ) -> Result<GeneratedImageExecutionV1> {
+    let GeneratedImageExecutionOptionsV1 { context, process } = options;
     context.validate_for_scene_v1(&preparation.request.scene)?;
     let preflight = preparation.preflight_v1(plugin);
     if !preflight.is_ready() {
@@ -559,7 +575,7 @@ pub fn execute_generated_image_plugin_with_context_v1(
     }
 
     let workspace = PluginJobWorkspace::create(runtime_root, job_id)?;
-    let process = PluginProcess::spawn(plugin, process_options)?;
+    let process = PluginProcess::spawn(plugin, process)?;
     let initialize = process.initialize(workspace.initialization_context(plugin)?)?;
     response_result_v1(plugin, initialize.response, "plugin.initialize")?;
 
@@ -630,7 +646,7 @@ pub fn execute_generated_image_plugin_with_context_v1(
     }
 
     let metadata =
-        generated_image_artifact_metadata_v1(preparation, plugin, &plugin_result, context)?;
+        generated_image_artifact_metadata_v1(preparation, plugin, &plugin_result, &context)?;
     let output_uri = preparation.output_uri.clone().ok_or_else(|| {
         Error::InvalidContract("generated image output URI is missing".to_owned())
     })?;
