@@ -1,7 +1,4 @@
-use std::{
-    collections::BTreeMap,
-    path::Path,
-};
+use std::{collections::BTreeMap, path::Path};
 
 use crate::{
     ArtifactStore, Error, LogicalUri, ProductionPackV1, Result, StateStore, TimelineMarkerKindV1,
@@ -226,9 +223,9 @@ fn render_fcpxml(
     xml.push_str("\"/>\n");
 
     for (artifact_id, asset) in &resolved.assets {
-        let resource_id = resource_ids
-            .get(artifact_id)
-            .ok_or_else(|| Error::InvalidContract("missing deterministic resource id".to_owned()))?;
+        let resource_id = resource_ids.get(artifact_id).ok_or_else(|| {
+            Error::InvalidContract("missing deterministic resource id".to_owned())
+        })?;
         xml.push_str("    <asset id=\"");
         xml.push_str(resource_id);
         xml.push_str("\" name=\"");
@@ -260,7 +257,9 @@ fn render_fcpxml(
     xml.push_str(&format_time_ms(timeline_duration_ms));
     xml.push_str("\">\n");
     xml.push_str("        <spine>\n");
-    xml.push_str("          <gap name=\"OmniCreator Timeline\" offset=\"0s\" start=\"0s\" duration=\"");
+    xml.push_str(
+        "          <gap name=\"OmniCreator Timeline\" offset=\"0s\" start=\"0s\" duration=\"",
+    );
     xml.push_str(&format_time_ms(timeline_duration_ms));
     xml.push_str("\">\n");
 
@@ -298,11 +297,7 @@ fn render_fcpxml(
     }
 
     for marker in &production_pack.markers {
-        let marker_value = format!(
-            "{} | {}",
-            marker_kind_name(marker.kind),
-            marker.label
-        );
+        let marker_value = format!("{} | {}", marker_kind_name(marker.kind), marker.label);
         xml.push_str("            <marker start=\"");
         xml.push_str(&format_time_ms(marker.position_ms));
         xml.push_str("\" duration=\"");
@@ -411,7 +406,10 @@ pub fn file_url_from_absolute_path(path: &Path) -> Result<String> {
 
     if normalized.starts_with("//") {
         let without_prefix = normalized.trim_start_matches('/');
-        return Ok(format!("file://{}", percent_encode_url_path(without_prefix)));
+        return Ok(format!(
+            "file://{}",
+            percent_encode_url_path(without_prefix)
+        ));
     }
 
     let encoded = percent_encode_url_path(&normalized);
@@ -426,15 +424,9 @@ fn percent_encode_url_path(value: &str) -> String {
     let mut encoded = String::with_capacity(value.len());
     for byte in value.as_bytes() {
         match *byte {
-            b'A'..=b'Z'
-            | b'a'..=b'z'
-            | b'0'..=b'9'
-            | b'-'
-            | b'.'
-            | b'_'
-            | b'~'
-            | b'/'
-            | b':' => encoded.push(char::from(*byte)),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b'/' | b':' => {
+                encoded.push(char::from(*byte))
+            }
             _ => encoded.push_str(&format!("%{byte:02X}")),
         }
     }
@@ -459,8 +451,8 @@ mod tests {
     fn file_url_escapes_spaces_unicode_hash_and_percent() {
         #[cfg(unix)]
         {
-            let url = file_url_from_absolute_path(Path::new("/tmp/Omni Creator/ảnh #100%.mp4"))
-                .unwrap();
+            let url =
+                file_url_from_absolute_path(Path::new("/tmp/Omni Creator/ảnh #100%.mp4")).unwrap();
             assert_eq!(
                 url,
                 "file:///tmp/Omni%20Creator/%E1%BA%A3nh%20%23100%25.mp4"
@@ -487,7 +479,10 @@ mod tests {
             .collect::<BTreeSet<_>>();
         assert_eq!(lanes.len(), 9);
         assert_eq!(lane_for_role(TimelineTrackRoleV1::VideoBackground), 1);
-        assert_eq!(lane_for_role(TimelineTrackRoleV1::VideoTypographyScripture), 5);
+        assert_eq!(
+            lane_for_role(TimelineTrackRoleV1::VideoTypographyScripture),
+            5
+        );
         assert_eq!(lane_for_role(TimelineTrackRoleV1::AudioNarration), -1);
         assert_eq!(lane_for_role(TimelineTrackRoleV1::AudioSfx), -4);
     }
