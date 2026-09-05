@@ -44,7 +44,11 @@ jobs:
         run: cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check
       - name: Desktop JavaScript syntax
         run: node --check apps/desktop/dist/app.js
+      - name: Desktop GPU Workbench regression
+        run: node apps/desktop/tests/gpu-workbench-smoke.mjs
       - name: Desktop clippy
         run: cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets -- -D warnings
+      - name: Desktop tests
+        run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml
       - name: Desktop smoke check
         run: cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml

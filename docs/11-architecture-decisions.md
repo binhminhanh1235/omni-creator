@@ -146,6 +146,12 @@ This document records decisions so later development does not accidentally reint
 
 **Reason:** Copying runtime/cache bloat wastes sync/storage and can be incompatible across machines. The new machine should resolve/install required runtimes from a plugin lock/config.
 
+## ADR-025: Provider-neutral HTTP compute bridge
+
+**Decision:** The desktop may connect disposable GPU workers through a small versioned HTTP adapter implementing the existing ComputeProvider and ComputeProviderExecution contracts.
+
+**Reason:** The Workbench needs a real connect/dispatch/journal/artifact path without putting Kaggle-specific fields in core. Endpoint configuration is machine-local, credentials are referenced by environment-variable name, and SQLite remains canonical.
+
 ## Non-goals for MVP
 
 OmniCreator is not:

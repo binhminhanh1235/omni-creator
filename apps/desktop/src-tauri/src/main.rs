@@ -1,20 +1,30 @@
 use std::{
+    collections::BTreeSet,
     env, fs,
     path::{Path, PathBuf},
     sync::Mutex,
 };
 
+use chrono::{DateTime, Utc};
 use omnicreator_core::{
-    Error as CoreError, HandoffManifest, LlmGatewayClient, LlmGatewayConfig, LlmGatewayModel,
-    MachineBinding, Project, ProjectDisplayStatus, StateStore, Workspace, WorkspaceSession,
+    dispatch_gpu_burst_v1, reconcile_remote_session_v1, ArtifactStore,
+    ComputeProviderConnectionState, ComputeProviderLivenessPolicyV1, ComputeProviderRuntime,
+    ComputeProviderSchedulingSnapshotV1, ComputeRunningAssignmentV1, Error as CoreError,
+    GpuBatchBudgetOverviewV1, GpuBatchPlanRequestV1, GpuBatchPlanV1, GpuBurstDispatchSummaryV1,
+    GpuBurstPlanV1, GpuJobPreparationV1, GpuWorkbenchQueueSnapshotV1, HandoffManifest,
+    HttpComputeProvider, HttpComputeProviderConfigV1, LlmGatewayClient, LlmGatewayConfig,
+    LlmGatewayModel, MachineBinding, Project, ProjectDisplayStatus, RemoteComputeJobSpecV1,
+    RemoteReconciliationSummaryV1, RuntimeWorkloadEstimateV1, StateStore, Workspace,
+    WorkspaceSession,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 use uuid::Uuid;
 
 #[derive(Default)]
 struct DesktopState {
     active: Mutex<Option<ActiveWorkspace>>,
+    compute: Mutex<Option<ComputeProviderRuntime<HttpComputeProvider>>>,
 }
 
 enum ActiveWorkspace {
@@ -108,6 +118,64 @@ struct LlmGatewayModelView {
     id: String,
     display_name: String,
     is_virtual: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct GpuWorkbenchPrepareInputV1 {
+    project_ids: Vec<String>,
+    #[serde(default)]
+    preparations: Vec<GpuJobPreparationV1>,
+    #[serde(default)]
+    providers: Vec<ComputeProviderSchedulingSnapshotV1>,
+    #[serde(default)]
+    running: Vec<ComputeRunningAssignmentV1>,
+    week_start: String,
+}
+
+#[derive(Debug, Serialize)]
+struct GpuWorkbenchReviewViewV1 {
+    batch: GpuBatchPlanV1,
+    workload: RuntimeWorkloadEstimateV1,
+    budget: Option<GpuBatchBudgetOverviewV1>,
+    burst: GpuBurstPlanV1,
+    queues: GpuWorkbenchQueueSnapshotV1,
+    startable: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct GpuBurstStartInputV1 {
+    reviewed_batch: GpuBatchPlanV1,
+    #[serde(default)]
+    providers: Vec<ComputeProviderSchedulingSnapshotV1>,
+    #[serde(default)]
+    execution_specs: Vec<RemoteComputeJobSpecV1>,
+    expected_schedule_hash: String,
+}
+
+#[derive(Debug, Serialize)]
+struct GpuBurstStartViewV1 {
+    dispatch: GpuBurstDispatchSummaryV1,
+    reconciliation: RemoteReconciliationSummaryV1,
+    queues: GpuWorkbenchQueueSnapshotV1,
+}
+
+#[derive(Debug, Serialize)]
+struct ComputeProviderStatusViewV1 {
+    state: String,
+    provider_id: String,
+    base_url: String,
+    bearer_token_env: Option<String>,
+    credential_present: bool,
+    session_id: Option<String>,
+    capabilities: Option<omnicreator_core::ComputeProviderCapabilitiesV1>,
+    message: String,
+}
+
+#[derive(Debug, Serialize)]
+struct ComputeBurstSyncViewV1 {
+    provider: ComputeProviderStatusViewV1,
+    reconciliation: RemoteReconciliationSummaryV1,
+    queues: GpuWorkbenchQueueSnapshotV1,
 }
 
 #[tauri::command]
@@ -272,6 +340,286 @@ fn save_llmgateway_settings(
 }
 
 #[tauri::command]
+fn compute_provider_status(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+) -> Result<ComputeProviderStatusViewV1, String> {
+    let config = load_compute_provider_config(&app)?;
+    let guard = state.compute.lock().map_err(lock_error)?;
+    Ok(compute_provider_status_view_v1(config, guard.as_ref()))
+}
+
+#[tauri::command]
+fn connect_compute_provider(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    provider_id: String,
+    base_url: String,
+    bearer_token_env: Option<String>,
+) -> Result<ComputeProviderStatusViewV1, String> {
+    let config = HttpComputeProviderConfigV1 {
+        provider_id: provider_id.trim().to_owned(),
+        base_url: base_url.trim().trim_end_matches('/').to_owned(),
+        bearer_token_env: bearer_token_env
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty()),
+        timeout_seconds: 30,
+    };
+    config.validate_v1().map_err(error_string)?;
+    save_compute_provider_config(&app, &config)?;
+
+    let provider = HttpComputeProvider::new(config.clone()).map_err(error_string)?;
+    let mut runtime = ComputeProviderRuntime::new(
+        provider,
+        ComputeProviderLivenessPolicyV1 {
+            stale_after_seconds: 30,
+            lost_after_seconds: 120,
+        },
+    )
+    .map_err(error_string)?;
+    runtime.connect(Utc::now()).map_err(error_string)?;
+
+    let view = compute_provider_status_view_v1(config, Some(&runtime));
+    *state.compute.lock().map_err(lock_error)? = Some(runtime);
+    Ok(view)
+}
+
+#[tauri::command]
+fn disconnect_compute_provider(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+) -> Result<ComputeProviderStatusViewV1, String> {
+    let config = load_compute_provider_config(&app)?;
+    let mut guard = state.compute.lock().map_err(lock_error)?;
+    if let Some(runtime) = guard.as_mut() {
+        runtime.disconnect().map_err(error_string)?;
+    }
+    *guard = None;
+    Ok(compute_provider_status_view_v1(config, None))
+}
+
+#[tauri::command]
+fn sync_compute_burst(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    project_ids: Vec<String>,
+) -> Result<ComputeBurstSyncViewV1, String> {
+    let config = load_compute_provider_config(&app)?;
+    let data_root = active_data_root(&state)?;
+    let staging_dir = compute_staging_dir(&app)?;
+    let artifacts = ArtifactStore::new(&data_root).map_err(error_string)?;
+    let mut store = writable_store(&state)?;
+
+    let mut guard = state.compute.lock().map_err(lock_error)?;
+    let runtime = guard
+        .as_mut()
+        .ok_or_else(|| "No compute provider is connected.".to_owned())?;
+    runtime.heartbeat(Utc::now()).map_err(error_string)?;
+    let session = runtime
+        .session()
+        .cloned()
+        .ok_or_else(|| "Connected compute provider has no active session.".to_owned())?;
+    let connection_state = runtime.state();
+    let reconciliation = reconcile_remote_session_v1(
+        &mut store,
+        &artifacts,
+        runtime.provider_mut(),
+        &session.identity.provider_id,
+        &session.identity.session_id,
+        connection_state,
+        staging_dir,
+    )
+    .map_err(error_string)?;
+    let queues = store
+        .gpu_workbench_queue_snapshot_v1(&project_ids)
+        .map_err(error_string)?;
+
+    Ok(ComputeBurstSyncViewV1 {
+        provider: compute_provider_status_view_v1(config, Some(runtime)),
+        reconciliation,
+        queues,
+    })
+}
+
+#[tauri::command]
+fn gpu_workbench_review(
+    state: State<'_, DesktopState>,
+    input: GpuWorkbenchPrepareInputV1,
+) -> Result<GpuWorkbenchReviewViewV1, String> {
+    let store = readable_store(&state)?;
+    let week_start = parse_utc(&input.week_start, "GPU weekly budget week_start")?;
+    let now = Utc::now();
+    let connected_provider = {
+        let guard = state.compute.lock().map_err(lock_error)?;
+        guard.as_ref().and_then(|runtime| {
+            runtime
+                .session()
+                .cloned()
+                .map(|session| ComputeProviderSchedulingSnapshotV1 {
+                    state: runtime.state(),
+                    session,
+                })
+        })
+    };
+    let providers = connected_provider
+        .map(|provider| vec![provider])
+        .unwrap_or(input.providers);
+    let batch = store
+        .plan_gpu_batch_v1(
+            &GpuBatchPlanRequestV1 {
+                project_ids: input.project_ids.clone(),
+                preparations: input.preparations,
+            },
+            &providers,
+            &input.running,
+        )
+        .map_err(error_string)?;
+    let workload = store
+        .estimate_gpu_batch_workload_v1(&batch)
+        .map_err(error_string)?;
+    let burst = store
+        .plan_gpu_burst_v1(&batch, &providers)
+        .map_err(error_string)?;
+    let queues = store
+        .gpu_workbench_queue_snapshot_v1(&input.project_ids)
+        .map_err(error_string)?;
+
+    let ready_provider_ids = batch
+        .ready_jobs
+        .iter()
+        .filter_map(|job| {
+            job.eligibility
+                .selection
+                .as_ref()
+                .map(|selection| selection.provider_id.clone())
+        })
+        .collect::<BTreeSet<_>>();
+    let budget = if ready_provider_ids.len() == 1 {
+        let provider_id = ready_provider_ids
+            .iter()
+            .next()
+            .expect("one provider id was just counted");
+        store
+            .assess_gpu_batch_budget_v1(&batch, provider_id, week_start, now)
+            .map_err(error_string)?
+    } else {
+        None
+    };
+
+    let startable = batch.is_ready_to_start()
+        && burst.blocked.is_empty()
+        && burst.preflight_blocked_job_ids.is_empty()
+        && burst.scheduled_job_count() == batch.ready_jobs.len();
+
+    Ok(GpuWorkbenchReviewViewV1 {
+        batch,
+        workload,
+        budget,
+        burst,
+        queues,
+        startable,
+    })
+}
+
+#[tauri::command]
+fn set_gpu_weekly_budget(
+    state: State<'_, DesktopState>,
+    provider_id: String,
+    allowance_hours: f64,
+) -> Result<(), String> {
+    if !allowance_hours.is_finite() || allowance_hours <= 0.0 {
+        return Err("Weekly GPU allowance must be greater than zero hours.".to_owned());
+    }
+    let store = writable_store(&state)?;
+    store
+        .set_gpu_weekly_budget_v1(&provider_id, allowance_hours * 3600.0, Utc::now())
+        .map(|_| ())
+        .map_err(error_string)
+}
+
+#[tauri::command]
+fn start_gpu_burst(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    input: GpuBurstStartInputV1,
+) -> Result<GpuBurstStartViewV1, String> {
+    if input.expected_schedule_hash.trim().is_empty() {
+        return Err("Reviewed Burst schedule hash is required.".to_owned());
+    }
+    if !input.reviewed_batch.is_ready_to_start() {
+        return Err(
+            "The reviewed GPU batch still contains blocked work. Resolve preflight actions before Burst Mode."
+                .to_owned(),
+        );
+    }
+
+    let mut runtime_guard = state.compute.lock().map_err(lock_error)?;
+    let runtime = runtime_guard
+        .as_mut()
+        .ok_or_else(|| "Connect a compute provider before starting Burst Mode.".to_owned())?;
+    if runtime.state() != ComputeProviderConnectionState::Ready {
+        return Err(format!(
+            "Compute provider must be READY before Burst Mode; found {}.",
+            runtime.state().as_str()
+        ));
+    }
+    let connected = runtime
+        .session()
+        .cloned()
+        .ok_or_else(|| "Connected compute provider has no active session.".to_owned())?;
+    let providers = vec![ComputeProviderSchedulingSnapshotV1 {
+        state: runtime.state(),
+        session: connected.clone(),
+    }];
+
+    if !input.providers.is_empty()
+        && input.providers.iter().any(|provider| {
+            provider.session.identity.provider_id != connected.identity.provider_id
+                || provider.session.identity.session_id != connected.identity.session_id
+        })
+    {
+        return Err(
+            "The connected provider session differs from the reviewed provider snapshot. Prepare the GPU batch again."
+                .to_owned(),
+        );
+    }
+
+    let mut store = writable_store(&state)?;
+    let dispatch = dispatch_gpu_burst_v1(
+        &mut store,
+        runtime.provider_mut(),
+        &input.reviewed_batch,
+        &providers,
+        &input.execution_specs,
+        &input.expected_schedule_hash,
+    )
+    .map_err(error_string)?;
+
+    let data_root = active_data_root(&state)?;
+    let artifacts = ArtifactStore::new(&data_root).map_err(error_string)?;
+    let connection_state = runtime.state();
+    let reconciliation = reconcile_remote_session_v1(
+        &mut store,
+        &artifacts,
+        runtime.provider_mut(),
+        &connected.identity.provider_id,
+        &connected.identity.session_id,
+        connection_state,
+        compute_staging_dir(&app)?,
+    )
+    .map_err(error_string)?;
+    let queues = store
+        .gpu_workbench_queue_snapshot_v1(&input.reviewed_batch.selected_project_ids)
+        .map_err(error_string)?;
+
+    Ok(GpuBurstStartViewV1 {
+        dispatch,
+        reconciliation,
+        queues,
+    })
+}
+
+#[tauri::command]
 fn prepare_device_handoff(state: State<'_, DesktopState>) -> Result<AppSnapshot, String> {
     let active = {
         let mut guard = state.active.lock().map_err(lock_error)?;
@@ -424,6 +772,153 @@ fn snapshot_from_active(state: &State<'_, DesktopState>) -> Result<AppSnapshot, 
         },
         projects,
     })
+}
+
+fn compute_provider_status_view_v1(
+    config: HttpComputeProviderConfigV1,
+    runtime: Option<&ComputeProviderRuntime<HttpComputeProvider>>,
+) -> ComputeProviderStatusViewV1 {
+    let credential_present = config
+        .bearer_token_env
+        .as_deref()
+        .map(|name| env::var(name).is_ok_and(|value| !value.trim().is_empty()))
+        .unwrap_or(true);
+    let (state, session_id, capabilities, message) = match runtime {
+        Some(runtime) => {
+            let session = runtime.session();
+            (
+                runtime.state().as_str().to_owned(),
+                session.map(|value| value.identity.session_id.clone()),
+                session.map(|value| value.capabilities.clone()),
+                if runtime.state() == ComputeProviderConnectionState::Ready {
+                    "Compute worker is READY for reviewed Burst work.".to_owned()
+                } else {
+                    format!("Compute worker is {}.", runtime.state().as_str())
+                },
+            )
+        }
+        None => (
+            ComputeProviderConnectionState::Disconnected
+                .as_str()
+                .to_owned(),
+            None,
+            None,
+            if config.bearer_token_env.is_some() && !credential_present {
+                "Compute worker is disconnected; configured credential environment variable is unavailable."
+                    .to_owned()
+            } else {
+                "Compute worker is disconnected.".to_owned()
+            },
+        ),
+    };
+
+    ComputeProviderStatusViewV1 {
+        state,
+        provider_id: config.provider_id,
+        base_url: config.base_url,
+        bearer_token_env: config.bearer_token_env,
+        credential_present,
+        session_id,
+        capabilities,
+        message,
+    }
+}
+
+fn default_compute_provider_config() -> HttpComputeProviderConfigV1 {
+    HttpComputeProviderConfigV1 {
+        provider_id: "remote-gpu".to_owned(),
+        base_url: "http://127.0.0.1:8787".to_owned(),
+        bearer_token_env: Some("OMNICREATOR_COMPUTE_TOKEN".to_owned()),
+        timeout_seconds: 30,
+    }
+}
+
+fn load_compute_provider_config(app: &AppHandle) -> Result<HttpComputeProviderConfigV1, String> {
+    let path = compute_provider_config_path(app)?;
+    if !path.exists() {
+        return Ok(default_compute_provider_config());
+    }
+    let bytes =
+        fs::read(&path).map_err(|error| format!("Cannot read compute provider config: {error}"))?;
+    let config: HttpComputeProviderConfigV1 = serde_json::from_slice(&bytes)
+        .map_err(|error| format!("Invalid compute provider config JSON: {error}"))?;
+    config.validate_v1().map_err(error_string)?;
+    Ok(config)
+}
+
+fn save_compute_provider_config(
+    app: &AppHandle,
+    config: &HttpComputeProviderConfigV1,
+) -> Result<(), String> {
+    config.validate_v1().map_err(error_string)?;
+    let path = compute_provider_config_path(app)?;
+    let bytes = serde_json::to_vec_pretty(config)
+        .map_err(|error| format!("Cannot encode compute provider config: {error}"))?;
+    fs::write(path, bytes).map_err(|error| format!("Cannot save compute provider config: {error}"))
+}
+
+fn compute_provider_config_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let config_dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| format!("Cannot resolve app config directory: {error}"))?;
+    fs::create_dir_all(&config_dir)
+        .map_err(|error| format!("Cannot create app config directory: {error}"))?;
+    Ok(config_dir.join("compute-provider.json"))
+}
+
+fn compute_staging_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let cache_dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|error| format!("Cannot resolve app cache directory: {error}"))?;
+    let staging = cache_dir.join("compute-staging");
+    fs::create_dir_all(&staging)
+        .map_err(|error| format!("Cannot create compute staging directory: {error}"))?;
+    Ok(staging)
+}
+
+fn active_data_root(state: &State<'_, DesktopState>) -> Result<PathBuf, String> {
+    let guard = state.active.lock().map_err(lock_error)?;
+    let active = guard
+        .as_ref()
+        .ok_or_else(|| "No Data Folder is currently open.".to_owned())?;
+    Ok(active.workspace().data_root().to_path_buf())
+}
+
+fn readable_store(state: &State<'_, DesktopState>) -> Result<StateStore, String> {
+    let guard = state.active.lock().map_err(lock_error)?;
+    let active = guard
+        .as_ref()
+        .ok_or_else(|| "No Data Folder is currently open.".to_owned())?;
+    if active.is_read_only() {
+        StateStore::open_read_only(active.workspace().sqlite_path()).map_err(error_string)
+    } else {
+        StateStore::open(active.workspace().sqlite_path()).map_err(error_string)
+    }
+}
+
+fn writable_store(state: &State<'_, DesktopState>) -> Result<StateStore, String> {
+    let sqlite_path = {
+        let mut guard = state.active.lock().map_err(lock_error)?;
+        let active = guard
+            .as_mut()
+            .ok_or_else(|| "No Data Folder is currently open.".to_owned())?;
+        active.refresh_lease()?;
+        match active {
+            ActiveWorkspace::Writable(session) => session.sqlite_path(),
+            ActiveWorkspace::ReadOnly(_) => {
+                return Err("This workspace is open read-only.".to_owned());
+            }
+        }
+    };
+    StateStore::open(sqlite_path).map_err(error_string)
+}
+
+fn parse_utc(raw: &str, label: &str) -> Result<DateTime<Utc>, String> {
+    DateTime::parse_from_rfc3339(raw)
+        .map(|value| value.with_timezone(&Utc))
+        .map_err(|error| format!("{label} must be RFC3339: {error}"))
 }
 
 fn with_writable_store(
@@ -673,6 +1168,13 @@ fn main() {
             delete_project,
             llmgateway_status,
             save_llmgateway_settings,
+            compute_provider_status,
+            connect_compute_provider,
+            disconnect_compute_provider,
+            sync_compute_burst,
+            gpu_workbench_review,
+            set_gpu_weekly_budget,
+            start_gpu_burst,
             prepare_device_handoff
         ])
         .build(tauri::generate_context!())
@@ -684,4 +1186,31 @@ fn main() {
             clean_shutdown(&state);
         }
     });
+}
+
+#[cfg(test)]
+mod desktop_tests {
+    use super::*;
+
+    #[test]
+    fn compute_provider_defaults_keep_secrets_out_of_machine_config() {
+        let config = default_compute_provider_config();
+        config.validate_v1().unwrap();
+        let json = serde_json::to_string(&config).unwrap();
+
+        assert_eq!(config.provider_id, "remote-gpu");
+        assert_eq!(
+            config.bearer_token_env.as_deref(),
+            Some("OMNICREATOR_COMPUTE_TOKEN")
+        );
+        assert!(json.contains("OMNICREATOR_COMPUTE_TOKEN"));
+        assert!(!json.contains("Bearer "));
+        assert!(!json.to_lowercase().contains("kaggle"));
+    }
+
+    #[test]
+    fn gpu_week_start_parser_requires_explicit_rfc3339_time() {
+        assert!(parse_utc("2026-09-05T00:00:00Z", "week_start").is_ok());
+        assert!(parse_utc("2026-09-05", "week_start").is_err());
+    }
 }

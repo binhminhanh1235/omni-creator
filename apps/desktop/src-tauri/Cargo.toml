@@ -10,6 +10,7 @@ license = "MIT"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+chrono = { version = "0.4", features = ["serde"] }
 omnicreator-core = { path = "../../../crates/omnicreator-core" }
 rfd = "0.15"
 serde = { version = "1", features = ["derive"] }

@@ -232,6 +232,37 @@ Estimates should improve from actual job history.
 
 A simple moving average/EMA is sufficient for v1.
 
+## Provider-neutral desktop bridge
+
+The desktop control plane talks to a disposable GPU worker through the provider-neutral ComputeProvider HTTP bridge. Kaggle is one possible host, but no Kaggle-specific field is allowed in core scheduling or execution contracts.
+
+Machine-local connection configuration contains only:
+
+- provider ID
+- worker base URL
+- optional bearer-token environment-variable name
+- timeout
+
+The bearer token value itself is never written to the portable Data Root. Runtime transfer staging belongs in the app cache, not project storage.
+
+Protocol v1 uses JSON requests over these endpoints:
+
+```text
+POST /v1/compute/connect
+POST /v1/compute/disconnect
+POST /v1/compute/heartbeat
+POST /v1/compute/capabilities
+POST /v1/compute/dispatch
+POST /v1/compute/journal
+POST /v1/compute/artifact
+```
+
+`dispatch` is queue admission for an immutable logical job attempt pinned to the reviewed provider/session/device selection. The desktop submits assignments in deterministic Burst wave/order. A worker must serialize its own per-device queue while allowing independent devices to make progress concurrently. It must never reinterpret two T4 devices as pooled VRAM.
+
+The journal remains append-only session evidence. The desktop polls it after Burst start, transfers ready artifacts immediately, verifies hashes, commits them locally, and derives running/completed/remaining/retryable UI from canonical SQLite jobs and attempts.
+
+A provider reconnect or capability change invalidates the reviewed schedule hash and requires Prepare GPU Batch again before new dispatch.
+
 ## Burst Mode
 
 Kaggle default mode should be non-interactive:

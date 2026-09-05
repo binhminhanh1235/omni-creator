@@ -52,6 +52,16 @@ pub enum Error {
     InvalidTransition(String),
     #[error("invalid contract: {0}")]
     InvalidContract(String),
+    #[error("invalid compute provider configuration: {0}")]
+    InvalidComputeProviderConfig(String),
+    #[error("compute provider credential is unavailable in environment variable {0}")]
+    MissingComputeProviderCredential(String),
+    #[error("compute provider transport error: {0}")]
+    ComputeProviderTransport(String),
+    #[error("compute provider API error HTTP {status}: {message}")]
+    ComputeProviderApi { status: u16, message: String },
+    #[error("invalid compute provider response: {0}")]
+    InvalidComputeProviderResponse(String),
     #[error("invalid LLMGateway configuration: {0}")]
     InvalidLlmGatewayConfig(String),
     #[error("LLMGateway credential is unavailable in environment variable {0}")]
