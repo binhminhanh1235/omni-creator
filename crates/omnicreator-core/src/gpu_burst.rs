@@ -356,11 +356,7 @@ fn affinity_key_v1(job: &GpuBatchJobV1) -> Result<GpuBurstAffinityKeyV1> {
         job.preparation.plugin_id.as_deref(),
         &job.job_id,
     )?;
-    let model_id = required_value_v1(
-        "model_id",
-        job.preparation.model_id.as_deref(),
-        &job.job_id,
-    )?;
+    let model_id = required_value_v1("model_id", job.preparation.model_id.as_deref(), &job.job_id)?;
     let model_version = required_value_v1(
         "model_version",
         job.preparation.model_version.as_deref(),
@@ -425,7 +421,8 @@ fn is_wave_capacity_only_v1(decision: &GpuQueueEligibilityV1) -> bool {
 }
 
 fn summarize_devices_v1(waves: &[GpuBurstWaveV1]) -> Result<Vec<GpuBurstDeviceSummaryV1>> {
-    let mut summaries = BTreeMap::<(String, String, String), (u64, u64, GpuBurstAffinityKeyV1)>::new();
+    let mut summaries =
+        BTreeMap::<(String, String, String), (u64, u64, GpuBurstAffinityKeyV1)>::new();
 
     for wave in waves {
         for assignment in &wave.assignments {
