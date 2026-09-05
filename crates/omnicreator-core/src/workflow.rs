@@ -946,6 +946,30 @@ mod tests {
     }
 
     #[test]
+    fn review_retry_preparation_preserves_attempt_history() {
+        let temp = tempfile::tempdir().unwrap();
+        let workspace = Workspace::create(temp.path().join("data")).unwrap();
+        let mut state = StateStore::open(workspace.sqlite_path()).unwrap();
+        let project = state.create_project("Review Retry").unwrap();
+        let job = state
+            .create_job(&project.id, "visual", "SC01", "input-hash")
+            .unwrap();
+
+        let first = state.start_attempt(&job.job_id, Some("worker-a")).unwrap();
+        state
+            .finish_attempt_failure(&first.attempt_id, "NETWORK_TIMEOUT")
+            .unwrap();
+
+        let prepared = state.prepare_job_retry(&job.job_id).unwrap();
+        assert_eq!(prepared.status, StepStatus::Ready);
+        assert_eq!(state.list_attempts(&job.job_id).unwrap().len(), 1);
+
+        let second = state.start_attempt(&job.job_id, Some("worker-b")).unwrap();
+        assert_eq!(second.status, StepStatus::Running);
+        assert_eq!(state.list_attempts(&job.job_id).unwrap().len(), 2);
+    }
+
+    #[test]
     fn startup_reconciliation_never_auto_reexecutes_running_work() {
         let temp = tempfile::tempdir().unwrap();
         let workspace = Workspace::create(temp.path().join("data")).unwrap();
