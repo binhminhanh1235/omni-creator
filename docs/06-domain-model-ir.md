@@ -192,6 +192,26 @@ A4 SFX
 
 MVP does not need every track, but the IR should allow them.
 
+### Production Pack v1
+
+The Phase 9 portable timeline contract is `omnicreator.production-pack` version 1.
+
+Timeline clips persist:
+
+```text
+clip_id
+artifact_id
+logical uri
+timeline_start_ms
+source_start_ms
+duration_ms
+optional label
+```
+
+They do not persist resolved filesystem paths. Tracks use stable semantic roles, while subtitles and markers use millisecond timeline positions. Canonical normalization sorts tracks, clips, subtitle cues and markers deterministically before export/hashing.
+
+Path-bearing interchange such as FCPXML is an export artifact derived from this portable IR. It must be regenerated after Data Root rebinding rather than treated as canonical project state.
+
 ## Provenance
 
 External assets should record enough source data to support future auditing.

@@ -121,6 +121,37 @@ Download selected assets directly to the local production/library storage.
 
 Do not route stock video through Kaggle merely to transcode it.
 
+## Production Pack IR v1
+
+Phase 9 P0 freezes a provider/editor-neutral portable timeline contract before any path-bearing interchange is generated.
+
+`ProductionPackV1` contains:
+
+- project identity/title
+- rational frame rate
+- stable semantic track roles
+- timeline clips that reference both canonical artifact IDs and logical URIs
+- subtitle cues
+- typed markers
+
+Stable track roles are ordered as:
+
+```text
+V1 Background
+V2 Primary Visual
+V3 B-roll
+V4 Generated Overlays
+V5 Typography / Scripture
+A1 Narration
+A2 Music
+A3 Ambience
+A4 SFX
+```
+
+The portable contract contains no machine-local absolute media paths. A production pack can therefore survive Data Root move/copy/rebind. FCPXML or another path-bearing interchange is regenerated on the current machine by resolving the same artifact/logical references at the export boundary.
+
+P0 also renders deterministic SRT from ordered, non-overlapping subtitle cues using millisecond timestamps. Invalid or overlapping cue ranges fail before an export artifact is produced.
+
 ## Stable references
 
 Internal timeline should reference artifact IDs.
