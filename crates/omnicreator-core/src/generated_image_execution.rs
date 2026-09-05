@@ -41,7 +41,6 @@ pub struct GeneratedImageExecutionAvailabilityV1 {
     pub compute_provider: Option<GpuQueueEligibilityV1>,
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GeneratedImageExecutionPolicyV1 {
     pub target_order: Vec<GeneratedImageExecutionTargetV1>,
