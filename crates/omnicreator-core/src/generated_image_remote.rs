@@ -35,8 +35,7 @@ pub fn dispatch_generated_image_compute_provider_v1(
     let target = decision.require_target_v1()?;
     if target != GeneratedImageExecutionTargetV1::ComputeProvider {
         return Err(Error::InvalidContract(
-            "generated image remote dispatch requires compute_provider execution target"
-                .to_owned(),
+            "generated image remote dispatch requires compute_provider execution target".to_owned(),
         ));
     }
     if !preparation.gpu_execution_requested {
@@ -60,11 +59,5 @@ pub fn dispatch_generated_image_compute_provider_v1(
 
     let gpu_preparation = preparation.to_gpu_job_preparation_v1(job_id, plugin)?;
     let spec = generated_image_remote_job_spec_v1(job_id, preparation)?;
-    dispatch_remote_job(
-        state_store,
-        executor,
-        eligibility,
-        &gpu_preparation,
-        &spec,
-    )
+    dispatch_remote_job(state_store, executor, eligibility, &gpu_preparation, &spec)
 }
