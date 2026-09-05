@@ -358,3 +358,22 @@ Do not expose distributed-lock terminology in the default UI.
 ### Active project files
 
 For cloud providers that support online-only placeholders, recommend that active project media be available offline before opening DaVinci to avoid playback stalls.
+
+## Production Pack export UX
+
+The project board exposes **Export to Resolve** as the user-facing Phase 9 action. Selecting it opens a Production Pack panel for that project with:
+
+- current canonical export state
+- portable `ProductionPackV1` JSON
+- **Export Production Pack** / **Regenerate Production Pack**
+- logical package location
+- verified cache-hit feedback
+- canonical Job/Attempt history
+- missing-artifact/relink diagnostics using artifact ID + logical URI
+
+The panel is intentionally a controller over core export contracts. It does not duplicate FCPXML/SRT/source-report generation in JavaScript and does not persist a second export-status model.
+
+After restart, the panel reconstructs export history from SQLite and can reload the latest verified portable `production-pack.json` artifact. A failed export stays visibly retryable; retry preserves the previous Attempt. In read-only workspace mode, history remains inspectable while export/regeneration is disabled.
+
+Default diagnostics do not expose machine-local absolute paths. Missing media is described through portable artifact identity and an action to restore/relink the Data Root or source before regenerating.
+\n
