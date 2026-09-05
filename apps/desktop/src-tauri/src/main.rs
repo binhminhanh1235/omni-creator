@@ -432,6 +432,20 @@ fn update_project_studio_pack(
     let store = writable_store(&state)?;
     let project = store.get_project(&project_id).map_err(error_string)?;
     let selected_id = if overrides == StudioPackOverridesV1::default() {
+        if let Some(custom_id) = project
+            .studio_pack
+            .as_deref()
+            .filter(|id| id.starts_with("project-custom-"))
+        {
+            let packs = catalog
+                .packs
+                .iter()
+                .filter(|pack| pack.id != custom_id)
+                .cloned()
+                .collect::<Vec<_>>();
+            catalog = PortableStudioPackCatalogV1::from_packs_v1(packs).map_err(error_string)?;
+            save_studio_pack_catalog_v1(&data_root, &catalog)?;
+        }
         base_pack_id.clone()
     } else {
         let custom_id = project
