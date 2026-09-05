@@ -141,6 +141,28 @@ impl ArtifactStore {
         )
     }
 
+    pub fn promote_job_output_for_attempt(
+        &self,
+        state_store: &mut StateStore,
+        attempt_id: &str,
+        job_id: &str,
+        source: impl AsRef<Path>,
+        target_uri: LogicalUri,
+        artifact_type: impl Into<String>,
+        metadata: serde_json::Value,
+    ) -> Result<Artifact> {
+        self.promote_job_output_for_attempt_with_expected_hash(
+            state_store,
+            attempt_id,
+            job_id,
+            source.as_ref(),
+            target_uri,
+            artifact_type.into(),
+            metadata,
+            None,
+        )
+    }
+
     pub fn promote_plugin_output_for_attempt(
         &self,
         state_store: &mut StateStore,
@@ -151,7 +173,30 @@ impl ArtifactStore {
         expected_sha256: &str,
     ) -> Result<Artifact> {
         let verified = workspace.verify_output_file(&promotion.relative_output)?;
-        let source = verified.path();
+        self.promote_job_output_for_attempt_with_expected_hash(
+            state_store,
+            attempt_id,
+            job_id,
+            verified.path(),
+            promotion.target_uri,
+            promotion.artifact_type,
+            promotion.metadata,
+            Some(expected_sha256),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn promote_job_output_for_attempt_with_expected_hash(
+        &self,
+        state_store: &mut StateStore,
+        attempt_id: &str,
+        job_id: &str,
+        source: &Path,
+        target_uri: LogicalUri,
+        artifact_type: String,
+        metadata: serde_json::Value,
+        expected_sha256: Option<&str>,
+    ) -> Result<Artifact> {
         if !source.is_file() {
             return Err(Error::InvalidArtifact(format!(
                 "source file does not exist: {}",
@@ -159,12 +204,12 @@ impl ArtifactStore {
             )));
         }
 
-        if promotion.artifact_type.trim().is_empty() {
+        if artifact_type.trim().is_empty() {
             return Err(Error::InvalidArtifact(
                 "artifact_type must not be empty".to_owned(),
             ));
         }
-        if matches!(&promotion.target_uri, LogicalUri::Artifact(_)) {
+        if matches!(&target_uri, LogicalUri::Artifact(_)) {
             return Err(Error::InvalidArtifact(
                 "artifact:// cannot be used as a physical promotion target".to_owned(),
             ));
@@ -178,13 +223,11 @@ impl ArtifactStore {
             ));
         }
 
-        let project_context = match &promotion.target_uri {
+        let project_context = match &target_uri {
             LogicalUri::Project(_) => Some(job.project_id.as_str()),
             _ => None,
         };
-        let mut destination = self
-            .resolver
-            .resolve(&promotion.target_uri, project_context)?;
+        let mut destination = self.resolver.resolve(&target_uri, project_context)?;
         if destination.exists() {
             return Err(Error::ArtifactTargetExists(destination));
         }
@@ -193,9 +236,7 @@ impl ArtifactStore {
             .parent()
             .ok_or_else(|| Error::InvalidArtifact("target has no parent directory".to_owned()))?;
         fs::create_dir_all(parent)?;
-        destination = self
-            .resolver
-            .resolve(&promotion.target_uri, project_context)?;
+        destination = self.resolver.resolve(&target_uri, project_context)?;
         if destination.exists() {
             return Err(Error::ArtifactTargetExists(destination));
         }
@@ -211,11 +252,9 @@ impl ArtifactStore {
         }
 
         let (sha256, size_bytes) = sha256_file(&temp)?;
-        if sha256 != expected_sha256 {
+        if expected_sha256.is_some_and(|expected| sha256 != expected) {
             let _ = fs::remove_file(&temp);
-            return Err(Error::ArtifactHashMismatch(
-                promotion.target_uri.to_string(),
-            ));
+            return Err(Error::ArtifactHashMismatch(target_uri.to_string()));
         }
         if let Err(error) = fs::rename(&temp, &destination) {
             let _ = fs::remove_file(&temp);
@@ -225,14 +264,14 @@ impl ArtifactStore {
         let artifact = Artifact {
             artifact_id: format!("art_{}", Uuid::new_v4().simple()),
             project_id: Some(job.project_id.clone()),
-            artifact_type: promotion.artifact_type,
-            uri: promotion.target_uri,
+            artifact_type,
+            uri: target_uri,
             sha256,
             size_bytes,
             input_hash: Some(job.input_hash.clone()),
             producer_job: Some(job.job_id.clone()),
             created_at: Utc::now(),
-            metadata: promotion.metadata,
+            metadata,
         };
 
         if let Err(error) = state_store.commit_attempt_artifact_success(attempt_id, &artifact) {
