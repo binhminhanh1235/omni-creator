@@ -12,11 +12,16 @@ use omnicreator_core::{
     ComputeProviderSchedulingSnapshotV1, ComputeRunningAssignmentV1, Error as CoreError,
     GpuBatchBudgetOverviewV1, GpuBatchPlanRequestV1, GpuBatchPlanV1, GpuBurstDispatchSummaryV1,
     GpuBurstPlanV1, GpuJobPreparationV1, GpuWorkbenchQueueSnapshotV1, HandoffManifest,
-    HttpComputeProvider, HttpComputeProviderConfigV1, LlmGatewayClient, LlmGatewayConfig,
-    LlmGatewayModel, MachineBinding, ProductionExportHistoryEntryV1, ProductionPackV1,
-    ProductionPackageExportOutcomeV1, ProductionPackageExporterV1, Project, ProjectDisplayStatus,
-    RemoteComputeJobSpecV1, RemoteReconciliationSummaryV1, RuntimeWorkloadEstimateV1, StateStore,
-    Workspace, WorkspaceSession,
+    build_studio_pack_ux_view_v1, build_studio_review_center_v1,
+    initial_studio_pack_catalog_v1, scan_plugin_roots, HttpComputeProvider,
+    HttpComputeProviderConfigV1, LlmGatewayClient, LlmGatewayConfig, LlmGatewayModel,
+    MachineBinding, PluginRegistry, PortableStudioPackCatalogV1, ProductionExportHistoryEntryV1,
+    ProductionPackV1, ProductionPackageExportOutcomeV1, ProductionPackageExporterV1, Project,
+    ProjectDisplayStatus, RemoteComputeJobSpecV1, RemoteReconciliationSummaryV1,
+    RuntimeWorkloadEstimateV1, StateStore, StudioJobReviewSnapshotV1, StudioPackAvailabilityStatusV1,
+    StudioPackOverridesV1, StudioPackRuntimeSnapshotV1, StudioPackUxViewV1, StudioPackV1,
+    StudioReviewCenterV1, Workspace, WorkspaceSession, STUDIO_PACK_SCHEMA_V1,
+    STUDIO_PACK_VERSION_V1,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
@@ -90,6 +95,17 @@ struct WorkspaceView {
 struct ProjectView {
     project: Project,
     status: ProjectDisplayStatus,
+}
+
+#[derive(Debug, Serialize)]
+struct StudioPackCatalogDesktopViewV1 {
+    packs: Vec<StudioPackCatalogItemDesktopViewV1>,
+}
+
+#[derive(Debug, Serialize)]
+struct StudioPackCatalogItemDesktopViewV1 {
+    custom: bool,
+    pack: StudioPackUxViewV1,
 }
 
 #[derive(Debug, Serialize)]
@@ -330,6 +346,161 @@ fn delete_project(
 ) -> Result<AppSnapshot, String> {
     with_writable_store(&state, |store| store.delete_project(&project_id))?;
     snapshot_from_active(&state)
+}
+
+#[tauri::command]
+fn studio_pack_catalog(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+) -> Result<StudioPackCatalogDesktopViewV1, String> {
+    studio_pack_catalog_view_v1(&app, &state)
+}
+
+#[tauri::command]
+fn create_project_from_studio_pack(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    title: String,
+    pack_id: String,
+    overrides: StudioPackOverridesV1,
+) -> Result<AppSnapshot, String> {
+    if title.trim().is_empty() {
+        return Err("Project title must not be empty.".to_owned());
+    }
+
+    let data_root = active_data_root(&state)?;
+    let mut catalog = load_studio_pack_catalog_v1(&data_root)?;
+    validate_desktop_studio_pack_overrides_v1(&catalog, &pack_id, &overrides)?;
+
+    let registry = studio_pack_plugin_registry_v1(&app);
+    let runtime = StudioPackRuntimeSnapshotV1::default();
+    let selected_id = if overrides == StudioPackOverridesV1::default() {
+        pack_id.clone()
+    } else {
+        let base = catalog
+            .list_definitions_v1()
+            .map_err(error_string)?
+            .into_iter()
+            .find(|pack| pack.id == pack_id)
+            .ok_or_else(|| format!("Studio Pack not found: {pack_id}"))?;
+        let custom_id = format!("project-custom-{}", Uuid::new_v4().simple());
+        let custom = StudioPackV1 {
+            schema: STUDIO_PACK_SCHEMA_V1.to_owned(),
+            schema_version: STUDIO_PACK_VERSION_V1,
+            id: custom_id.clone(),
+            name: format!("{} Custom", base.name),
+            extends: Some(pack_id.clone()),
+            overrides,
+        };
+        let mut packs = catalog.packs.clone();
+        packs.push(custom);
+        catalog = PortableStudioPackCatalogV1::from_packs_v1(packs).map_err(error_string)?;
+        save_studio_pack_catalog_v1(&data_root, &catalog)?;
+        custom_id
+    };
+
+    let availability = catalog
+        .evaluate_availability_v1(&selected_id, &registry, &runtime)
+        .map_err(error_string)?;
+    if availability.status != StudioPackAvailabilityStatusV1::Available {
+        return Err(format!(
+            "Studio Pack {selected_id} is not ready to create a project: {:?}",
+            availability.status
+        ));
+    }
+
+    let store = writable_store(&state)?;
+    store
+        .create_project_with_studio_pack(title.trim(), Some(&selected_id))
+        .map_err(error_string)?;
+    snapshot_from_active(&state)
+}
+
+#[tauri::command]
+fn update_project_studio_pack(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    project_id: String,
+    base_pack_id: String,
+    overrides: StudioPackOverridesV1,
+) -> Result<AppSnapshot, String> {
+    let data_root = active_data_root(&state)?;
+    let mut catalog = load_studio_pack_catalog_v1(&data_root)?;
+    validate_desktop_studio_pack_overrides_v1(&catalog, &base_pack_id, &overrides)?;
+
+    let store = writable_store(&state)?;
+    let project = store.get_project(&project_id).map_err(error_string)?;
+    let selected_id = if overrides == StudioPackOverridesV1::default() {
+        base_pack_id.clone()
+    } else {
+        let custom_id = project
+            .studio_pack
+            .as_deref()
+            .filter(|id| id.starts_with("project-custom-"))
+            .map(ToOwned::to_owned)
+            .unwrap_or_else(|| format!("project-custom-{}", project.id));
+        let base = catalog
+            .list_definitions_v1()
+            .map_err(error_string)?
+            .into_iter()
+            .find(|pack| pack.id == base_pack_id)
+            .ok_or_else(|| format!("Studio Pack not found: {base_pack_id}"))?;
+        let custom = StudioPackV1 {
+            schema: STUDIO_PACK_SCHEMA_V1.to_owned(),
+            schema_version: STUDIO_PACK_VERSION_V1,
+            id: custom_id.clone(),
+            name: format!("{} Custom", base.name),
+            extends: Some(base_pack_id.clone()),
+            overrides,
+        };
+        let mut packs = catalog
+            .packs
+            .iter()
+            .filter(|pack| pack.id != custom_id)
+            .cloned()
+            .collect::<Vec<_>>();
+        packs.push(custom);
+        catalog = PortableStudioPackCatalogV1::from_packs_v1(packs).map_err(error_string)?;
+        save_studio_pack_catalog_v1(&data_root, &catalog)?;
+        custom_id
+    };
+
+    let registry = studio_pack_plugin_registry_v1(&app);
+    let runtime = StudioPackRuntimeSnapshotV1::default();
+    let availability = catalog
+        .evaluate_availability_v1(&selected_id, &registry, &runtime)
+        .map_err(error_string)?;
+    if availability.status != StudioPackAvailabilityStatusV1::Available {
+        return Err(format!(
+            "Studio Pack {selected_id} is not ready for this project: {:?}",
+            availability.status
+        ));
+    }
+
+    store
+        .update_project_studio_pack(&project_id, Some(&selected_id))
+        .map_err(error_string)?;
+    snapshot_from_active(&state)
+}
+
+#[tauri::command]
+fn review_center(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+) -> Result<StudioReviewCenterV1, String> {
+    studio_review_center_view_v1(&app, &state)
+}
+
+#[tauri::command]
+fn retry_review_job(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    job_id: String,
+) -> Result<StudioReviewCenterV1, String> {
+    let mut store = writable_store(&state)?;
+    store.prepare_job_retry(&job_id).map_err(error_string)?;
+    drop(store);
+    studio_review_center_view_v1(&app, &state)
 }
 
 #[tauri::command]
@@ -827,6 +998,195 @@ fn snapshot_from_active(state: &State<'_, DesktopState>) -> Result<AppSnapshot, 
         },
         projects,
     })
+}
+
+fn studio_pack_catalog_path_v1(data_root: &Path) -> PathBuf {
+    data_root.join(".omnicreator/studio-pack-catalog.json")
+}
+
+fn load_studio_pack_catalog_v1(
+    data_root: &Path,
+) -> Result<PortableStudioPackCatalogV1, String> {
+    let built_in = initial_studio_pack_catalog_v1().map_err(error_string)?;
+    let path = studio_pack_catalog_path_v1(data_root);
+    if !path.exists() {
+        return Ok(built_in);
+    }
+
+    let raw = fs::read_to_string(&path)
+        .map_err(|error| format!("Cannot read portable Studio Pack catalog: {error}"))?;
+    let stored = PortableStudioPackCatalogV1::from_json_v1(&raw).map_err(error_string)?;
+    let built_in_ids = built_in
+        .packs
+        .iter()
+        .map(|pack| pack.id.as_str())
+        .collect::<BTreeSet<_>>();
+    let mut packs = built_in.packs;
+    packs.extend(
+        stored
+            .packs
+            .into_iter()
+            .filter(|pack| !built_in_ids.contains(pack.id.as_str())),
+    );
+    PortableStudioPackCatalogV1::from_packs_v1(packs).map_err(error_string)
+}
+
+fn save_studio_pack_catalog_v1(
+    data_root: &Path,
+    catalog: &PortableStudioPackCatalogV1,
+) -> Result<(), String> {
+    let path = studio_pack_catalog_path_v1(data_root);
+    let parent = path
+        .parent()
+        .ok_or_else(|| "Studio Pack catalog path has no parent.".to_owned())?;
+    fs::create_dir_all(parent)
+        .map_err(|error| format!("Cannot create Studio Pack catalog directory: {error}"))?;
+    let temporary = parent.join("studio-pack-catalog.json.tmp");
+    let json = catalog.canonical_json_v1().map_err(error_string)?;
+    fs::write(&temporary, json)
+        .map_err(|error| format!("Cannot write portable Studio Pack catalog: {error}"))?;
+    fs::rename(&temporary, &path)
+        .map_err(|error| format!("Cannot commit portable Studio Pack catalog: {error}"))
+}
+
+fn studio_pack_plugin_registry_v1(app: &AppHandle) -> PluginRegistry {
+    let mut roots = BTreeSet::new();
+    if let Ok(current) = env::current_dir() {
+        roots.insert(current.join("plugins"));
+        roots.insert(current.join("../plugins"));
+        roots.insert(current.join("../../plugins"));
+    }
+    if let Ok(resources) = app.path().resource_dir() {
+        roots.insert(resources.join("plugins"));
+    }
+    scan_plugin_roots(&roots.into_iter().collect::<Vec<_>>()).registry
+}
+
+fn studio_pack_catalog_view_v1(
+    app: &AppHandle,
+    state: &State<'_, DesktopState>,
+) -> Result<StudioPackCatalogDesktopViewV1, String> {
+    let data_root = active_data_root(state)?;
+    let catalog = load_studio_pack_catalog_v1(&data_root)?;
+    let built_in = initial_studio_pack_catalog_v1().map_err(error_string)?;
+    let built_in_ids = built_in
+        .packs
+        .iter()
+        .map(|pack| pack.id.as_str())
+        .collect::<BTreeSet<_>>();
+    let registry = studio_pack_plugin_registry_v1(app);
+    let runtime = StudioPackRuntimeSnapshotV1::default();
+
+    let mut packs = Vec::new();
+    for definition in catalog.list_definitions_v1().map_err(error_string)? {
+        let effective = catalog.resolve_v1(&definition.id).map_err(error_string)?;
+        let availability = catalog
+            .evaluate_availability_v1(&definition.id, &registry, &runtime)
+            .map_err(error_string)?;
+        let pack = build_studio_pack_ux_view_v1(definition, &effective, &availability)
+            .map_err(error_string)?;
+        packs.push(StudioPackCatalogItemDesktopViewV1 {
+            custom: !built_in_ids.contains(definition.id.as_str()),
+            pack,
+        });
+    }
+    Ok(StudioPackCatalogDesktopViewV1 { packs })
+}
+
+fn validate_desktop_studio_pack_overrides_v1(
+    catalog: &PortableStudioPackCatalogV1,
+    base_pack_id: &str,
+    overrides: &StudioPackOverridesV1,
+) -> Result<(), String> {
+    let base = catalog.resolve_v1(base_pack_id).map_err(error_string)?;
+
+    if !overrides.routes.is_empty()
+        || !overrides.remove_routes.is_empty()
+        || !overrides.remove_presets.is_empty()
+        || !overrides.remove_quality_thresholds.is_empty()
+    {
+        return Err(
+            "Desktop creator overrides may change curated presets, automation and existing quality thresholds only; routing remains an Advanced projection over canonical Studio Pack routes."
+                .to_owned(),
+        );
+    }
+
+    for (key, value) in &overrides.presets {
+        let mut allowed = BTreeSet::new();
+        for definition in catalog.list_definitions_v1().map_err(error_string)? {
+            let effective = catalog.resolve_v1(&definition.id).map_err(error_string)?;
+            if let Some(candidate) = effective.config.presets.get(key) {
+                allowed.insert(candidate.clone());
+            }
+        }
+        if !allowed.contains(value) {
+            return Err(format!(
+                "Preset override {key}={value} is not one of the capability-compatible catalog presets."
+            ));
+        }
+    }
+
+    for key in overrides.quality_thresholds.keys() {
+        if !base.config.quality_thresholds.contains_key(key) {
+            return Err(format!(
+                "Quality override '{key}' is not defined by the selected Studio Pack."
+            ));
+        }
+    }
+
+    let mut probe = StudioPackV1 {
+        schema: STUDIO_PACK_SCHEMA_V1.to_owned(),
+        schema_version: STUDIO_PACK_VERSION_V1,
+        id: "desktop-override-validation".to_owned(),
+        name: "Desktop Override Validation".to_owned(),
+        extends: Some(base_pack_id.to_owned()),
+        overrides: overrides.clone(),
+    };
+    probe.validate_v1().map_err(error_string)?;
+    let mut packs = catalog.packs.clone();
+    packs.retain(|pack| pack.id != probe.id);
+    packs.push(probe);
+    PortableStudioPackCatalogV1::from_packs_v1(packs)
+        .map(|_| ())
+        .map_err(error_string)
+}
+
+fn studio_review_center_view_v1(
+    app: &AppHandle,
+    state: &State<'_, DesktopState>,
+) -> Result<StudioReviewCenterV1, String> {
+    let data_root = active_data_root(state)?;
+    let store = readable_store(state)?;
+    let catalog = load_studio_pack_catalog_v1(&data_root)?;
+    let registry = studio_pack_plugin_registry_v1(app);
+    let runtime = StudioPackRuntimeSnapshotV1::default();
+    let mut projects = Vec::new();
+
+    for project in store.list_projects().map_err(error_string)? {
+        let jobs = store
+            .list_project_jobs(&project.id)
+            .map_err(error_string)?
+            .into_iter()
+            .map(|job| {
+                let attempts = store.list_attempts(&job.job_id).map_err(error_string)?;
+                Ok(StudioJobReviewSnapshotV1 { job, attempts })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        let steps = store
+            .list_project_steps(&project.id)
+            .map_err(error_string)?;
+        let availability = match project.studio_pack.as_deref() {
+            Some(pack_id) => Some(
+                catalog
+                    .evaluate_availability_v1(pack_id, &registry, &runtime)
+                    .map_err(error_string)?,
+            ),
+            None => None,
+        };
+        projects.push((project, jobs, steps, availability));
+    }
+
+    Ok(build_studio_review_center_v1(&projects))
 }
 
 fn compute_provider_status_view_v1(
@@ -1401,6 +1761,11 @@ fn main() {
             heartbeat,
             list_projects,
             create_project,
+            create_project_from_studio_pack,
+            update_project_studio_pack,
+            studio_pack_catalog,
+            review_center,
+            retry_review_job,
             rename_project,
             delete_project,
             production_export_status,
