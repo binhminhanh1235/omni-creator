@@ -194,6 +194,43 @@ impl VisualRoutingDecisionV1 {
     }
 }
 
+#[derive(Debug, Clone)]
+struct VisualRoutingStockFieldsV1 {
+    candidate_id: Option<String>,
+    score: Option<f64>,
+    minimum_score: Option<f64>,
+    preview_first: bool,
+}
+
+impl VisualRoutingStockFieldsV1 {
+    fn unavailable_or_empty(minimum_score: f64) -> Self {
+        Self {
+            candidate_id: None,
+            score: None,
+            minimum_score: Some(minimum_score),
+            preview_first: false,
+        }
+    }
+
+    fn candidate(candidate_id: String, score: f64, minimum_score: f64, preview_first: bool) -> Self {
+        Self {
+            candidate_id: Some(candidate_id),
+            score: Some(score),
+            minimum_score: Some(minimum_score),
+            preview_first,
+        }
+    }
+
+    fn none() -> Self {
+        Self {
+            candidate_id: None,
+            score: None,
+            minimum_score: None,
+            preview_first: false,
+        }
+    }
+}
+
 pub fn route_scene_visual_v1(
     scene: &SceneIntentV1,
     stock_status: StockDiscoveryStatusV1,
@@ -231,10 +268,7 @@ pub fn route_scene_visual_v1(
             VisualUseCaseV1::SceneVisual,
             VisualRouteV1::GeneratedStill,
             VisualRoutingReasonV1::StockUnavailable,
-            None,
-            None,
-            Some(policy.minimum_stock_score),
-            false,
+            VisualRoutingStockFieldsV1::unavailable_or_empty(policy.minimum_stock_score),
         );
     }
 
@@ -256,10 +290,7 @@ pub fn route_scene_visual_v1(
             VisualUseCaseV1::SceneVisual,
             VisualRouteV1::GeneratedStill,
             VisualRoutingReasonV1::NoStockCandidates,
-            None,
-            None,
-            Some(policy.minimum_stock_score),
-            false,
+            VisualRoutingStockFieldsV1::unavailable_or_empty(policy.minimum_stock_score),
         );
     };
 
@@ -269,10 +300,12 @@ pub fn route_scene_visual_v1(
             VisualUseCaseV1::SceneVisual,
             VisualRouteV1::StockReview,
             VisualRoutingReasonV1::StockMeetsQualityThreshold,
-            Some(best.candidate.candidate_id.clone()),
-            Some(best.score.final_score),
-            Some(policy.minimum_stock_score),
-            true,
+            VisualRoutingStockFieldsV1::candidate(
+                best.candidate.candidate_id.clone(),
+                best.score.final_score,
+                policy.minimum_stock_score,
+                true,
+            ),
         )
     } else {
         decision(
@@ -280,10 +313,12 @@ pub fn route_scene_visual_v1(
             VisualUseCaseV1::SceneVisual,
             VisualRouteV1::GeneratedStill,
             VisualRoutingReasonV1::StockBelowQualityThreshold,
-            Some(best.candidate.candidate_id.clone()),
-            Some(best.score.final_score),
-            Some(policy.minimum_stock_score),
-            false,
+            VisualRoutingStockFieldsV1::candidate(
+                best.candidate.candidate_id.clone(),
+                best.score.final_score,
+                policy.minimum_stock_score,
+                false,
+            ),
         )
     }
 }
@@ -295,10 +330,7 @@ pub fn route_thumbnail_background_v1(scene: &SceneIntentV1) -> Result<VisualRout
         VisualUseCaseV1::ThumbnailBackground,
         VisualRouteV1::GeneratedStill,
         VisualRoutingReasonV1::ThumbnailBackgroundRequested,
-        None,
-        None,
-        None,
-        false,
+        VisualRoutingStockFieldsV1::none(),
     )
 }
 
@@ -321,10 +353,7 @@ fn decision(
     use_case: VisualUseCaseV1,
     route: VisualRouteV1,
     reason: VisualRoutingReasonV1,
-    stock_candidate_id: Option<String>,
-    stock_score: Option<f64>,
-    minimum_stock_score: Option<f64>,
-    preview_first: bool,
+    stock: VisualRoutingStockFieldsV1,
 ) -> Result<VisualRoutingDecisionV1> {
     let decision = VisualRoutingDecisionV1 {
         schema: VISUAL_ROUTING_DECISION_SCHEMA_V1.to_owned(),
@@ -333,10 +362,10 @@ fn decision(
         use_case,
         route,
         reason,
-        stock_candidate_id,
-        stock_score,
-        minimum_stock_score,
-        preview_first,
+        stock_candidate_id: stock.candidate_id,
+        stock_score: stock.score,
+        minimum_stock_score: stock.minimum_score,
+        preview_first: stock.preview_first,
     };
     decision.validate_v1()?;
     Ok(decision)
