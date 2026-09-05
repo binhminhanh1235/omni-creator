@@ -10,13 +10,13 @@ use crate::{
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FcpxmlCompatibilityProfileV1 {
-    Fcpxml1_10DaVinci,
+    Fcpxml110DaVinci,
 }
 
 impl FcpxmlCompatibilityProfileV1 {
     pub fn version(self) -> &'static str {
         match self {
-            Self::Fcpxml1_10DaVinci => "1.10",
+            Self::Fcpxml110DaVinci => "1.10",
         }
     }
 }
@@ -29,7 +29,7 @@ pub struct FcpxmlExportProfileV1 {
 impl Default for FcpxmlExportProfileV1 {
     fn default() -> Self {
         Self {
-            compatibility: FcpxmlCompatibilityProfileV1::Fcpxml1_10DaVinci,
+            compatibility: FcpxmlCompatibilityProfileV1::Fcpxml110DaVinci,
         }
     }
 }
