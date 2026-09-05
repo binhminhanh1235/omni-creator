@@ -163,6 +163,9 @@ pub enum ComputeRemoteJournalEventV1 {
     ArtifactReady {
         artifact: ComputeRemoteArtifactV1,
     },
+    ArtifactBundleReady {
+        artifacts: Vec<ComputeRemoteArtifactV1>,
+    },
     Failed {
         error_code: String,
         message: Option<String>,
@@ -206,6 +209,29 @@ impl ComputeRemoteJournalEntryV1 {
 
         match &self.event {
             ComputeRemoteJournalEventV1::ArtifactReady { artifact } => artifact.validate_v1()?,
+            ComputeRemoteJournalEventV1::ArtifactBundleReady { artifacts } => {
+                if artifacts.is_empty() {
+                    return Err(Error::InvalidContract(
+                        "remote artifact bundle must contain at least one artifact".to_owned(),
+                    ));
+                }
+                let mut transfer_refs = std::collections::BTreeSet::new();
+                let mut output_uris = std::collections::BTreeSet::new();
+                for artifact in artifacts {
+                    artifact.validate_v1()?;
+                    if !transfer_refs.insert(artifact.transfer_ref.as_str()) {
+                        return Err(Error::InvalidContract(
+                            "remote artifact bundle contains duplicate transfer_ref".to_owned(),
+                        ));
+                    }
+                    let output_uri = artifact.output_uri.as_str();
+                    if !output_uris.insert(output_uri) {
+                        return Err(Error::InvalidContract(
+                            "remote artifact bundle contains duplicate output_uri".to_owned(),
+                        ));
+                    }
+                }
+            }
             ComputeRemoteJournalEventV1::Failed {
                 error_code,
                 message,
@@ -241,6 +267,13 @@ impl ComputeRemoteJournalEntryV1 {
     pub fn artifact_ready(&self) -> Option<&ComputeRemoteArtifactV1> {
         match &self.event {
             ComputeRemoteJournalEventV1::ArtifactReady { artifact } => Some(artifact),
+            _ => None,
+        }
+    }
+
+    pub fn artifact_bundle_ready(&self) -> Option<&[ComputeRemoteArtifactV1]> {
+        match &self.event {
+            ComputeRemoteJournalEventV1::ArtifactBundleReady { artifacts } => Some(artifacts),
             _ => None,
         }
     }
@@ -589,6 +622,12 @@ impl ArtifactStore {
 
         if let Some(existing) = self.committed_remote_artifact(state_store, entry)? {
             return Ok(RemoteArtifactSyncOutcomeV1::AlreadyCommitted(existing));
+        }
+
+        if state_store.get_voice_take_v1(&entry.attempt_id)?.is_some() {
+            return Err(Error::InvalidContract(
+                "voice take success requires an audio + timing artifact bundle".to_owned(),
+            ));
         }
 
         let job = state_store.get_job(&entry.job_id)?;
@@ -1002,6 +1041,40 @@ pub fn reconcile_remote_session_v1(
                     attempt.attempt_id
                 )));
             }
+        }
+
+        if let Some(bundle_entry) = relevant
+            .iter()
+            .rev()
+            .find(|entry| entry.artifact_bundle_ready().is_some())
+            .copied()
+        {
+            let artifact_count = bundle_entry
+                .artifact_bundle_ready()
+                .map(|artifacts| artifacts.len())
+                .unwrap_or(0);
+            let outcome = crate::sync_remote_voice_artifact_bundle_v1(
+                state_store,
+                artifact_store,
+                executor,
+                bundle_entry,
+                runtime_staging_dir,
+                serde_json::json!({
+                    "source": "remote-reconciliation",
+                    "provider_id": provider_id,
+                    "session_id": session_id,
+                    "journal_sequence": bundle_entry.sequence
+                }),
+            )?;
+            match outcome {
+                crate::RemoteVoiceBundleSyncOutcomeV1::Committed(_) => {
+                    summary.artifacts_recovered += artifact_count
+                }
+                crate::RemoteVoiceBundleSyncOutcomeV1::AlreadyCommitted(_) => {
+                    summary.artifacts_already_committed += artifact_count
+                }
+            }
+            continue;
         }
 
         if let Some(artifact_entry) = relevant

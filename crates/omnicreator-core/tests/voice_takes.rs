@@ -1,11 +1,12 @@
 use std::{fs, path::Path};
 
 use omnicreator_core::{
-    dispatch_remote_voice_take_v1, sync_remote_artifact, ArtifactStore, ComputeDeviceSelectionV1,
-    ComputeJobDispatchAckV1, ComputeJobDispatchV1, ComputeProviderExecution,
-    ComputeRemoteArtifactV1, ComputeRemoteJournalEntryV1, ComputeRemoteJournalEventV1,
-    ComputeRequirements, GpuJobPreparationV1, GpuQueueEligibilityStatusV1, GpuQueueEligibilityV1,
-    LogicalUri, RemoteArtifactSyncOutcomeV1, RemoteComputeJobSpecV1, ResourceRequirement,
+    dispatch_remote_voice_take_v1, sync_remote_voice_artifact_bundle_v1, ArtifactStore,
+    ComputeDeviceSelectionV1, ComputeJobDispatchAckV1, ComputeJobDispatchV1,
+    ComputeProviderExecution, ComputeRemoteArtifactV1, ComputeRemoteJournalEntryV1,
+    ComputeRemoteJournalEventV1, ComputeRequirements, GpuJobPreparationV1,
+    GpuQueueEligibilityStatusV1, GpuQueueEligibilityV1, LogicalUri, RemoteArtifactSyncOutcomeV1,
+    RemoteComputeJobSpecV1, RemoteVoiceBundleSyncOutcomeV1, ResourceRequirement,
     SegmentTtsProductionInputV1, SegmentV1, StateStore, StepStatus, VoiceDirectionV1,
     VoiceIdentityV1, VoiceModelIdentityV1, Workspace, REMOTE_JOURNAL_SCHEMA_V1, SEGMENT_SCHEMA,
     SEGMENT_SCHEMA_VERSION,
@@ -49,7 +50,12 @@ impl ComputeProviderExecution for FakeExecutor {
         destination: &Path,
     ) -> omnicreator_core::Result<()> {
         self.transfer_calls += 1;
-        fs::write(destination, &self.transfer_bytes)?;
+        let bytes = if _transfer_ref.starts_with("timing-") {
+            timing_bytes()
+        } else {
+            self.transfer_bytes.clone()
+        };
+        fs::write(destination, bytes)?;
         Ok(())
     }
 }
@@ -146,11 +152,25 @@ fn sha256(bytes: &[u8]) -> String {
         .collect()
 }
 
+fn timing_bytes() -> Vec<u8> {
+    serde_json::to_vec_pretty(&serde_json::json!({
+        "schema": "omnicreator.voice-timing",
+        "version": 1,
+        "segment_id": "S01",
+        "duration_ms": 1500,
+        "cues": [
+            {"index": 0, "text": "Love stays truthful.", "start_ms": 0, "end_ms": 1500}
+        ]
+    }))
+    .unwrap()
+}
+
 fn artifact_entry(
     started: &omnicreator_core::RemoteDispatchStartedV1,
     input_hash: &str,
     bytes: &[u8],
 ) -> ComputeRemoteJournalEntryV1 {
+    let timing = timing_bytes();
     ComputeRemoteJournalEntryV1 {
         schema: REMOTE_JOURNAL_SCHEMA_V1.to_owned(),
         version: 1,
@@ -160,14 +180,26 @@ fn artifact_entry(
         job_id: started.dispatch.job_id.clone(),
         attempt_id: started.attempt_id.clone(),
         input_hash: input_hash.to_owned(),
-        event: ComputeRemoteJournalEventV1::ArtifactReady {
-            artifact: ComputeRemoteArtifactV1 {
-                artifact_type: "audio".to_owned(),
-                output_uri: started.dispatch.output_uri.clone(),
-                sha256: sha256(bytes),
-                size_bytes: bytes.len() as u64,
-                transfer_ref: format!("transfer-{}", started.attempt_id),
-            },
+        event: ComputeRemoteJournalEventV1::ArtifactBundleReady {
+            artifacts: vec![
+                ComputeRemoteArtifactV1 {
+                    artifact_type: "audio".to_owned(),
+                    output_uri: started.dispatch.output_uri.clone(),
+                    sha256: sha256(bytes),
+                    size_bytes: bytes.len() as u64,
+                    transfer_ref: format!("audio-{}", started.attempt_id),
+                },
+                ComputeRemoteArtifactV1 {
+                    artifact_type: "voice_timing".to_owned(),
+                    output_uri: omnicreator_core::voice_timing_output_uri_v1(
+                        &started.dispatch.output_uri,
+                    )
+                    .unwrap(),
+                    sha256: sha256(&timing),
+                    size_bytes: timing.len() as u64,
+                    transfer_ref: format!("timing-{}", started.attempt_id),
+                },
+            ],
         },
     }
 }
@@ -182,7 +214,7 @@ fn sync_take(
     staging: &Path,
 ) -> RemoteArtifactSyncOutcomeV1 {
     executor.transfer_bytes = bytes.to_vec();
-    sync_remote_artifact(
+    match sync_remote_voice_artifact_bundle_v1(
         state,
         artifacts,
         executor,
@@ -191,6 +223,14 @@ fn sync_take(
         serde_json::json!({"kind":"voice_take"}),
     )
     .unwrap()
+    {
+        RemoteVoiceBundleSyncOutcomeV1::Committed(bundle) => {
+            RemoteArtifactSyncOutcomeV1::Committed(bundle.audio)
+        }
+        RemoteVoiceBundleSyncOutcomeV1::AlreadyCommitted(bundle) => {
+            RemoteArtifactSyncOutcomeV1::AlreadyCommitted(bundle.audio)
+        }
+    }
 }
 
 #[test]
@@ -385,15 +425,15 @@ fn duplicate_delivery_uses_attempt_artifact_not_selected_take() {
     );
     let transfers_before_duplicate = executor.transfer_calls;
 
-    let duplicate = sync_remote_artifact(
+    let duplicate = sync_take(
         &mut state,
         &artifacts,
         &mut executor,
-        &artifact_entry(&second, &input_hash, bytes),
-        temp.path().join("staging-duplicate"),
-        serde_json::json!({"kind":"voice_take"}),
-    )
-    .unwrap();
+        &second,
+        &input_hash,
+        bytes,
+        &temp.path().join("staging-duplicate"),
+    );
 
     assert!(matches!(
         duplicate,
