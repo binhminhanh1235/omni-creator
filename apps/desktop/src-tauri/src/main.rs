@@ -598,13 +598,14 @@ fn start_gpu_burst(
 
     let data_root = active_data_root(&state)?;
     let artifacts = ArtifactStore::new(&data_root).map_err(error_string)?;
+    let connection_state = runtime.state();
     let reconciliation = reconcile_remote_session_v1(
         &mut store,
         &artifacts,
         runtime.provider_mut(),
         &connected.identity.provider_id,
         &connected.identity.session_id,
-        runtime.state(),
+        connection_state,
         compute_staging_dir(&app)?,
     )
     .map_err(error_string)?;
