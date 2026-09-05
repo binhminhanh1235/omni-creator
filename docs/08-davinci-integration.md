@@ -294,3 +294,24 @@ Verified cache reuse requires the complete four-artifact package from a SUCCEEDE
 ### P2 non-goals
 
 P2 still does not add transcoding, proxy generation, preview rendering, NVENC/NVDEC orchestration, final rendering, Resolve scripting automation, Kafka, Redis, RabbitMQ or Kubernetes.
+
+## Phase 9 P3: desktop export, relink and retry UX
+
+The desktop Production Pack panel is a thin controller over the canonical Phase 9 exporter. It accepts/loads portable `ProductionPackV1` JSON, invokes `ProductionPackageExporterV1`, and derives status/history from the existing SQLite `Job -> Attempt -> Artifact` records. The desktop does not implement a second exporter, export database, relink database or machine-path cache.
+
+The normal flow is:
+
+```text
+Project -> Export to Resolve
+  -> canonical ProductionPackV1
+  -> core exporter/cache lookup
+  -> Job / Attempt / Artifact promotion
+  -> logical package location + canonical history
+```
+
+A successful previous package lets the desktop reload the verified portable `production-pack.json` after restart and offer **Regenerate Production Pack**. Re-running the same execution input after a retryable local export failure reuses the same logical Job and creates a new Attempt, preserving the failed Attempt in history.
+
+Missing-source diagnostics expose portable identity: artifact ID plus logical URI. Machine-specific physical paths used at the export boundary are deliberately not serialized into the desktop diagnostic view. The user can restore/relink the Data Root or source artifact and regenerate. A Data Root copy/rebind still changes the path-bearing execution variant, so regenerated FCPXML resolves the new root and cannot reuse the stale old-root variant.
+
+The desktop may show the logical package location and cache-hit state. It does not add transcoding, preview rendering, proxy generation, final rendering or Resolve scripting automation.
+\n
