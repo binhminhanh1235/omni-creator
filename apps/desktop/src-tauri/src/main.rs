@@ -450,13 +450,28 @@ fn gpu_workbench_review(
     let store = readable_store(&state)?;
     let week_start = parse_utc(&input.week_start, "GPU weekly budget week_start")?;
     let now = Utc::now();
+    let connected_provider = {
+        let guard = state.compute.lock().map_err(lock_error)?;
+        guard.as_ref().and_then(|runtime| {
+            runtime
+                .session()
+                .cloned()
+                .map(|session| ComputeProviderSchedulingSnapshotV1 {
+                    state: runtime.state(),
+                    session,
+                })
+        })
+    };
+    let providers = connected_provider
+        .map(|provider| vec![provider])
+        .unwrap_or(input.providers);
     let batch = store
         .plan_gpu_batch_v1(
             &GpuBatchPlanRequestV1 {
                 project_ids: input.project_ids.clone(),
                 preparations: input.preparations,
             },
-            &input.providers,
+            &providers,
             &input.running,
         )
         .map_err(error_string)?;
@@ -464,7 +479,7 @@ fn gpu_workbench_review(
         .estimate_gpu_batch_workload_v1(&batch)
         .map_err(error_string)?;
     let burst = store
-        .plan_gpu_burst_v1(&batch, &input.providers)
+        .plan_gpu_burst_v1(&batch, &providers)
         .map_err(error_string)?;
     let queues = store
         .gpu_workbench_queue_snapshot_v1(&input.project_ids)
