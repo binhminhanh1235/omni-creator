@@ -14,6 +14,15 @@ const productionPackState = {
   draftTextByProject: new Map(),
   viewByProject: new Map(),
 };
+const studioPackState = {
+  catalog: null,
+  review: null,
+  selectedPackId: null,
+  mode: "basic",
+  editingProjectId: null,
+  editingPackItemId: null,
+  draftTitle: "",
+};
 
 function escapeHtml(value) {
   return String(value == null ? "" : value)
@@ -171,8 +180,14 @@ function projectCard(item, readOnly) {
     escapeHtml(statusLabel(item.status)) +
     "</span>" +
     escapeHtml(project.id) +
+    (project.studio_pack
+      ? '<span class="studio-pack-project-tag">' + escapeHtml(project.studio_pack) + "</span>"
+      : '<span class="studio-pack-project-tag missing">NO STUDIO PACK</span>') +
     "</div></div>" +
     '<div class="project-actions">' +
+    '<button class="icon-btn studio-pack-project" data-id="' +
+    escapeHtml(project.id) +
+    '">Studio Pack</button>' +
     '<button class="icon-btn production-pack-project" data-id="' +
     escapeHtml(project.id) +
     '">Export to Resolve</button>' +
@@ -524,6 +539,590 @@ async function loadLlmGatewayPanel() {
   }
 }
 
+
+
+function studioPackItems() {
+  return studioPackState.catalog && Array.isArray(studioPackState.catalog.packs)
+    ? studioPackState.catalog.packs
+    : [];
+}
+
+function builtInStudioPackItems() {
+  return studioPackItems().filter(function (item) {
+    return !item.custom;
+  });
+}
+
+function studioPackItem(id) {
+  return studioPackItems().find(function (item) {
+    return item.pack.id === id;
+  }) || null;
+}
+
+function studioPackBaseId(item) {
+  if (!item) return null;
+  const lineage = Array.isArray(item.pack.lineage) ? item.pack.lineage : [];
+  if (item.custom && lineage.length >= 2) {
+    return lineage[lineage.length - 2];
+  }
+  return item.pack.id;
+}
+
+function studioPackAvailabilityClass(status) {
+  switch (String(status || "")) {
+    case "AVAILABLE":
+      return "ready";
+    case "AVAILABLE_WITH_SETUP":
+      return "setup";
+    default:
+      return "blocked";
+  }
+}
+
+function studioPackReasonText(reason) {
+  const route = reason.route ? reason.route + ": " : "";
+  const capability = reason.capability
+    ? "requires " + reason.capability
+    : statusLabel(reason.code);
+  const plugin = reason.plugin_id ? " · " + reason.plugin_id : "";
+  const runtime = reason.runtime_reason ? " · " + reason.runtime_reason : "";
+  return route + capability + plugin + runtime;
+}
+
+function studioPackAvailabilityMarkup(pack) {
+  const availability = pack.availability || { status: "UNAVAILABLE", reasons: [] };
+  const reasons = Array.isArray(availability.reasons) ? availability.reasons : [];
+  const blocking = reasons.filter(function (reason) {
+    return reason.blocking;
+  });
+  const notes = blocking.length ? blocking : reasons.slice(0, 2);
+  const detail = notes.length
+    ? '<ul class="studio-pack-reasons">' +
+      notes
+        .map(function (reason) {
+          return "<li>" + escapeHtml(studioPackReasonText(reason)) + "</li>";
+        })
+        .join("") +
+      "</ul>"
+    : '<p class="muted compact">All required capabilities are available.</p>';
+  return (
+    '<div class="studio-pack-availability ' +
+    studioPackAvailabilityClass(availability.status) +
+    '"><strong>' +
+    escapeHtml(statusLabel(availability.status)) +
+    "</strong>" +
+    detail +
+    "</div>"
+  );
+}
+
+function studioPackPickerMarkup(selectedId) {
+  const packs = builtInStudioPackItems();
+  if (!packs.length) {
+    return '<div class="empty compact-empty">No Studio Pack definitions are available.</div>';
+  }
+  return (
+    '<div class="studio-pack-grid">' +
+    packs
+      .map(function (item) {
+        const pack = item.pack;
+        const selected = pack.id === selectedId;
+        const unavailable =
+          !pack.availability || pack.availability.status !== "AVAILABLE";
+        return (
+          '<button type="button" class="studio-pack-card ' +
+          (selected ? "selected " : "") +
+          studioPackAvailabilityClass(pack.availability && pack.availability.status) +
+          '" data-pack-id="' +
+          escapeHtml(pack.id) +
+          '">' +
+          '<div class="studio-pack-card-head"><strong>' +
+          escapeHtml(pack.name) +
+          '</strong><span>' +
+          escapeHtml(statusLabel(pack.availability && pack.availability.status)) +
+          "</span></div>" +
+          '<p class="muted compact">' +
+          escapeHtml(
+            pack.automation && pack.automation.value
+              ? statusLabel(pack.automation.value) + " automation"
+              : "Studio Pack",
+          ) +
+          (unavailable ? " · setup required before creation" : "") +
+          "</p>" +
+          "</button>"
+        );
+      })
+      .join("") +
+    "</div>"
+  );
+}
+
+function presetChoices(key) {
+  const values = new Set();
+  builtInStudioPackItems().forEach(function (item) {
+    (item.pack.presets || []).forEach(function (preset) {
+      if (preset.key === key) values.add(preset.value);
+    });
+  });
+  return Array.from(values).sort();
+}
+
+function studioPackSourceItem(baseItem) {
+  if (
+    studioPackState.editingPackItemId &&
+    studioPackBaseId(studioPackItem(studioPackState.editingPackItemId)) ===
+      baseItem.pack.id
+  ) {
+    return studioPackItem(studioPackState.editingPackItemId) || baseItem;
+  }
+  return baseItem;
+}
+
+function studioPackCustomizeMarkup(baseItem) {
+  const sourceItem = studioPackSourceItem(baseItem);
+  const sourcePack = sourceItem.pack;
+  const isCustom = Boolean(sourceItem.custom);
+  const presetRows = (sourcePack.presets || [])
+    .map(function (preset) {
+      const explicit = isCustom && preset.source === "EXPLICIT_OVERRIDE";
+      const options = presetChoices(preset.key)
+        .map(function (value) {
+          return (
+            '<option value="' +
+            escapeHtml(value) +
+            '"' +
+            (explicit && value === preset.value ? " selected" : "") +
+            ">" +
+            escapeHtml(statusLabel(value)) +
+            "</option>"
+          );
+        })
+        .join("");
+      return (
+        '<div class="field compact-field"><label>' +
+        escapeHtml(statusLabel(preset.key)) +
+        '</label><select class="studio-preset-override" data-preset-key="' +
+        escapeHtml(preset.key) +
+        '"><option value="">' +
+        escapeHtml("Inherit · " + statusLabel(basePresetValue(baseItem, preset.key))) +
+        "</option>" +
+        options +
+        "</select></div>"
+      );
+    })
+    .join("");
+
+  const automationExplicit =
+    isCustom &&
+    sourcePack.automation &&
+    sourcePack.automation.source === "EXPLICIT_OVERRIDE";
+  const automationValue = sourcePack.automation
+    ? sourcePack.automation.value
+    : "BALANCED";
+  return (
+    '<div class="studio-customize-grid">' +
+    '<div class="field compact-field"><label>AUTOMATION LEVEL</label>' +
+    '<select id="studio-automation-override">' +
+    '<option value="">Inherit · ' +
+    escapeHtml(statusLabel(baseItem.pack.automation.value)) +
+    "</option>" +
+    ["ASSISTED", "BALANCED", "AUTOPILOT"]
+      .map(function (value) {
+        return (
+          '<option value="' +
+          value +
+          '"' +
+          (automationExplicit && automationValue === value ? " selected" : "") +
+          ">" +
+          statusLabel(value) +
+          "</option>"
+        );
+      })
+      .join("") +
+    "</select></div>" +
+    presetRows +
+    "</div>" +
+    '<p class="muted compact">Inherited values remain linked to the selected Studio Pack. Only explicit creator overrides are stored in the portable child pack.</p>'
+  );
+}
+
+function basePresetValue(baseItem, key) {
+  const preset = (baseItem.pack.presets || []).find(function (candidate) {
+    return candidate.key === key;
+  });
+  return preset ? preset.value : "default";
+}
+
+function baseQualityValue(baseItem, key) {
+  const quality = (baseItem.pack.quality_thresholds || []).find(function (candidate) {
+    return candidate.key === key;
+  });
+  return quality ? Number(quality.value) : 0;
+}
+
+function studioPackAdvancedMarkup(baseItem) {
+  const sourceItem = studioPackSourceItem(baseItem);
+  const routeRows = (sourceItem.pack.routes || [])
+    .map(function (route) {
+      const targets = (route.targets || [])
+        .map(function (target, index) {
+          return (
+            '<li><span>' +
+            escapeHtml(index === 0 ? "Preferred" : "Fallback " + index) +
+            "</span><code>" +
+            escapeHtml(target.plugin_type + " / " + target.capability) +
+            (target.plugin_id ? " · " + escapeHtml(target.plugin_id) : "") +
+            (target.preset ? " · " + escapeHtml(target.preset) : "") +
+            "</code></li>"
+          );
+        })
+        .join("");
+      const unavailable = (route.availability_reasons || [])
+        .filter(function (reason) {
+          return reason.blocking;
+        })
+        .map(function (reason) {
+          return "<small>" + escapeHtml(studioPackReasonText(reason)) + "</small>";
+        })
+        .join("");
+      return (
+        '<article class="studio-route-row"><strong>' +
+        escapeHtml(route.key) +
+        '</strong><span class="value-source">' +
+        escapeHtml(statusLabel(route.source)) +
+        "</span><ol>" +
+        targets +
+        "</ol>" +
+        unavailable +
+        "</article>"
+      );
+    })
+    .join("");
+
+  const qualityRows = (sourceItem.pack.quality_thresholds || [])
+    .map(function (quality) {
+      const baseValue = baseQualityValue(baseItem, quality.key);
+      return (
+        '<div class="field compact-field"><label>' +
+        escapeHtml(statusLabel(quality.key) + " QUALITY") +
+        '</label><input class="studio-quality-override" data-quality-key="' +
+        escapeHtml(quality.key) +
+        '" data-base-value="' +
+        escapeHtml(baseValue) +
+        '" type="number" min="0" max="100" value="' +
+        escapeHtml(quality.value) +
+        '" /></div>'
+      );
+    })
+    .join("");
+
+  return (
+    '<div class="studio-advanced-note notice subtle">Advanced is a projection over canonical routes and existing machine-local controls. Provider endpoints, credentials and absolute paths are never written into the portable Studio Pack.</div>' +
+    '<div class="studio-quality-grid">' +
+    qualityRows +
+    "</div>" +
+    '<details class="advanced-details" open><summary>Resolved plugin / capability routing</summary>' +
+    '<div class="studio-route-list">' +
+    routeRows +
+    "</div></details>" +
+    '<p class="muted compact">LLMGateway routing and Compute Provider runtime controls remain in their existing panels on this screen. Production Pack export settings remain on the canonical DaVinci panel.</p>'
+  );
+}
+
+function collectStudioPackOverrides(baseItem) {
+  const overrides = {
+    automation_level: null,
+    routes: {},
+    presets: {},
+    quality_thresholds: {},
+    remove_routes: [],
+    remove_presets: [],
+    remove_quality_thresholds: [],
+  };
+  const automation = document.getElementById("studio-automation-override");
+  if (automation && automation.value) {
+    overrides.automation_level = automation.value;
+  }
+  document.querySelectorAll(".studio-preset-override").forEach(function (input) {
+    if (input.value) overrides.presets[input.dataset.presetKey] = input.value;
+  });
+  document.querySelectorAll(".studio-quality-override").forEach(function (input) {
+    const value = Number(input.value);
+    const base = Number(input.dataset.baseValue);
+    if (Number.isFinite(value) && value !== base) {
+      overrides.quality_thresholds[input.dataset.qualityKey] = value;
+    }
+  });
+  return overrides;
+}
+
+function renderStudioPackCreator(projects, readOnly) {
+  const panel = document.getElementById("studio-pack-creator");
+  if (!panel) return;
+  if (!studioPackState.catalog) {
+    panel.innerHTML =
+      '<p class="eyebrow">STUDIO PACK</p><h3>Loading creator workflow…</h3>';
+    return;
+  }
+
+  const builtIns = builtInStudioPackItems();
+  if (!studioPackState.selectedPackId) {
+    const firstReady = builtIns.find(function (item) {
+      return item.pack.availability.status === "AVAILABLE";
+    });
+    studioPackState.selectedPackId = firstReady
+      ? firstReady.pack.id
+      : builtIns.length
+        ? builtIns[0].pack.id
+        : null;
+  }
+
+  const editingProject = studioPackState.editingProjectId
+    ? projects.find(function (item) {
+        return item.project.id === studioPackState.editingProjectId;
+      })
+    : null;
+  let baseItem = studioPackItem(studioPackState.selectedPackId);
+  if (baseItem && baseItem.custom) {
+    baseItem = studioPackItem(studioPackBaseId(baseItem));
+  }
+  if (!baseItem && builtIns.length) baseItem = builtIns[0];
+
+  const selectedId = baseItem ? baseItem.pack.id : "";
+  const mode = studioPackState.mode;
+  const detail =
+    mode === "customize" && baseItem
+      ? studioPackCustomizeMarkup(baseItem)
+      : mode === "advanced" && baseItem
+        ? studioPackCustomizeMarkup(baseItem) + studioPackAdvancedMarkup(baseItem)
+        : baseItem
+          ? studioPackAvailabilityMarkup(baseItem.pack)
+          : "";
+
+  const header = editingProject
+    ? '<div><p class="eyebrow">STUDIO PACK · PROJECT SETTINGS</p><h3>' +
+      escapeHtml(editingProject.project.title) +
+      '</h3><p class="muted compact">Change creative intent without creating parallel workflow state.</p></div>'
+    : '<div><p class="eyebrow">NEW PRODUCTION · BASIC</p><h3>Start with a Studio Pack</h3><p class="muted compact">Choose the production style first. Plugin wiring stays out of the Basic flow.</p></div>';
+  const titleField = editingProject
+    ? ""
+    : '<div class="field studio-title-field"><label>PROJECT TITLE</label><input id="studio-project-title" placeholder="When God Seems Silent" value="' +
+      escapeHtml(studioPackState.draftTitle) +
+      '"' +
+      (readOnly ? " disabled" : "") +
+      " /></div>";
+  const buttonLabel = editingProject ? "Save Studio Pack Settings" : "Create Production";
+  const ready =
+    baseItem &&
+    baseItem.pack.availability &&
+    baseItem.pack.availability.status === "AVAILABLE";
+  const cancel = editingProject
+    ? '<button class="btn" id="studio-cancel-edit">Cancel</button>'
+    : "";
+
+  panel.innerHTML =
+    '<div class="studio-creator-head">' +
+    header +
+    '<div class="studio-mode-tabs">' +
+    ["basic", "customize", "advanced"]
+      .map(function (candidate) {
+        return (
+          '<button type="button" class="studio-mode-tab ' +
+          (mode === candidate ? "active" : "") +
+          '" data-studio-mode="' +
+          candidate +
+          '">' +
+          statusLabel(candidate) +
+          "</button>"
+        );
+      })
+      .join("") +
+    "</div></div>" +
+    titleField +
+    '<div class="field"><label>STUDIO PACK</label>' +
+    studioPackPickerMarkup(selectedId) +
+    "</div>" +
+    '<div class="studio-mode-content">' +
+    detail +
+    "</div>" +
+    '<div class="actions studio-create-actions"><button class="btn primary" id="studio-create-or-save"' +
+    (readOnly || !ready ? " disabled" : "") +
+    ">" +
+    buttonLabel +
+    "</button>" +
+    cancel +
+    "</div>";
+
+  const titleInput = document.getElementById("studio-project-title");
+  if (titleInput) {
+    titleInput.oninput = function () {
+      studioPackState.draftTitle = titleInput.value;
+    };
+  }
+
+  document.querySelectorAll(".studio-mode-tab").forEach(function (button) {
+    button.onclick = function () {
+      studioPackState.mode = button.dataset.studioMode;
+      renderStudioPackCreator(projects, readOnly);
+    };
+  });
+
+  document.querySelectorAll(".studio-pack-card").forEach(function (button) {
+    button.onclick = function () {
+      studioPackState.selectedPackId = button.dataset.packId;
+      studioPackState.editingPackItemId = null;
+      renderStudioPackCreator(projects, readOnly);
+    };
+  });
+
+  const cancelButton = document.getElementById("studio-cancel-edit");
+  if (cancelButton) {
+    cancelButton.onclick = function () {
+      studioPackState.editingProjectId = null;
+      studioPackState.editingPackItemId = null;
+      studioPackState.mode = "basic";
+      renderStudioPackCreator(projects, readOnly);
+    };
+  }
+
+  const action = document.getElementById("studio-create-or-save");
+  if (action) {
+    action.onclick = async function () {
+      if (!baseItem) return;
+      const overrides = collectStudioPackOverrides(baseItem);
+      if (editingProject) {
+        render(
+          await call("update_project_studio_pack", {
+            projectId: editingProject.project.id,
+            basePackId: baseItem.pack.id,
+            overrides: overrides,
+          }),
+        );
+        showToast("Studio Pack settings saved through the canonical resolver.");
+        return;
+      }
+
+      const title = (studioPackState.draftTitle || "").trim();
+      if (!title) {
+        showToast("Enter a project title first.");
+        return;
+      }
+      studioPackState.draftTitle = "";
+      render(
+        await call("create_project_from_studio_pack", {
+          title: title,
+          packId: baseItem.pack.id,
+          overrides: overrides,
+        }),
+      );
+      showToast("Production created from the resolved Studio Pack.");
+    };
+  }
+}
+
+function renderReviewCenter(projects, readOnly) {
+  const panel = document.getElementById("review-center");
+  if (!panel) return;
+  const review = studioPackState.review;
+  if (!review) {
+    panel.innerHTML =
+      '<p class="eyebrow">REVIEW CENTER</p><h3>Checking canonical exceptions…</h3>';
+    return;
+  }
+
+  const items = Array.isArray(review.items) ? review.items : [];
+  const rows = items.length
+    ? items
+        .map(function (item) {
+          const action =
+            item.action && item.action.kind === "retry_job"
+              ? '<button class="btn review-retry" data-job-id="' +
+                escapeHtml(item.action.job_id) +
+                '"' +
+                (readOnly ? " disabled" : "") +
+                ">Prepare Retry</button>"
+              : "";
+          return (
+            '<article class="review-item ' +
+            escapeHtml(String(item.severity || "").toLowerCase()) +
+            '"><div class="review-item-head"><div><span>' +
+            escapeHtml(statusLabel(item.kind)) +
+            "</span><strong>" +
+            escapeHtml(item.project_title) +
+            "</strong></div><span>" +
+            escapeHtml(statusLabel(item.severity)) +
+            "</span></div><p>" +
+            escapeHtml(item.reason) +
+            '</p><div class="review-item-source"><code>' +
+            escapeHtml(item.canonical_source) +
+            "</code><span>" +
+            escapeHtml(item.source_id) +
+            "</span></div>" +
+            action +
+            "</article>"
+          );
+        })
+        .join("")
+    : '<div class="review-clear"><strong>No actionable exceptions.</strong><span>Review Center is reconstructed from canonical state, not stored separately.</span></div>';
+
+  panel.innerHTML =
+    '<div class="review-center-head"><div><p class="eyebrow">REVIEW CENTER</p><h3>Exceptions, not busywork</h3></div>' +
+    '<div class="review-counts"><strong>' +
+    escapeHtml(review.blocking_count) +
+    ' blocking</strong><span>' +
+    escapeHtml(review.actionable_count) +
+    " actionable</span></div></div>" +
+    '<p class="muted compact">Aggregated from Studio Pack capability state, WorkflowStep, Job and Attempt records.</p>' +
+    '<div class="review-list">' +
+    rows +
+    "</div>";
+
+  document.querySelectorAll(".review-retry").forEach(function (button) {
+    button.onclick = async function () {
+      await call("retry_review_job", { jobId: button.dataset.jobId });
+      render(await call("list_projects"));
+      showToast("Job returned to canonical READY state for retry.");
+    };
+  });
+}
+
+async function loadStudioPackWorkspace(projects, readOnly) {
+  try {
+    const results = await Promise.all([
+      call("studio_pack_catalog"),
+      call("review_center"),
+    ]);
+    studioPackState.catalog = results[0];
+    studioPackState.review = results[1];
+
+    if (studioPackState.editingProjectId) {
+      const editing = projects.find(function (item) {
+        return item.project.id === studioPackState.editingProjectId;
+      });
+      if (editing && editing.project.studio_pack) {
+        const current = studioPackItem(editing.project.studio_pack);
+        studioPackState.editingPackItemId = current ? current.pack.id : null;
+        studioPackState.selectedPackId = current
+          ? studioPackBaseId(current)
+          : studioPackState.selectedPackId;
+      }
+    }
+
+    renderStudioPackCreator(projects, readOnly);
+    renderReviewCenter(projects, readOnly);
+  } catch (_error) {
+    const creator = document.getElementById("studio-pack-creator");
+    const review = document.getElementById("review-center");
+    if (creator) {
+      creator.innerHTML =
+        '<p class="eyebrow">STUDIO PACK</p><div class="notice">Could not load the canonical Studio Pack catalog.</div>';
+    }
+    if (review) {
+      review.innerHTML =
+        '<p class="eyebrow">REVIEW CENTER</p><div class="notice">Could not reconstruct review state.</div>';
+    }
+  }
+}
 
 function gpuWeekStartIso() {
   const now = new Date();
@@ -1042,14 +1641,9 @@ function renderWorkspace(snapshot) {
     '<section class="panel">' +
     '<p class="eyebrow">PROJECT BOARD</p><h2>Productions</h2>' +
     readOnlyNotice +
-    '<div class="toolbar">' +
-    '<div class="field"><label>NEW PROJECT</label><input id="new-project-title" placeholder="When God Seems Silent"' +
-    (workspace.read_only ? " disabled" : "") +
-    " /></div>" +
-    '<button class="btn primary" id="create-project"' +
-    (workspace.read_only ? " disabled" : "") +
-    ">Create</button></div>" +
+    '<div id="studio-pack-creator" class="studio-pack-creator"></div>' +
     '<div class="project-list">' + cards + "</div>" +
+    '<div id="review-center" class="review-center"></div>' +
     '<div id="production-pack-panel" class="production-pack-panel"></div>' +
     '<div class="batch-toolbar"><div><strong id="gpu-selected-count">' +
     escapeHtml(gpuWorkbenchState.selectedProjectIds.size) +
@@ -1073,19 +1667,6 @@ function renderWorkspace(snapshot) {
     '<p class="muted">Checking local gateway connection…</p>' +
     "</aside></div></div>";
 
-  const createButton = document.getElementById("create-project");
-  if (createButton) {
-    createButton.onclick = async function () {
-      const input = document.getElementById("new-project-title");
-      const title = input.value.trim();
-      if (!title) {
-        showToast("Enter a project title first.");
-        return;
-      }
-      render(await call("create_project", { title: title }));
-    };
-  }
-
   document.querySelectorAll(".project-batch-checkbox").forEach(function (checkbox) {
     checkbox.onchange = function () {
       if (checkbox.checked) {
@@ -1103,6 +1684,27 @@ function renderWorkspace(snapshot) {
   document.getElementById("prepare-gpu-batch").onclick = function () {
     prepareGpuWorkbench(workspace.read_only);
   };
+
+  document.querySelectorAll(".studio-pack-project").forEach(function (button) {
+    button.onclick = function () {
+      const item = projects.find(function (candidate) {
+        return candidate.project.id === button.dataset.id;
+      });
+      if (!item) return;
+      studioPackState.editingProjectId = item.project.id;
+      studioPackState.editingPackItemId = item.project.studio_pack || null;
+      const current = item.project.studio_pack
+        ? studioPackItem(item.project.studio_pack)
+        : null;
+      studioPackState.selectedPackId = current
+        ? studioPackBaseId(current)
+        : studioPackState.selectedPackId;
+      studioPackState.mode = "customize";
+      renderStudioPackCreator(projects, workspace.read_only);
+      const creator = document.getElementById("studio-pack-creator");
+      if (creator) creator.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+  });
 
   document.querySelectorAll(".production-pack-project").forEach(function (button) {
     button.onclick = function () {
@@ -1148,6 +1750,7 @@ function renderWorkspace(snapshot) {
   renderGpuWorkbench(gpuWorkbenchState.review, workspace.read_only);
   loadComputeProviderStatus(workspace.read_only);
   loadLlmGatewayPanel();
+  loadStudioPackWorkspace(projects, workspace.read_only);
 }
 
 function renderHandoff(snapshot) {
