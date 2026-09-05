@@ -872,8 +872,8 @@ mod tests {
         let production_pack = pack(&project.id, &artifact, "Retryable export");
         fs::remove_file(store.resolve_artifact_path(&artifact).unwrap()).unwrap();
 
-        let result = ProductionPackageExporterV1::default()
-            .export_v1(&mut state, &store, &production_pack);
+        let result =
+            ProductionPackageExporterV1::default().export_v1(&mut state, &store, &production_pack);
         assert!(result.is_err());
 
         let (job_id, job_status, selected_artifact): (String, String, Option<String>) = state
