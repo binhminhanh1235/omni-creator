@@ -394,3 +394,12 @@ The portable semantic hash covers normalized `ProductionPackV1`, exporter/profil
 FCPXML is path-bearing, so package execution additionally incorporates an opaque hash of the current Data Root binding. The absolute path itself is never persisted in canonical state. Moving/rebinding the Data Root therefore invalidates the path-bearing package variant while leaving the portable semantic hash and canonical media references untouched.
 
 A cache hit is accepted only when the complete package belongs to a SUCCEEDED producer Job and every cached Artifact still passes physical hash verification.
+
+### Desktop export retry/history
+
+Phase 9 P3 makes local production export retry semantics explicit in the desktop workflow. When an `export.production-pack` Job is `RETRYABLE` and the deterministic execution input hash is unchanged, regeneration starts a **new Attempt on the same Job**. The previous failed Attempt remains in SQLite history and a later success selects the newly committed package artifacts.
+
+Desktop status is queried from those canonical Jobs, Attempts and Artifacts. Restarting the app therefore reconstructs the same export state without a separate UI database. The latest verified portable `production-pack.json` artifact may be reloaded as the regenerate input.
+
+Missing-artifact UX uses artifact IDs and logical URIs. Physical absolute paths resolved at the current Data Root are transient export-boundary details and are not persisted in portable state or serialized as durable desktop diagnostics.
+\n
