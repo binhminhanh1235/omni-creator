@@ -1,0 +1,41 @@
+schema: omnicreator.plugin-manifest
+schema_version: 1
+id: generated-image-api
+name: Generated Image API
+version: 1.0.0
+api_version: 1
+
+types:
+  - visual
+
+entrypoint:
+  command: python3
+  args:
+    - plugin.py
+
+capabilities:
+  - generated_still
+  - visual_generate
+  - api_execution
+
+scene_types:
+  - literal
+  - emotional
+  - conceptual
+  - educational
+
+permissions:
+  filesystem:
+    - job-workspace
+  network:
+    - api.openai.com
+    - localhost
+    - 127.0.0.1
+
+settings:
+  schema: settings.schema.json
+
+resources:
+  gpu: none
+  parallelizable: false
+  cost_metric: megapixels
