@@ -539,7 +539,8 @@ pub fn execute_generated_image_plugin_v1(
     let verified = match workspace.verify_output_file(&plugin_result.relative_output) {
         Ok(verified) => verified,
         Err(error) => {
-            let _ = state_store.finish_attempt_failure(&attempt.attempt_id, "INVALID_PLUGIN_OUTPUT");
+            let _ =
+                state_store.finish_attempt_failure(&attempt.attempt_id, "INVALID_PLUGIN_OUTPUT");
             return Err(error);
         }
     };
