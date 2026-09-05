@@ -284,13 +284,26 @@ impl StateStore {
     }
 
     pub fn create_project(&self, title: &str) -> Result<Project> {
+        self.create_project_with_studio_pack(title, None)
+    }
+
+    pub fn create_project_with_studio_pack(
+        &self,
+        title: &str,
+        studio_pack: Option<&str>,
+    ) -> Result<Project> {
+        if studio_pack.is_some_and(|value| value.trim().is_empty()) {
+            return Err(Error::InvalidContract(
+                "project studio_pack must not be empty when present".to_owned(),
+            ));
+        }
         let now = Utc::now();
         let project = Project {
             id: format!("prj_{}", Uuid::new_v4().simple()),
             title: title.to_owned(),
             created_at: now,
             updated_at: now,
-            studio_pack: None,
+            studio_pack: studio_pack.map(ToOwned::to_owned),
             channel_profile: None,
             script_version: 1,
             production_lock: false,
