@@ -4,8 +4,10 @@ const modePill = document.getElementById("mode-pill");
 const toast = document.getElementById("toast");
 const gpuWorkbenchState = {
   selectedProjectIds: new Set(),
-  context: { preparations: [], providers: [], running: [] },
+  context: { preparations: [], providers: [], running: [], execution_specs: [] },
+  provider: null,
   review: null,
+  syncTimer: null,
 };
 
 function escapeHtml(value) {
@@ -338,16 +340,162 @@ function advancedGpuDetails(review) {
       escapeHtml(review.burst.schedule_hash) +
       "</code></div></div>"
     : "";
+  const provider = gpuWorkbenchState.provider || {};
   return (
     '<details class="advanced-details"><summary>Advanced / provider runtime details</summary>' +
-    '<p class="muted compact">Provider-neutral session, preparation and running-assignment snapshots are ephemeral. Do not place secrets here.</p>' +
+    '<p class="muted compact">Machine-local endpoint settings and provider-neutral preparation/spec snapshots live here. Store only environment-variable names, never secret values, in portable data.</p>' +
     hashes +
-    '<div class="field"><label>RUNTIME CONTEXT JSON</label><textarea id="gpu-runtime-context" rows="10">' +
+    '<div class="provider-config-grid">' +
+    '<div class="field"><label>PROVIDER ID</label><input id="compute-provider-id" value="' +
+    escapeHtml(provider.provider_id || "remote-gpu") +
+    '" /></div>' +
+    '<div class="field"><label>WORKER BASE URL</label><input id="compute-provider-url" value="' +
+    escapeHtml(provider.base_url || "http://127.0.0.1:8787") +
+    '" /></div>' +
+    '<div class="field"><label>BEARER TOKEN ENV</label><input id="compute-provider-token-env" value="' +
+    escapeHtml(provider.bearer_token_env || "OMNICREATOR_COMPUTE_TOKEN") +
+    '" /></div></div>' +
+    '<div class="actions compact-actions"><button class="btn" id="connect-gpu-provider-advanced">Connect with these settings</button></div>' +
+    '<div class="field"><label>PREPARATION / EXECUTION CONTEXT JSON</label><textarea id="gpu-runtime-context" rows="12">' +
     escapeHtml(runtimeContextJson()) +
     "</textarea></div>" +
     '<div class="actions compact-actions"><button class="btn" id="apply-gpu-context">Apply context &amp; review again</button></div>' +
     "</details>"
   );
+}
+
+function providerReady() {
+  return gpuWorkbenchState.provider && gpuWorkbenchState.provider.state === "READY";
+}
+
+function executionSpecsReady(review) {
+  if (!review) return false;
+  const expected = (review.batch.ready_jobs || [])
+    .map(function (job) { return job.job_id; })
+    .sort();
+  const actual = (gpuWorkbenchState.context.execution_specs || [])
+    .map(function (spec) { return spec.job_id; })
+    .sort();
+  return expected.length === actual.length &&
+    expected.every(function (jobId, index) { return actual[index] === jobId; });
+}
+
+function providerCardMarkup(readOnly) {
+  const provider = gpuWorkbenchState.provider || {
+    state: "DISCONNECTED",
+    provider_id: "remote-gpu",
+    base_url: "http://127.0.0.1:8787",
+    credential_present: false,
+    message: "Compute worker status has not been loaded.",
+  };
+  const ready = provider.state === "READY";
+  const action = ready
+    ? '<button class="btn" id="disconnect-gpu-provider"' + (readOnly ? " disabled" : "") + '>Disconnect</button>'
+    : '<button class="btn primary" id="connect-gpu-provider"' + (readOnly ? " disabled" : "") + '>Connect Provider</button>';
+  return (
+    '<div class="provider-card ' + (ready ? "connected" : "") + '">' +
+    '<div><span class="provider-state">' + escapeHtml(provider.state) + '</span>' +
+    '<strong>' + escapeHtml(provider.provider_id || "remote-gpu") + '</strong>' +
+    '<p>' + escapeHtml(provider.message || "") + '</p></div>' +
+    '<div class="provider-actions"><span>' + escapeHtml(provider.session_id || provider.base_url || "") + '</span>' +
+    action + "</div></div>"
+  );
+}
+
+async function loadComputeProviderStatus(readOnly) {
+  try {
+    gpuWorkbenchState.provider = await call("compute_provider_status");
+  } catch (_error) {
+    gpuWorkbenchState.provider = null;
+  }
+  renderGpuWorkbench(gpuWorkbenchState.review, readOnly);
+}
+
+async function connectGpuProvider(readOnly, fromAdvanced) {
+  if (readOnly) return;
+  const current = gpuWorkbenchState.provider || {};
+  const providerIdInput = document.getElementById("compute-provider-id");
+  const baseUrlInput = document.getElementById("compute-provider-url");
+  const tokenInput = document.getElementById("compute-provider-token-env");
+  const providerId = fromAdvanced && providerIdInput
+    ? providerIdInput.value
+    : current.provider_id || "remote-gpu";
+  const baseUrl = fromAdvanced && baseUrlInput
+    ? baseUrlInput.value
+    : current.base_url || "http://127.0.0.1:8787";
+  const bearerTokenEnv = fromAdvanced && tokenInput
+    ? tokenInput.value
+    : current.bearer_token_env || "OMNICREATOR_COMPUTE_TOKEN";
+
+  gpuWorkbenchState.provider = await call("connect_compute_provider", {
+    providerId: providerId,
+    baseUrl: baseUrl,
+    bearerTokenEnv: bearerTokenEnv || null,
+  });
+  showToast("Compute provider connected and capabilities discovered.");
+  if (gpuWorkbenchState.selectedProjectIds.size) {
+    await prepareGpuWorkbench(readOnly);
+  } else {
+    renderGpuWorkbench(gpuWorkbenchState.review, readOnly);
+  }
+}
+
+function bindProviderControls(readOnly) {
+  const connect = document.getElementById("connect-gpu-provider");
+  if (connect) {
+    connect.onclick = function () { connectGpuProvider(readOnly, false); };
+  }
+  const advancedConnect = document.getElementById("connect-gpu-provider-advanced");
+  if (advancedConnect) {
+    advancedConnect.onclick = function () { connectGpuProvider(readOnly, true); };
+  }
+  const disconnect = document.getElementById("disconnect-gpu-provider");
+  if (disconnect) {
+    disconnect.onclick = async function () {
+      gpuWorkbenchState.provider = await call("disconnect_compute_provider");
+      stopBurstSync();
+      if (gpuWorkbenchState.selectedProjectIds.size) {
+        await prepareGpuWorkbench(readOnly);
+      } else {
+        renderGpuWorkbench(gpuWorkbenchState.review, readOnly);
+      }
+    };
+  }
+}
+
+function stopBurstSync() {
+  if (gpuWorkbenchState.syncTimer) {
+    clearInterval(gpuWorkbenchState.syncTimer);
+    gpuWorkbenchState.syncTimer = null;
+  }
+}
+
+async function syncBurstOnce(readOnly) {
+  const projectIds = Array.from(gpuWorkbenchState.selectedProjectIds).sort();
+  if (!projectIds.length || !providerReady()) {
+    stopBurstSync();
+    return;
+  }
+  try {
+    const synced = await call("sync_compute_burst", { projectIds: projectIds });
+    gpuWorkbenchState.provider = synced.provider;
+    if (gpuWorkbenchState.review) {
+      gpuWorkbenchState.review.queues = synced.queues;
+      renderGpuWorkbench(gpuWorkbenchState.review, readOnly);
+    }
+    if (!(synced.queues.running || []).length) {
+      stopBurstSync();
+    }
+  } catch (_error) {
+    stopBurstSync();
+  }
+}
+
+function startBurstSync(readOnly) {
+  stopBurstSync();
+  gpuWorkbenchState.syncTimer = setInterval(function () {
+    syncBurstOnce(readOnly);
+  }, 2500);
 }
 
 function blockedJobMarkup(job) {
@@ -451,11 +599,13 @@ function renderGpuWorkbench(review, readOnly) {
     panel.innerHTML =
       '<div class="workbench-empty"><p class="eyebrow">GPU WORKBENCH</p>' +
       '<h3>Prepare expensive work before opening GPU time.</h3>' +
-      '<p class="muted">Select one or more projects, then Prepare GPU Batch. Canonical jobs and attempts remain in SQLite; provider runtime data is only a temporary review input.</p>' +
-      '<div class="notice subtle">No batch has been reviewed yet. If a compute provider adapter is not connected, the Advanced section can accept its provider-neutral runtime snapshot without storing secrets in the Data Root.</div>' +
+      '<p class="muted">Select one or more projects, prepare the batch locally, then connect compute only when the reviewed queue is worth spending GPU time on.</p>' +
+      providerCardMarkup(readOnly) +
+      '<div class="notice subtle">No batch has been reviewed yet. Preparation/spec context stays provider-neutral; endpoint credentials remain machine-local through environment variables.</div>' +
       advancedGpuDetails(null) +
       "</div>";
     bindGpuWorkbenchAdvanced(readOnly);
+    bindProviderControls(readOnly);
     return;
   }
 
@@ -508,6 +658,13 @@ function renderGpuWorkbench(review, readOnly) {
   const blocked = batch.blocked_jobs.length
     ? batch.blocked_jobs.map(blockedJobMarkup).join("")
     : '<div class="confidence">No blocked jobs in the reviewed batch.</div>';
+  const specsReady = executionSpecsReady(review);
+  const canStart = review.startable && providerReady() && specsReady && !readOnly;
+  const launchNotice = !providerReady()
+    ? '<div class="uncertainty">Connect the reviewed compute provider before Burst Mode.</div>'
+    : !specsReady
+      ? '<div class="uncertainty">Execution specs are incomplete. Ready jobs require one immutable provider-neutral operation/payload spec each.</div>'
+      : "";
 
   panel.innerHTML =
     '<div class="workbench-head"><div><p class="eyebrow">GPU WORKBENCH</p><h3>Reviewed batch</h3></div>' +
@@ -537,6 +694,8 @@ function renderGpuWorkbench(review, readOnly) {
     escapeHtml(review.burst.devices.length) +
     " independent device(s), no VRAM pooling</div></div></div>" +
     uncertainty +
+    providerCardMarkup(readOnly) +
+    launchNotice +
     '<div class="workbench-section"><div class="section-heading"><h4>Preflight</h4><span>Actionable blockers</span></div>' +
     blocked +
     "</div>" +
@@ -551,11 +710,12 @@ function renderGpuWorkbench(review, readOnly) {
     "</div></div>" +
     '<div class="burst-bar"><div><strong>Burst Mode</strong><span>Non-interactive execution policy · error-aware retry · immediate verified local artifact commit.</span></div>' +
     '<button class="btn primary" id="start-gpu-burst"' +
-    (!review.startable || readOnly ? " disabled" : "") +
+    (canStart ? "" : " disabled") +
     ">Start Burst Mode</button></div>" +
     advancedGpuDetails(review);
 
   bindGpuWorkbenchAdvanced(readOnly);
+  bindProviderControls(readOnly);
 
   const budgetButton = document.getElementById("set-gpu-budget");
   if (budgetButton) {
@@ -579,16 +739,21 @@ function renderGpuWorkbench(review, readOnly) {
       const started = await call("start_gpu_burst", {
         input: {
           reviewed_batch: review.batch,
-          providers: gpuWorkbenchState.context.providers,
+          providers: [],
+          execution_specs: gpuWorkbenchState.context.execution_specs,
           expected_schedule_hash: review.burst.schedule_hash,
         },
       });
+      const dispatched = started.dispatch.dispatched.length;
+      const failures = started.dispatch.failures.length;
       showToast(
-        "Burst start gate passed. The reviewed schedule is unchanged and ready for the provider execution adapter.",
+        "Burst Mode dispatched " + dispatched + " job(s)" +
+        (failures ? "; " + failures + " entered canonical retry handling." : "."),
       );
       gpuWorkbenchState.review.queues = started.queues;
-      gpuWorkbenchState.review.burst = started.burst;
+      gpuWorkbenchState.review.burst = started.dispatch.burst;
       renderGpuWorkbench(gpuWorkbenchState.review, readOnly);
+      if ((started.queues.running || []).length) startBurstSync(readOnly);
     };
   }
 }
@@ -605,6 +770,7 @@ function bindGpuWorkbenchAdvanced(readOnly) {
         preparations: Array.isArray(parsed.preparations) ? parsed.preparations : [],
         providers: Array.isArray(parsed.providers) ? parsed.providers : [],
         running: Array.isArray(parsed.running) ? parsed.running : [],
+        execution_specs: Array.isArray(parsed.execution_specs) ? parsed.execution_specs : [],
       };
     } catch (_error) {
       showToast("Runtime context must be valid JSON.");
@@ -740,6 +906,7 @@ function renderWorkspace(snapshot) {
   };
   document.getElementById("change-root").onclick = renderFirstLaunch;
   renderGpuWorkbench(gpuWorkbenchState.review, workspace.read_only);
+  loadComputeProviderStatus(workspace.read_only);
   loadLlmGatewayPanel();
 }
 
