@@ -33,7 +33,7 @@ pub struct GeneratedImageApiExecutionAvailabilityV1 {
     pub credential: GeneratedImageCredentialAvailabilityV1,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GeneratedImageExecutionAvailabilityV1 {
     pub plugin_runtime_ready: bool,
     pub local_execution_ready: bool,
@@ -41,16 +41,6 @@ pub struct GeneratedImageExecutionAvailabilityV1 {
     pub compute_provider: Option<GpuQueueEligibilityV1>,
 }
 
-impl Default for GeneratedImageExecutionAvailabilityV1 {
-    fn default() -> Self {
-        Self {
-            plugin_runtime_ready: false,
-            local_execution_ready: false,
-            api: None,
-            compute_provider: None,
-        }
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GeneratedImageExecutionPolicyV1 {
