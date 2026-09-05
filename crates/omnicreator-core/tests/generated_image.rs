@@ -13,9 +13,9 @@ use omnicreator_core::{
     ComputeProviderSchedulingSnapshotV1, ComputeProviderSessionIdentityV1,
     ComputeProviderSessionV1, GeneratedImageExecutionContextV1, GeneratedImageExecutionOptionsV1,
     GeneratedImagePreparationV1, GeneratedImageRequestV1, GeneratedImageResolutionV1,
-    GeneratedImageStyleV1, GpuQueueEligibilityStatusV1,
-    GpuReadinessFactsV1, LogicalUri, PluginProcessOptions, SceneIntentV1, StateStore, StepStatus,
-    Workspace, SCENE_INTENT_SCHEMA, SCENE_INTENT_SCHEMA_VERSION,
+    GeneratedImageStyleV1, GpuQueueEligibilityStatusV1, GpuReadinessFactsV1, LogicalUri,
+    PluginProcessOptions, SceneIntentV1, StateStore, StepStatus, Workspace, SCENE_INTENT_SCHEMA,
+    SCENE_INTENT_SCHEMA_VERSION,
 };
 
 fn plugin_root() -> PathBuf {
@@ -344,7 +344,6 @@ fn generated_image_resource_declaration_is_phase7_scheduler_compatible() {
     assert_eq!(decision.selection.unwrap().device_id, "gpu0");
 }
 
-
 fn api_request() -> GeneratedImageRequestV1 {
     GeneratedImageRequestV1::from_scene_v1(
         scene(),
@@ -457,10 +456,7 @@ fn spawn_mock_api(
         stream.write_all(response.as_bytes()).unwrap();
         stream.flush().unwrap();
     });
-    (
-        format!("http://{address}/v1/images/generations"),
-        handle,
-    )
+    (format!("http://{address}/v1/images/generations"), handle)
 }
 
 fn assert_tree_does_not_contain(root: &Path, needle: &str) {
@@ -501,7 +497,9 @@ fn api_missing_credential_blocks_before_attempt_and_http_execution() {
     let temp = tempfile::tempdir().unwrap();
     let workspace = Workspace::create(temp.path().join("data")).unwrap();
     let mut state = StateStore::open(workspace.sqlite_path()).unwrap();
-    let project = state.create_project("Generated Image API Missing Credential").unwrap();
+    let project = state
+        .create_project("Generated Image API Missing Credential")
+        .unwrap();
     let plugin = api_plugin();
     let preparation = api_preparation();
     let job = state
@@ -534,11 +532,15 @@ fn api_missing_credential_blocks_before_attempt_and_http_execution() {
 
     assert!(error.to_string().contains("ApiCredentialMissing"));
     assert!(state.list_attempts(&job.job_id).unwrap().is_empty());
-    assert_eq!(state.get_job(&job.job_id).unwrap().status, StepStatus::Ready);
+    assert_eq!(
+        state.get_job(&job.job_id).unwrap().status,
+        StepStatus::Ready
+    );
 }
 
 #[test]
-fn api_generated_image_executes_through_process_and_core_promotes_verified_artifact_without_secret_leak() {
+fn api_generated_image_executes_through_process_and_core_promotes_verified_artifact_without_secret_leak(
+) {
     const SECRET_ENV: &str = "OMNICREATOR_P2B_TEST_API_KEY_CORE";
     const SECRET: &str = "OMNICREATOR_P2B_SECRET_SENTINEL";
     const PNG_1X1_B64: &str =
@@ -550,12 +552,7 @@ fn api_generated_image_executes_through_process_and_core_promotes_verified_artif
         "request_id": "provider-request-core-1"
     })
     .to_string();
-    let (endpoint, server) = spawn_mock_api(
-        "200 OK",
-        body,
-        Some(format!("Bearer {SECRET}")),
-        None,
-    );
+    let (endpoint, server) = spawn_mock_api("200 OK", body, Some(format!("Bearer {SECRET}")), None);
 
     let temp = tempfile::tempdir().unwrap();
     let workspace = Workspace::create(temp.path().join("data")).unwrap();
@@ -594,7 +591,10 @@ fn api_generated_image_executes_through_process_and_core_promotes_verified_artif
     assert_eq!(persisted.status, StepStatus::Succeeded);
     assert_eq!(state.list_attempts(&job.job_id).unwrap().len(), 1);
     assert!(artifact_store.verify_artifact(&execution.artifact).unwrap());
-    assert_eq!(execution.artifact.metadata["provider"], "generated-image-api");
+    assert_eq!(
+        execution.artifact.metadata["provider"],
+        "generated-image-api"
+    );
     assert_eq!(execution.artifact.metadata["model"]["id"], "fixture-image");
     assert_eq!(
         execution.artifact.metadata["provenance"]["execution_target"],
@@ -665,7 +665,10 @@ fn retryable_api_error_appends_attempt_then_same_logical_job_can_succeed() {
     let attempts = state.list_attempts(&job.job_id).unwrap();
     assert_eq!(attempts.len(), 1);
     assert_eq!(attempts[0].status, StepStatus::Retryable);
-    assert_eq!(state.get_job(&job.job_id).unwrap().status, StepStatus::Retryable);
+    assert_eq!(
+        state.get_job(&job.job_id).unwrap().status,
+        StepStatus::Retryable
+    );
 
     let success_body = serde_json::json!({
         "data": [{"b64_json": PNG_1X1_B64}],
@@ -702,7 +705,11 @@ fn retryable_api_error_appends_attempt_then_same_logical_job_can_succeed() {
     assert_eq!(attempts[0].job_id, job.job_id);
     assert_eq!(attempts[1].job_id, job.job_id);
     assert_eq!(
-        state.get_job(&job.job_id).unwrap().selected_attempt.as_deref(),
+        state
+            .get_job(&job.job_id)
+            .unwrap()
+            .selected_attempt
+            .as_deref(),
         Some(execution.attempt_id.as_str())
     );
 }
