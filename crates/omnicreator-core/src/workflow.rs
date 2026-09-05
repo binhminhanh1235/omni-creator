@@ -84,6 +84,7 @@ impl FailureDisposition {
             | "QUOTA_TEMPORARY"
             | "PROVIDER_UNAVAILABLE"
             | "LOCAL_RUNTIME_CONTEXT_ERROR"
+            | "LOCAL_EXPORT_ERROR"
             | "LOCAL_RESTART_PENDING_RECONCILIATION" => Self::Retryable,
             _ => Self::Fatal,
         }
