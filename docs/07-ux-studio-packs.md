@@ -376,3 +376,80 @@ The panel is intentionally a controller over core export contracts. It does not 
 After restart, the panel reconstructs export history from SQLite and can reload the latest verified portable `production-pack.json` artifact. A failed export stays visibly retryable; retry preserves the previous Attempt. In read-only workspace mode, history remains inspectable while export/regeneration is disabled.
 
 Default diagnostics do not expose machine-local absolute paths. Missing media is described through portable artifact identity and an action to restore/relink the Data Root or source before regenerating.
+
+
+## Phase 10 Studio Pack v1 contract
+
+Phase 10 P0 freezes a portable core contract with:
+
+- `schema: omnicreator.studio-pack`
+- `schema_version: 1`
+- a portable pack `id` and display `name`
+- optional single-parent `extends`
+- explicit overrides for automation level, semantic routes, preset IDs and quality thresholds
+- explicit remove sets for inherited route/preset/quality keys
+
+A route is expressed through the existing plugin abstraction rather than provider API fields:
+
+```yaml
+schema: omnicreator.studio-pack
+schema_version: 1
+id: christian-cinematic
+name: Christian Cinematic
+
+overrides:
+  automation_level: BALANCED
+  routes:
+    visual.literal:
+      targets:
+        - plugin_type: visual
+          capability: local_asset
+        - plugin_type: visual
+          capability: stock_video
+        - plugin_type: visual
+          capability: generated_image
+    voice:
+      targets:
+        - plugin_type: voice
+          capability: tts
+          plugin_id: omnivoice
+          preset: warm-narrator
+  presets:
+    thumbnail: cinematic
+  quality_thresholds:
+    visual: 80
+```
+
+The ordered target list is the fallback order. `plugin_id` is optional: omitting it means later capability resolution may choose any compatible installed plugin. Provider endpoints, model IDs, credentials, secret values and absolute machine paths are not part of this contract.
+
+### Inheritance semantics
+
+Resolution walks the parent chain from root to selected child.
+
+For each child:
+
+1. requested removals delete inherited keys
+2. route/preset/quality entries with the same key replace the inherited entry
+3. a provided automation level replaces the inherited level
+4. omitted fields inherit unchanged
+
+The default automation level is `BALANCED`. Effective configuration and lineage serialize deterministically.
+
+Cycles, missing parents, duplicate pack IDs, duplicate route targets, conflicting replace/remove operations and malformed portable identifiers are invalid.
+
+### Compatibility behavior
+
+Studio Pack v1 is intentionally strict at the structural boundary:
+
+- missing optional v1 fields use defaults so older/minimal v1 files remain readable
+- unknown fields are rejected rather than silently becoming an unreviewed provider/secret escape hatch
+- unknown schema names and unsupported schema versions are rejected explicitly
+- changing required fields or semantics requires a new schema version
+
+This strictness applies to the portable Studio Pack contract. Plugin-specific low-level settings remain owned by the existing plugin settings/configuration layer and Advanced UX.
+
+### Capability availability
+
+A Studio Pack definition does not make a plugin available.
+
+In particular, `Christian Stick Explainer` must remain unavailable/blocked until a compatible stick-figure visual capability/plugin is actually installed and healthy. Phase 10 must not assume Phase 11 already exists.
