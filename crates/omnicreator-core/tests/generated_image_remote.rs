@@ -416,7 +416,9 @@ fn generated_image_worker_loss_requeues_same_logical_job_and_retry_appends_attem
     assert_eq!(retry_snapshot.retryable[0].job.job_id, job.job_id);
     assert_eq!(retry_snapshot.retryable[0].attempts.len(), 1);
     assert_eq!(
-        retry_snapshot.retryable[0].attempts[0].error_code.as_deref(),
+        retry_snapshot.retryable[0].attempts[0]
+            .error_code
+            .as_deref(),
         Some("WORKER_LOST")
     );
 
@@ -448,7 +450,9 @@ fn generated_image_worker_loss_requeues_same_logical_job_and_retry_appends_attem
     assert_eq!(resumed_snapshot.running[0].job.job_id, job.job_id);
     assert_eq!(resumed_snapshot.running[0].attempts.len(), 2);
     assert_eq!(
-        resumed_snapshot.running[0].attempts[0].error_code.as_deref(),
+        resumed_snapshot.running[0].attempts[0]
+            .error_code
+            .as_deref(),
         Some("WORKER_LOST")
     );
     assert_eq!(
