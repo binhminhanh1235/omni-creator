@@ -97,12 +97,6 @@ impl ArtifactStore {
         }
 
         let (sha256, size_bytes) = sha256_file(&temp)?;
-        if sha256 != expected_sha256 {
-            let _ = fs::remove_file(&temp);
-            return Err(Error::ArtifactHashMismatch(
-                promotion.target_uri.to_string(),
-            ));
-        }
         if let Err(error) = fs::rename(&temp, &destination) {
             let _ = fs::remove_file(&temp);
             return Err(error.into());
@@ -135,7 +129,6 @@ impl ArtifactStore {
         job_id: &str,
         workspace: &PluginJobWorkspace,
         promotion: PluginOutputPromotion,
-        expected_sha256: &str,
     ) -> Result<Artifact> {
         let verified = workspace.verify_output_file(&promotion.relative_output)?;
         self.promote_job_output(
@@ -155,6 +148,7 @@ impl ArtifactStore {
         job_id: &str,
         workspace: &PluginJobWorkspace,
         promotion: PluginOutputPromotion,
+        expected_sha256: &str,
     ) -> Result<Artifact> {
         let verified = workspace.verify_output_file(&promotion.relative_output)?;
         let source = verified.path();
@@ -217,6 +211,12 @@ impl ArtifactStore {
         }
 
         let (sha256, size_bytes) = sha256_file(&temp)?;
+        if sha256 != expected_sha256 {
+            let _ = fs::remove_file(&temp);
+            return Err(Error::ArtifactHashMismatch(
+                promotion.target_uri.to_string(),
+            ));
+        }
         if let Err(error) = fs::rename(&temp, &destination) {
             let _ = fs::remove_file(&temp);
             return Err(error.into());
