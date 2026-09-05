@@ -137,7 +137,8 @@ Success:
 - first image provider(s)
 - fallback from stock to generated still
 - thumbnail background generation
-- Kaggle/API routing
+- provider-neutral local/API/ComputeProvider execution target routing
+- Kaggle/API routing through plugin/ComputeProvider adapters
 - prompt preflight
 - artifact provenance
 
