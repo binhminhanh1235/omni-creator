@@ -152,6 +152,16 @@ This document records decisions so later development does not accidentally reint
 
 **Reason:** The Workbench needs a real connect/dispatch/journal/artifact path without putting Kaggle-specific fields in core. Endpoint configuration is machine-local, credentials are referenced by environment-variable name, and SQLite remains canonical.
 
+## ADR-026: Studio Packs compose capabilities, not provider internals
+
+**Decision:** Portable Studio Pack contracts select semantic routes, plugin capability/type requirements, optional plugin IDs, preset IDs, automation level and quality policy. Provider endpoints, model-specific request fields, plaintext credentials and machine paths remain outside the Studio Pack core contract.
+
+**Reason:** Studio Packs are the user-facing composition layer, not a second plugin registry or workflow engine. Keeping their durable contract capability-oriented preserves plugin replaceability, Data Root portability and existing ownership boundaries.
+
+Inheritance uses one parent and deterministic replace/remove overrides. Missing optional v1 fields use defaults, while unknown v1 fields and unsupported versions are rejected explicitly so arbitrary provider/secret blobs cannot silently enter portable state.
+
+Pack availability is resolved against the real PluginRegistry/capability state. A definition such as Christian Stick Explainer stays unavailable until its required stick-figure capability/plugin exists.
+
 ## Non-goals for MVP
 
 OmniCreator is not:

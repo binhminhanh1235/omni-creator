@@ -175,6 +175,15 @@ Features:
 - Review Center
 - project Kanban board
 
+Implementation slices:
+
+- P0 — versioned portable Studio Pack contract, deterministic inheritance/override resolution and compatibility/portability validation
+- P1 — capability-aware catalog plus initial packs that only become usable when their required plugin capabilities exist
+- P2 — Basic / Customize / Advanced UX, automation controls and Review Center over canonical state
+- P3 — project Kanban integration and final restart/resume/read-only/portability hardening
+
+`Christian Stick Explainer` is capability-gated. Its pack definition must not imply that a Stick Figure plugin exists before Phase 11.
+
 ## Phase 11 - Stick Figure Visual Plugin
 
 Use the existing SceneIntent contract.
