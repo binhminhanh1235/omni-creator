@@ -153,11 +153,11 @@ mod tests {
 
     use super::*;
     use crate::{
-        CacheLookupV1, ComputeDeviceV1, ComputeJobDispatchAckV1, ComputeJobDispatchV1,
+        ComputeDeviceV1, ComputeJobDispatchAckV1, ComputeJobDispatchV1,
         ComputeProviderCapabilitiesV1, ComputeProviderConnectionState, ComputeProviderExecution,
         ComputeProviderSessionIdentityV1, ComputeProviderSessionV1, ComputeRemoteJournalEntryV1,
         ComputeRequirements, GpuBatchPlanRequestV1, GpuJobPreparationV1, LogicalUri,
-        ResourceRequirement, Workspace,
+        ResourceRequirement, StepStatus, Workspace,
     };
 
     #[derive(Default)]
@@ -205,17 +205,18 @@ mod tests {
         let mut store = StateStore::open(workspace.sqlite_path()).unwrap();
         let project = store.create_project("Burst execution").unwrap();
 
+        store
+            .create_step(&project.id, "tts", "S01", StepStatus::Ready, Some("hash-1"))
+            .unwrap();
+        store
+            .create_step(&project.id, "tts", "S02", StepStatus::Ready, Some("hash-2"))
+            .unwrap();
         let first = store
             .create_job(&project.id, "tts", "S01", "hash-1")
             .unwrap();
         let second = store
             .create_job(&project.id, "tts", "S02", "hash-2")
             .unwrap();
-        for job in [&first, &second] {
-            store
-                .set_gpu_readiness_facts(&job.job_id, true, true, CacheLookupV1::Miss)
-                .unwrap();
-        }
 
         let provider = provider();
         let preparations = vec![preparation(&first.job_id), preparation(&second.job_id)];
@@ -291,7 +292,7 @@ mod tests {
                 last_healthy_heartbeat_at: Some(now),
                 capabilities: ComputeProviderCapabilitiesV1 {
                     schema: "omnicreator.compute-capabilities".to_owned(),
-                    version: 1,
+                    schema_version: 1,
                     provider_id: "remote-gpu".to_owned(),
                     devices: vec![
                         ComputeDeviceV1 {
