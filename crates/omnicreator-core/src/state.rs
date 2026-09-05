@@ -721,10 +721,7 @@ mod tests {
         let project = store
             .create_project_with_studio_pack("Pack Project", Some("christian-cinematic"))
             .unwrap();
-        assert_eq!(
-            project.studio_pack.as_deref(),
-            Some("christian-cinematic")
-        );
+        assert_eq!(project.studio_pack.as_deref(), Some("christian-cinematic"));
 
         let updated = store
             .update_project_studio_pack(&project.id, Some("night-devotional"))
