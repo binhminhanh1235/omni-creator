@@ -346,3 +346,12 @@ credential_ref: pexels/default
 It must not store plaintext API keys by default.
 
 When opening the workspace on another machine, missing credential references become setup requirements, not corrupted project state.
+
+
+## Derived interchange is not canonical IR
+
+Path-bearing editor interchange such as FCPXML is derived from the portable timeline contract at export time. `ProductionPackV1` continues to store only canonical artifact IDs and logical URIs for media references.
+
+The exporter may resolve an artifact to a current-machine physical path long enough to validate the file and serialize an escaped file URL, but that resolved path must not be persisted back into `ProductionPackV1`, Project IR, or SQLite canonical media state.
+
+Editor compatibility/version selection also belongs to the export profile/configuration layer. It is not a field in the portable production-pack contract.

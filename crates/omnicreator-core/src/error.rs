@@ -38,6 +38,26 @@ pub enum Error {
     InvalidArtifact(String),
     #[error("artifact not found: {0}")]
     ArtifactNotFound(String),
+    #[error(
+        "artifact {artifact_id} belongs to project {actual_project:?}, expected {expected_project}"
+    )]
+    ExportArtifactProjectMismatch {
+        artifact_id: String,
+        expected_project: String,
+        actual_project: Option<String>,
+    },
+    #[error(
+        "artifact {artifact_id} logical URI mismatch: expected {expected_uri}, found {actual_uri}"
+    )]
+    ExportArtifactUriMismatch {
+        artifact_id: String,
+        expected_uri: String,
+        actual_uri: String,
+    },
+    #[error("artifact {artifact_id} physical file is missing at export boundary: {path}")]
+    ExportArtifactFileMissing { artifact_id: String, path: PathBuf },
+    #[error("export path must be absolute: {0}")]
+    InvalidExportPath(PathBuf),
     #[error("project not found: {0}")]
     ProjectNotFound(String),
     #[error("job not found: {0}")]
