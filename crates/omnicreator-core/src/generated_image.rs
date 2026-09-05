@@ -497,18 +497,10 @@ impl GeneratedImageExecutionContextV1 {
     }
 }
 
+#[derive(Default)]
 pub struct GeneratedImageExecutionOptionsV1 {
     pub context: GeneratedImageExecutionContextV1,
     pub process: PluginProcessOptions,
-}
-
-impl Default for GeneratedImageExecutionOptionsV1 {
-    fn default() -> Self {
-        Self {
-            context: GeneratedImageExecutionContextV1::default(),
-            process: PluginProcessOptions::default(),
-        }
-    }
 }
 
 pub fn execute_generated_image_plugin_v1(
