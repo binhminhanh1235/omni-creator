@@ -314,4 +314,3 @@ A successful previous package lets the desktop reload the verified portable `pro
 Missing-source diagnostics expose portable identity: artifact ID plus logical URI. Machine-specific physical paths used at the export boundary are deliberately not serialized into the desktop diagnostic view. The user can restore/relink the Data Root or source artifact and regenerate. A Data Root copy/rebind still changes the path-bearing execution variant, so regenerated FCPXML resolves the new root and cannot reuse the stale old-root variant.
 
 The desktop may show the logical package location and cache-hit state. It does not add transcoding, preview rendering, proxy generation, final rendering or Resolve scripting automation.
-\n
