@@ -248,13 +248,15 @@ pub struct StudioJobReviewSnapshotV1 {
     pub attempts: Vec<Attempt>,
 }
 
+pub type StudioReviewProjectSnapshotV1 = (
+    Project,
+    Vec<StudioJobReviewSnapshotV1>,
+    Vec<WorkflowStep>,
+    Option<StudioPackAvailabilityV1>,
+);
+
 pub fn build_studio_review_center_v1(
-    projects: &[(
-        Project,
-        Vec<StudioJobReviewSnapshotV1>,
-        Vec<WorkflowStep>,
-        Option<StudioPackAvailabilityV1>,
-    )],
+    projects: &[StudioReviewProjectSnapshotV1],
 ) -> StudioReviewCenterV1 {
     let mut items = Vec::new();
     for (project, jobs, steps, availability) in projects {
