@@ -232,6 +232,7 @@ fn below_threshold_stock_fallback_is_persisted_by_generated_core_path() {
                 routing: Some(routing),
             },
             process: PluginProcessOptions::default(),
+            runtime_plugin_settings: BTreeMap::new(),
         },
     )
     .unwrap();
@@ -295,6 +296,7 @@ fn thumbnail_background_uses_same_generated_job_attempt_artifact_model() {
                 routing: Some(routing),
             },
             process: PluginProcessOptions::default(),
+            runtime_plugin_settings: BTreeMap::new(),
         },
     )
     .unwrap();
