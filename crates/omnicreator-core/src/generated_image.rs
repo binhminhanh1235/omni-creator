@@ -7,8 +7,8 @@ use crate::{
     artifact_store::PluginOutputPromotion, deterministic_input_hash, fs_util::sha256_file,
     Artifact, ArtifactStore, ComputeRequirements, DiscoveredPlugin, Error, GpuJobPreparationV1,
     LogicalUri, PluginJobWorkspace, PluginProcess, PluginProcessOptions, PluginResponse,
-    ResourceRequirement, Result,
-    SceneIntentV1, StateStore, VisualRouteV1, VisualRoutingDecisionV1, VisualUseCaseV1,
+    ResourceRequirement, Result, SceneIntentV1, StateStore, VisualRouteV1, VisualRoutingDecisionV1,
+    VisualUseCaseV1,
 };
 
 pub const GENERATED_IMAGE_REQUEST_SCHEMA_V1: &str = "omnicreator.generated-image-request";
