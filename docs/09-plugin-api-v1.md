@@ -233,6 +233,18 @@ The plugin never promotes this file itself. Core verifies that the file is a reg
 
 Generated-image plugins that can use Phase 7 GPU batching declare the existing `resources` object in their manifest, including a provider-neutral `model_group`. No image-specific scheduler or Kaggle-specific field is introduced.
 
+### Generated-image execution target routing
+
+Phase 8 P2A keeps execution routing outside `SceneIntentV1` and outside the frozen Plugin API v1 envelope. Core resolves one provider-neutral target:
+
+- `local_plugin` for an installed process-isolated plugin with a ready local runtime/configuration,
+- `api` for a plugin that additively advertises the `api_execution` capability, has explicit network permission, and whose machine-local API configuration/credential is ready,
+- `compute_provider` only when GPU execution was explicitly requested and the existing Phase 5–7 `GpuQueueEligibilityV1` result is `GPU_READY` with a canonical device selection.
+
+The target resolver consumes readiness facts, not secret values. API credential readiness is represented only as `not_required`, `available`, or `missing`; secret material remains outside portable state. Existing generated-image plugins do not need to add `api_execution` and continue to resolve to local execution without a manifest/schema version change.
+
+A GPU request does not silently fall back to API/local execution when canonical ComputeProvider readiness is blocked. The caller must resolve the blocking GPU preflight/reconciliation condition or explicitly prepare a non-GPU execution request. This prevents expensive work from starting on an unintended target and preserves the reviewed Phase 7 scheduling decision.
+
 ## Resource declarations
 
 Plugins should expose resource requirements.
