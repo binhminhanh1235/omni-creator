@@ -3,9 +3,9 @@ use rusqlite::{params, types::Type, OptionalExtension};
 use uuid::Uuid;
 
 use crate::{
-    state::{job_from_row, parse_step_status}, Artifact, Attempt, Error, FailureDisposition,
-    InvalidationImpact, Job, ProjectDisplayStatus, ReconciliationSummary, Result, StateStore,
-    StepStatus, WorkflowStep,
+    state::{job_from_row, parse_step_status},
+    Artifact, Attempt, Error, FailureDisposition, InvalidationImpact, Job, ProjectDisplayStatus,
+    ReconciliationSummary, Result, StateStore, StepStatus, WorkflowStep,
 };
 
 impl StepStatus {
