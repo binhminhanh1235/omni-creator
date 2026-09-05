@@ -63,20 +63,14 @@ impl ProductionPackageLayoutV1 {
         let slug = sanitize_filename_v1(&production_pack.title);
         let stable_project_folder = format!("{slug}-{}", &semantic_hash[..12]);
         let export_variant = execution_hash[..12].to_owned();
-        let base = format!(
-            "production/{stable_project_folder}/exports/{export_variant}"
-        );
+        let base = format!("production/{stable_project_folder}/exports/{export_variant}");
 
         Ok(Self {
             version: PRODUCTION_PACKAGE_LAYOUT_VERSION_V1,
             stable_project_folder,
             export_variant,
-            srt_uri: LogicalUri::parse(&format!(
-                "project://{base}/timeline/subtitles.srt"
-            ))?,
-            fcpxml_uri: LogicalUri::parse(&format!(
-                "project://{base}/timeline/edit.fcpxml"
-            ))?,
+            srt_uri: LogicalUri::parse(&format!("project://{base}/timeline/subtitles.srt"))?,
+            fcpxml_uri: LogicalUri::parse(&format!("project://{base}/timeline/edit.fcpxml"))?,
             source_report_uri: LogicalUri::parse(&format!(
                 "project://{base}/reports/asset-sources.json"
             ))?,
@@ -231,8 +225,11 @@ impl ProductionPackageExporterV1 {
             semantic_hash.as_bytes(),
             binding_fingerprint.as_bytes(),
         ]);
-        let layout =
-            ProductionPackageLayoutV1::for_export_v1(&normalized_pack, &semantic_hash, &execution_hash)?;
+        let layout = ProductionPackageLayoutV1::for_export_v1(
+            &normalized_pack,
+            &semantic_hash,
+            &execution_hash,
+        )?;
 
         Ok(PreparedProductionExportV1 {
             normalized_pack,
@@ -468,9 +465,7 @@ fn portable_source_metadata_v1(metadata: &Value) -> Result<BTreeMap<String, Valu
 
 fn canonicalize_json_v1(value: &Value) -> Value {
     match value {
-        Value::Array(values) => {
-            Value::Array(values.iter().map(canonicalize_json_v1).collect())
-        }
+        Value::Array(values) => Value::Array(values.iter().map(canonicalize_json_v1).collect()),
         Value::Object(object) => {
             let ordered = object
                 .iter()
@@ -484,11 +479,9 @@ fn canonicalize_json_v1(value: &Value) -> Value {
 
 fn ensure_json_has_no_absolute_path_v1(value: &Value, label: &str) -> Result<()> {
     match value {
-        Value::String(value) if looks_like_absolute_path_v1(value) => {
-            Err(Error::InvalidContract(format!(
-                "{label} contains a machine-specific absolute path"
-            )))
-        }
+        Value::String(value) if looks_like_absolute_path_v1(value) => Err(Error::InvalidContract(
+            format!("{label} contains a machine-specific absolute path"),
+        )),
         Value::Array(values) => {
             for value in values {
                 ensure_json_has_no_absolute_path_v1(value, label)?;
@@ -522,10 +515,7 @@ fn deterministic_pretty_json_v1<T: Serialize>(value: &T) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
-fn cache_matches_layout_v1(
-    artifacts: &[Artifact],
-    layout: &ProductionPackageLayoutV1,
-) -> bool {
+fn cache_matches_layout_v1(artifacts: &[Artifact], layout: &ProductionPackageLayoutV1) -> bool {
     if artifacts.len() != 4 {
         return false;
     }
@@ -684,11 +674,8 @@ mod tests {
                 }
             }),
         );
-        let report = build_asset_source_report_v1(
-            &state,
-            &pack(&project.id, &artifact, "Report"),
-        )
-        .unwrap();
+        let report =
+            build_asset_source_report_v1(&state, &pack(&project.id, &artifact, "Report")).unwrap();
 
         assert_eq!(report.assets.len(), 1);
         assert_eq!(
@@ -766,9 +753,11 @@ mod tests {
             .iter()
             .find(|artifact| artifact.artifact_type == "subtitle")
             .unwrap();
-        assert!(fs::read_to_string(store.resolve_artifact_path(srt).unwrap())
-            .unwrap()
-            .contains("00:00:00,000 --> 00:00:02,000"));
+        assert!(
+            fs::read_to_string(store.resolve_artifact_path(srt).unwrap())
+                .unwrap()
+                .contains("00:00:00,000 --> 00:00:02,000")
+        );
 
         let second = exporter
             .export_v1(&mut state, &store, &production_pack)
@@ -800,9 +789,7 @@ mod tests {
 
         let mut changed_pack = pack(&project.id, &artifact, "Hash changed");
         changed_pack.subtitles[0].text = "Changed".to_owned();
-        let changed = exporter
-            .prepare_v1(&state, &store, &changed_pack)
-            .unwrap();
+        let changed = exporter.prepare_v1(&state, &store, &changed_pack).unwrap();
         assert_ne!(original.semantic_hash, changed.semantic_hash);
 
         state

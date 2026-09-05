@@ -433,7 +433,6 @@ impl StateStore {
             .map_err(Into::into)
     }
 
-
     pub fn find_cached_artifacts(&self, input_hash: &str) -> Result<Vec<Artifact>> {
         let producer_job: Option<String> = self
             .connection

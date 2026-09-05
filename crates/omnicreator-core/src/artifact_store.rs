@@ -656,7 +656,12 @@ mod tests {
         let project = state.create_project("Failed Export Project").unwrap();
         let input_hash = deterministic_input_hash(&[b"export", b"failure"]);
         let job = state
-            .create_job(&project.id, "export.production-pack", "package", &input_hash)
+            .create_job(
+                &project.id,
+                "export.production-pack",
+                "package",
+                &input_hash,
+            )
             .unwrap();
         let attempt = state.start_attempt(&job.job_id, Some("local")).unwrap();
 
