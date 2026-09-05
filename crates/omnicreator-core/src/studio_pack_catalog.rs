@@ -322,10 +322,10 @@ fn matching_plugin_ids_v1(
                 .capabilities
                 .iter()
                 .any(|capability| capability.trim() == target.capability);
-            let id_match = target
-                .plugin_id
-                .as_deref()
-                .is_none_or(|plugin_id| plugin_id == manifest.id);
+            let id_match = match target.plugin_id.as_deref() {
+                Some(plugin_id) => plugin_id == manifest.id,
+                None => true,
+            };
             type_match && capability_match && id_match
         })
         .map(|plugin| plugin.manifest.id.clone())
