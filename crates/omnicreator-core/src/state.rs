@@ -433,6 +433,35 @@ impl StateStore {
             .map_err(Into::into)
     }
 
+    pub fn find_cached_artifacts(&self, input_hash: &str) -> Result<Vec<Artifact>> {
+        let producer_job: Option<String> = self
+            .connection
+            .query_row(
+                "SELECT a.producer_job_id \
+                 FROM artifacts a \
+                 JOIN jobs j ON j.id=a.producer_job_id \
+                 WHERE a.input_hash=?1 AND j.status='SUCCEEDED' AND a.producer_job_id IS NOT NULL \
+                 ORDER BY a.created_at DESC,a.id DESC LIMIT 1",
+                [input_hash],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let Some(producer_job) = producer_job else {
+            return Ok(Vec::new());
+        };
+
+        let mut statement = self.connection.prepare(
+            "SELECT id,project_id,artifact_type,uri,sha256,size_bytes,producer_job_id,created_at,metadata_json,input_hash \
+             FROM artifacts \
+             WHERE producer_job_id=?1 AND input_hash=?2 \
+             ORDER BY uri,id",
+        )?;
+        let artifacts = statement
+            .query_map(params![producer_job, input_hash], artifact_from_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(artifacts)
+    }
+
     pub fn commit_job_success(&mut self, artifact: &Artifact) -> Result<()> {
         let job_id = artifact
             .producer_job

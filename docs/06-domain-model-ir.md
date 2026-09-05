@@ -355,3 +355,13 @@ Path-bearing editor interchange such as FCPXML is derived from the portable time
 The exporter may resolve an artifact to a current-machine physical path long enough to validate the file and serialize an escaped file URL, but that resolved path must not be persisted back into `ProductionPackV1`, Project IR, or SQLite canonical media state.
 
 Editor compatibility/version selection also belongs to the export profile/configuration layer. It is not a field in the portable production-pack contract.
+
+## Production package derived artifacts
+
+Phase 9 P2 keeps `ProductionPackV1` as the canonical portable timeline IR and adds only derived export artifacts.
+
+A production package contains deterministic SRT, FCPXML, a portable serialized ProductionPack snapshot and an asset-source report. These are ordinary canonical `Artifact` records produced by an export Job/Attempt; they do not become new media truth or duplicate the Asset model.
+
+The source report records canonical artifact facts (`artifact_id`, logical URI, artifact type and SHA256), stable timeline usage references, and only source/provenance metadata that already exists in `Artifact.metadata`. Missing optional provenance is valid. Machine-specific absolute paths are rejected from portable report/metadata serialization.
+
+The semantic export hash includes every portable input that changes these files, including the normalized ProductionPack, export/profile/layout versions, artifact IDs/logical URIs/hashes and relevant provenance metadata. The path-bearing FCPXML execution variant additionally uses a non-portable binding fingerprint at runtime so Data Root rebinding cannot reuse stale file URLs. The binding path itself is not persisted.

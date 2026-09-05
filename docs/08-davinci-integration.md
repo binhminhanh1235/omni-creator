@@ -236,3 +236,61 @@ P1 does not add:
 - Resolve scripting automation
 - a second relink database
 - editor-specific resolved paths in canonical IR
+
+## Phase 9 P2: deterministic production package boundary
+
+P2 packages the already-normalized `ProductionPackV1` into a predictable derived production folder without adding editor-specific durable state.
+
+The logical layout is versioned and deterministic:
+
+```text
+project://production/<safe-title>-<semantic-hash>/exports/<execution-variant>/
+  timeline/
+    edit.fcpxml
+    subtitles.srt
+  reports/
+    asset-sources.json
+  metadata/
+    production-pack.json
+```
+
+`<safe-title>` is Unicode-safe filename sanitization. The stable project folder is derived from the normalized production pack plus semantic export inputs. The export variant is an opaque deterministic hash that also includes the current Data Root binding fingerprint because FCPXML contains current-machine file URLs. It is not an absolute path and is not written into the portable ProductionPack metadata.
+
+This variant boundary preserves immutable historical artifacts. After a Data Root move or rebind, the portable semantic hash remains stable while the path-bearing execution variant changes, so cached FCPXML from the old binding cannot be returned. SRT, source metadata and the serialized ProductionPack remain byte-stable when their semantic inputs are unchanged.
+
+### Asset source report
+
+`asset-sources.json` is derived from canonical `Artifact` records. Each entry separates canonical facts from optional source metadata:
+
+- artifact ID
+- logical URI
+- artifact type
+- SHA256
+- stable timeline usage references
+- portable source/provider/provenance metadata already present in `Artifact.metadata`
+
+Known canonical metadata such as `source_provider`, `source_asset_id`, `selection_ref`, generated-image provider/model/settings and nested `provenance` is copied when present. Missing optional provenance does not fail packaging. The exporter does not invent attribution and rejects machine-specific absolute paths from portable report fields.
+
+### Export state and promotion
+
+Production package generation reuses canonical workflow state:
+
+```text
+normalized ProductionPack + export profile + artifact provenance
+  -> deterministic semantic hash
+  -> current-binding execution hash
+  -> Job
+  -> Attempt
+  -> stage all package components
+  -> render/verify SRT + FCPXML + JSON
+  -> ArtifactStore multi-output promotion
+  -> one SQLite transaction records all Artifacts and marks Attempt/Job SUCCEEDED
+```
+
+If generation or promotion fails, the Attempt is marked retryable with `LOCAL_EXPORT_ERROR`; the Job is never reported as successful. No export status database, media database or relink database is introduced.
+
+Verified cache reuse requires the complete four-artifact package from a SUCCEEDED producer job and re-verifies every physical artifact hash before returning a cache hit.
+
+### P2 non-goals
+
+P2 still does not add transcoding, proxy generation, preview rendering, NVENC/NVDEC orchestration, final rendering, Resolve scripting automation, Kafka, Redis, RabbitMQ or Kubernetes.

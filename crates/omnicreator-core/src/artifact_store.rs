@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeSet,
     fs,
     path::{Path, PathBuf},
 };
@@ -17,6 +18,23 @@ pub struct PluginOutputPromotion {
     pub target_uri: LogicalUri,
     pub artifact_type: String,
     pub metadata: serde_json::Value,
+}
+
+#[derive(Debug, Clone)]
+pub struct AttemptOutputPromotion {
+    pub source: PathBuf,
+    pub target_uri: LogicalUri,
+    pub artifact_type: String,
+    pub metadata: serde_json::Value,
+    pub expected_sha256: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AttemptPromotionRequest {
+    pub attempt_id: String,
+    pub job_id: String,
+    pub outputs: Vec<AttemptOutputPromotion>,
+    pub selected_output_index: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -151,96 +169,170 @@ impl ArtifactStore {
         expected_sha256: &str,
     ) -> Result<Artifact> {
         let verified = workspace.verify_output_file(&promotion.relative_output)?;
-        let source = verified.path();
-        if !source.is_file() {
-            return Err(Error::InvalidArtifact(format!(
-                "source file does not exist: {}",
-                source.display()
-            )));
-        }
+        let artifacts = self.promote_attempt_outputs(
+            state_store,
+            AttemptPromotionRequest {
+                attempt_id: attempt_id.to_owned(),
+                job_id: job_id.to_owned(),
+                outputs: vec![AttemptOutputPromotion {
+                    source: verified.path().to_path_buf(),
+                    target_uri: promotion.target_uri,
+                    artifact_type: promotion.artifact_type,
+                    metadata: promotion.metadata,
+                    expected_sha256: Some(expected_sha256.to_owned()),
+                }],
+                selected_output_index: 0,
+            },
+        )?;
+        artifacts.into_iter().next().ok_or_else(|| {
+            Error::InvalidArtifact("plugin attempt promotion produced no artifact".to_owned())
+        })
+    }
 
-        if promotion.artifact_type.trim().is_empty() {
+    pub fn promote_attempt_outputs(
+        &self,
+        state_store: &mut StateStore,
+        request: AttemptPromotionRequest,
+    ) -> Result<Vec<Artifact>> {
+        if request.outputs.is_empty() {
             return Err(Error::InvalidArtifact(
-                "artifact_type must not be empty".to_owned(),
+                "attempt promotion requires at least one output".to_owned(),
             ));
         }
-        if matches!(&promotion.target_uri, LogicalUri::Artifact(_)) {
+        if request.selected_output_index >= request.outputs.len() {
             return Err(Error::InvalidArtifact(
-                "artifact:// cannot be used as a physical promotion target".to_owned(),
+                "selected output index is outside the promotion output list".to_owned(),
             ));
         }
 
-        let job = state_store.get_job(job_id)?;
-        let attempt = state_store.get_attempt(attempt_id)?;
+        let job = state_store.get_job(&request.job_id)?;
+        let attempt = state_store.get_attempt(&request.attempt_id)?;
         if attempt.job_id != job.job_id {
             return Err(Error::InvalidArtifact(
                 "attempt does not belong to producer job".to_owned(),
             ));
         }
 
-        let project_context = match &promotion.target_uri {
-            LogicalUri::Project(_) => Some(job.project_id.as_str()),
-            _ => None,
-        };
-        let mut destination = self
-            .resolver
-            .resolve(&promotion.target_uri, project_context)?;
-        if destination.exists() {
-            return Err(Error::ArtifactTargetExists(destination));
-        }
+        let mut target_uris = BTreeSet::new();
+        let mut staged = Vec::with_capacity(request.outputs.len());
 
-        let parent = destination
-            .parent()
-            .ok_or_else(|| Error::InvalidArtifact("target has no parent directory".to_owned()))?;
-        fs::create_dir_all(parent)?;
-        destination = self
-            .resolver
-            .resolve(&promotion.target_uri, project_context)?;
-        if destination.exists() {
-            return Err(Error::ArtifactTargetExists(destination));
-        }
+        for output in request.outputs {
+            if !output.source.is_file() {
+                cleanup_staged_promotions(&staged, &[]);
+                return Err(Error::InvalidArtifact(format!(
+                    "source file does not exist: {}",
+                    output.source.display()
+                )));
+            }
+            if output.artifact_type.trim().is_empty() {
+                cleanup_staged_promotions(&staged, &[]);
+                return Err(Error::InvalidArtifact(
+                    "artifact_type must not be empty".to_owned(),
+                ));
+            }
+            if matches!(&output.target_uri, LogicalUri::Artifact(_)) {
+                cleanup_staged_promotions(&staged, &[]);
+                return Err(Error::InvalidArtifact(
+                    "artifact:// cannot be used as a physical promotion target".to_owned(),
+                ));
+            }
+            if !target_uris.insert(output.target_uri.to_string()) {
+                cleanup_staged_promotions(&staged, &[]);
+                return Err(Error::InvalidArtifact(
+                    "attempt promotion contains duplicate target URI".to_owned(),
+                ));
+            }
 
-        let parent = destination
-            .parent()
-            .ok_or_else(|| Error::InvalidArtifact("target has no parent directory".to_owned()))?;
-        let temp = parent.join(format!(".artifact-{}.tmp", Uuid::new_v4().simple()));
+            let project_context = match &output.target_uri {
+                LogicalUri::Project(_) => Some(job.project_id.as_str()),
+                _ => None,
+            };
+            let mut destination = self.resolver.resolve(&output.target_uri, project_context)?;
+            if destination.exists() {
+                cleanup_staged_promotions(&staged, &[]);
+                return Err(Error::ArtifactTargetExists(destination));
+            }
 
-        if let Err(error) = copy_and_sync(source, &temp) {
-            let _ = fs::remove_file(&temp);
-            return Err(error);
-        }
+            let parent = destination.parent().ok_or_else(|| {
+                Error::InvalidArtifact("target has no parent directory".to_owned())
+            })?;
+            fs::create_dir_all(parent)?;
+            destination = self.resolver.resolve(&output.target_uri, project_context)?;
+            if destination.exists() {
+                cleanup_staged_promotions(&staged, &[]);
+                return Err(Error::ArtifactTargetExists(destination));
+            }
 
-        let (sha256, size_bytes) = sha256_file(&temp)?;
-        if sha256 != expected_sha256 {
-            let _ = fs::remove_file(&temp);
-            return Err(Error::ArtifactHashMismatch(
-                promotion.target_uri.to_string(),
+            let parent = destination.parent().ok_or_else(|| {
+                Error::InvalidArtifact("target has no parent directory".to_owned())
+            })?;
+            let temp = parent.join(format!(".artifact-{}.tmp", Uuid::new_v4().simple()));
+            if let Err(error) = copy_and_sync(&output.source, &temp) {
+                let _ = fs::remove_file(&temp);
+                cleanup_staged_promotions(&staged, &[]);
+                return Err(error);
+            }
+
+            let (sha256, size_bytes) = match sha256_file(&temp) {
+                Ok(value) => value,
+                Err(error) => {
+                    let _ = fs::remove_file(&temp);
+                    cleanup_staged_promotions(&staged, &[]);
+                    return Err(error);
+                }
+            };
+            if output
+                .expected_sha256
+                .as_deref()
+                .is_some_and(|expected| sha256 != expected)
+            {
+                let _ = fs::remove_file(&temp);
+                cleanup_staged_promotions(&staged, &[]);
+                return Err(Error::ArtifactHashMismatch(output.target_uri.to_string()));
+            }
+
+            staged.push((
+                temp,
+                destination,
+                Artifact {
+                    artifact_id: format!("art_{}", Uuid::new_v4().simple()),
+                    project_id: Some(job.project_id.clone()),
+                    artifact_type: output.artifact_type,
+                    uri: output.target_uri,
+                    sha256,
+                    size_bytes,
+                    input_hash: Some(job.input_hash.clone()),
+                    producer_job: Some(job.job_id.clone()),
+                    created_at: Utc::now(),
+                    metadata: output.metadata,
+                },
             ));
         }
-        if let Err(error) = fs::rename(&temp, &destination) {
-            let _ = fs::remove_file(&temp);
-            return Err(error.into());
+
+        let mut promoted_destinations = Vec::with_capacity(staged.len());
+        for (temp, destination, _) in &staged {
+            if let Err(error) = fs::rename(temp, destination) {
+                cleanup_staged_promotions(&staged, &promoted_destinations);
+                return Err(error.into());
+            }
+            promoted_destinations.push(destination.clone());
         }
 
-        let artifact = Artifact {
-            artifact_id: format!("art_{}", Uuid::new_v4().simple()),
-            project_id: Some(job.project_id.clone()),
-            artifact_type: promotion.artifact_type,
-            uri: promotion.target_uri,
-            sha256,
-            size_bytes,
-            input_hash: Some(job.input_hash.clone()),
-            producer_job: Some(job.job_id.clone()),
-            created_at: Utc::now(),
-            metadata: promotion.metadata,
-        };
-
-        if let Err(error) = state_store.commit_attempt_artifact_success(attempt_id, &artifact) {
-            let _ = fs::remove_file(&destination);
+        let artifacts = staged
+            .iter()
+            .map(|(_, _, artifact)| artifact.clone())
+            .collect::<Vec<_>>();
+        let selected_artifact_id = artifacts[request.selected_output_index].artifact_id.clone();
+        if let Err(error) = state_store.commit_attempt_artifacts_success(
+            &request.attempt_id,
+            &artifacts,
+            &selected_artifact_id,
+        ) {
+            cleanup_staged_promotions(&staged, &promoted_destinations);
             return Err(error);
         }
 
-        Ok(artifact)
+        Ok(artifacts)
     }
 
     pub fn lookup_verified_cache(
@@ -281,6 +373,18 @@ impl ArtifactStore {
             _ => None,
         };
         self.resolver.resolve(&artifact.uri, project_context)
+    }
+}
+
+fn cleanup_staged_promotions(
+    staged: &[(PathBuf, PathBuf, Artifact)],
+    promoted_destinations: &[PathBuf],
+) {
+    for (temp, _, _) in staged {
+        let _ = fs::remove_file(temp);
+    }
+    for destination in promoted_destinations {
+        let _ = fs::remove_file(destination);
     }
 }
 
@@ -466,5 +570,132 @@ mod tests {
             artifacts.lookup_verified_cache(&state, &input_hash),
             Err(Error::ArtifactHashMismatch(_))
         ));
+    }
+    #[test]
+    fn local_attempt_promotion_commits_attempt_job_and_artifact_atomically() {
+        let temp = tempfile::tempdir().unwrap();
+        let workspace = Workspace::create(temp.path().join("data")).unwrap();
+        let mut state = StateStore::open(workspace.sqlite_path()).unwrap();
+        let project = state.create_project("Local Export Project").unwrap();
+        let input_hash = deterministic_input_hash(&[b"export", b"package"]);
+        let job = state
+            .create_job(
+                &project.id,
+                "export.production-pack",
+                "package",
+                &input_hash,
+            )
+            .unwrap();
+        let attempt = state.start_attempt(&job.job_id, Some("local")).unwrap();
+
+        let source = temp.path().join("production-pack.json");
+        fs::write(&source, br#"{"schema":"fixture"}"#).unwrap();
+
+        let artifacts = ArtifactStore::new(workspace.data_root()).unwrap();
+        let artifact = artifacts
+            .promote_attempt_outputs(
+                &mut state,
+                AttemptPromotionRequest {
+                    attempt_id: attempt.attempt_id.clone(),
+                    job_id: job.job_id.clone(),
+                    outputs: vec![AttemptOutputPromotion {
+                        source,
+                        target_uri: LogicalUri::parse(
+                            "project://production/test/metadata/production-pack.json",
+                        )
+                        .unwrap(),
+                        artifact_type: "production-pack-metadata".to_owned(),
+                        metadata: serde_json::json!({"portable": true}),
+                        expected_sha256: None,
+                    }],
+                    selected_output_index: 0,
+                },
+            )
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
+
+        assert!(artifacts.verify_artifact(&artifact).unwrap());
+        assert_eq!(
+            state.get_attempt(&attempt.attempt_id).unwrap().status,
+            StepStatus::Succeeded
+        );
+        let persisted_job = state.get_job(&job.job_id).unwrap();
+        assert_eq!(persisted_job.status, StepStatus::Succeeded);
+        assert_eq!(
+            persisted_job.selected_artifact.as_deref(),
+            Some(artifact.artifact_id.as_str())
+        );
+    }
+
+    #[test]
+    fn failed_multi_output_promotion_never_commits_false_success() {
+        let temp = tempfile::tempdir().unwrap();
+        let workspace = Workspace::create(temp.path().join("data")).unwrap();
+        let mut state = StateStore::open(workspace.sqlite_path()).unwrap();
+        let project = state.create_project("Failed Export Project").unwrap();
+        let input_hash = deterministic_input_hash(&[b"export", b"failure"]);
+        let job = state
+            .create_job(
+                &project.id,
+                "export.production-pack",
+                "package",
+                &input_hash,
+            )
+            .unwrap();
+        let attempt = state.start_attempt(&job.job_id, Some("local")).unwrap();
+
+        let first = temp.path().join("first.txt");
+        let second = temp.path().join("second.txt");
+        fs::write(&first, b"first").unwrap();
+        fs::write(&second, b"second").unwrap();
+
+        let artifacts = ArtifactStore::new(workspace.data_root()).unwrap();
+        let result = artifacts.promote_attempt_outputs(
+            &mut state,
+            AttemptPromotionRequest {
+                attempt_id: attempt.attempt_id.clone(),
+                job_id: job.job_id.clone(),
+                outputs: vec![
+                    AttemptOutputPromotion {
+                        source: first,
+                        target_uri: LogicalUri::parse(
+                            "project://production/test/timeline/subtitles.srt",
+                        )
+                        .unwrap(),
+                        artifact_type: "subtitle".to_owned(),
+                        metadata: serde_json::Value::Null,
+                        expected_sha256: None,
+                    },
+                    AttemptOutputPromotion {
+                        source: second,
+                        target_uri: LogicalUri::parse(
+                            "project://production/test/timeline/edit.fcpxml",
+                        )
+                        .unwrap(),
+                        artifact_type: "fcpxml".to_owned(),
+                        metadata: serde_json::Value::Null,
+                        expected_sha256: Some("not-the-real-hash".to_owned()),
+                    },
+                ],
+                selected_output_index: 0,
+            },
+        );
+
+        assert!(matches!(result, Err(Error::ArtifactHashMismatch(_))));
+        assert_eq!(
+            state.get_attempt(&attempt.attempt_id).unwrap().status,
+            StepStatus::Running
+        );
+        let persisted_job = state.get_job(&job.job_id).unwrap();
+        assert_eq!(persisted_job.status, StepStatus::Running);
+        assert!(persisted_job.selected_artifact.is_none());
+        assert!(!workspace
+            .data_root()
+            .join("projects")
+            .join(&project.id)
+            .join("production/test/timeline/subtitles.srt")
+            .exists());
     }
 }

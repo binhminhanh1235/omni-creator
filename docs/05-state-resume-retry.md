@@ -376,3 +376,21 @@ After binding to an existing Data Root, OmniCreator should reconstruct the same 
 - remote RUNNING jobs from a dead old session become reconcilable/retryable
 
 No completed job should be repeated solely because the physical machine changed.
+
+## Production package export attempts
+
+Phase 9 P2 uses the same `Job -> Attempt -> Artifact` state machine for local production-package export as plugin/GPU work.
+
+A production export Job is keyed by a deterministic execution input hash. One Attempt stages all required components before promotion. `ArtifactStore` can promote multiple verified outputs for the same Attempt, and `StateStore` records all component Artifacts plus the selected production-pack artifact in one SQLite transaction before marking the Attempt and Job `SUCCEEDED`.
+
+This preserves the core safety rule: partial output is not success.
+
+If local rendering, physical verification or promotion fails, the export Attempt transitions through `LOCAL_EXPORT_ERROR`, which is retryable. A restart still uses the normal RUNNING-to-RETRYABLE reconciliation path. There is no second export-state model.
+
+### Export cache and Data Root binding
+
+The portable semantic hash covers normalized `ProductionPackV1`, exporter/profile/layout versions, canonical artifact facts and the provenance fields that affect the source report. It excludes timestamps and random UUIDs.
+
+FCPXML is path-bearing, so package execution additionally incorporates an opaque hash of the current Data Root binding. The absolute path itself is never persisted in canonical state. Moving/rebinding the Data Root therefore invalidates the path-bearing package variant while leaving the portable semantic hash and canonical media references untouched.
+
+A cache hit is accepted only when the complete package belongs to a SUCCEEDED producer Job and every cached Artifact still passes physical hash verification.
