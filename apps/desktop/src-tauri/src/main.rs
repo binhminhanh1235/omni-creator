@@ -339,7 +339,6 @@ fn save_llmgateway_settings(
     llmgateway_status_for_app(&app)
 }
 
-
 #[tauri::command]
 fn compute_provider_status(
     app: AppHandle,
@@ -775,7 +774,6 @@ fn snapshot_from_active(state: &State<'_, DesktopState>) -> Result<AppSnapshot, 
     })
 }
 
-
 fn compute_provider_status_view_v1(
     config: HttpComputeProviderConfigV1,
     runtime: Option<&ComputeProviderRuntime<HttpComputeProvider>>,
@@ -800,7 +798,9 @@ fn compute_provider_status_view_v1(
             )
         }
         None => (
-            ComputeProviderConnectionState::Disconnected.as_str().to_owned(),
+            ComputeProviderConnectionState::Disconnected
+                .as_str()
+                .to_owned(),
             None,
             None,
             if config.bearer_token_env.is_some() && !credential_present {
@@ -838,8 +838,8 @@ fn load_compute_provider_config(app: &AppHandle) -> Result<HttpComputeProviderCo
     if !path.exists() {
         return Ok(default_compute_provider_config());
     }
-    let bytes = fs::read(&path)
-        .map_err(|error| format!("Cannot read compute provider config: {error}"))?;
+    let bytes =
+        fs::read(&path).map_err(|error| format!("Cannot read compute provider config: {error}"))?;
     let config: HttpComputeProviderConfigV1 = serde_json::from_slice(&bytes)
         .map_err(|error| format!("Invalid compute provider config JSON: {error}"))?;
     config.validate_v1().map_err(error_string)?;
