@@ -155,8 +155,8 @@ mod tests {
     use crate::{
         CacheLookupV1, ComputeDeviceV1, ComputeJobDispatchAckV1, ComputeJobDispatchV1,
         ComputeProviderCapabilitiesV1, ComputeProviderConnectionState, ComputeProviderExecution,
-        ComputeProviderSessionIdentityV1, ComputeProviderSessionV1, ComputeRequirements,
-        ComputeRemoteJournalEntryV1, GpuBatchPlanRequestV1, GpuJobPreparationV1, LogicalUri,
+        ComputeProviderSessionIdentityV1, ComputeProviderSessionV1, ComputeRemoteJournalEntryV1,
+        ComputeRequirements, GpuBatchPlanRequestV1, GpuJobPreparationV1, LogicalUri,
         ResourceRequirement, Workspace,
     };
 
@@ -213,12 +213,7 @@ mod tests {
             .unwrap();
         for job in [&first, &second] {
             store
-                .set_gpu_readiness_facts(
-                    &job.job_id,
-                    true,
-                    true,
-                    CacheLookupV1::Miss,
-                )
+                .set_gpu_readiness_facts(&job.job_id, true, true, CacheLookupV1::Miss)
                 .unwrap();
         }
 
@@ -277,8 +272,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(actual, expected);
         assert_ne!(
-            executor.dispatched[0].device_id,
-            executor.dispatched[1].device_id,
+            executor.dispatched[0].device_id, executor.dispatched[1].device_id,
             "two compatible jobs should occupy independent T4 devices"
         );
     }
