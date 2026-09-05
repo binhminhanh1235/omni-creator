@@ -1,9 +1,4 @@
-use std::{
-    env, fs,
-    io::copy,
-    path::Path,
-    time::Duration,
-};
+use std::{env, fs, io::copy, path::Path, time::Duration};
 
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
@@ -265,9 +260,7 @@ impl ComputeProviderExecution for HttpComputeProvider {
     }
 }
 
-fn decode_json_response<R>(
-    response: std::result::Result<ureq::Response, ureq::Error>,
-) -> Result<R>
+fn decode_json_response<R>(response: std::result::Result<ureq::Response, ureq::Error>) -> Result<R>
 where
     R: DeserializeOwned,
 {
