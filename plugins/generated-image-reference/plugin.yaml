@@ -1,0 +1,39 @@
+schema: omnicreator.plugin-manifest
+schema_version: 1
+id: generated-image-reference
+name: Generated Image Reference
+version: 1.0.0
+api_version: 1
+
+types:
+  - visual
+
+entrypoint:
+  command: python3
+  args:
+    - plugin.py
+
+capabilities:
+  - generated_still
+  - visual_generate
+  - deterministic_seed
+
+scene_types:
+  - literal
+  - emotional
+  - conceptual
+  - educational
+
+permissions:
+  filesystem:
+    - job-workspace
+  network: []
+
+settings: null
+
+resources:
+  gpu: optional
+  min_vram_mb: 1024
+  model_group: generated-image-reference-v1
+  parallelizable: true
+  cost_metric: megapixels

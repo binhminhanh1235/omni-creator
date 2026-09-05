@@ -178,6 +178,61 @@ Generated visual plugins receive:
 
 Output references one or more workspace files plus metadata.
 
+
+### Generated still additive v1 contract
+
+Phase 8 freezes generated still images as an additive use of the existing Plugin API v1 envelope:
+
+```json
+{
+  "api_version": 1,
+  "request_id": "req_123",
+  "method": "plugin.execute",
+  "params": {
+    "operation": "visual.generate",
+    "payload": {
+      "schema": "omnicreator.generated-image-request",
+      "version": 1,
+      "scene": {},
+      "prompt": "...",
+      "negative_prompt": "...",
+      "style": {"preset": "..."},
+      "resolution": {"width": 1280, "height": 720},
+      "aspect_ratio": "16:9",
+      "seed": 42,
+      "settings": {},
+      "prompt_sha256": "...",
+      "settings_fingerprint": "..."
+    }
+  }
+}
+```
+
+The `scene` member is the frozen provider-neutral `SceneIntentV1`. Provider IDs, model IDs, API endpoint fields and credentials must not be added to SceneIntent. Core resolves execution/provider/model choices outside SceneIntent and performs preflight before expensive execution.
+
+A successful generated-still result returns a workspace-relative output plus verifiable metadata:
+
+```json
+{
+  "relative_output": "generated/SC01.svg",
+  "mime_type": "image/svg+xml",
+  "width": 1280,
+  "height": 720,
+  "sha256": "...",
+  "model_id": "reference-svg",
+  "model_version": "1",
+  "seed": 42,
+  "prompt_sha256": "...",
+  "settings_fingerprint": "...",
+  "metadata": {},
+  "provenance": {}
+}
+```
+
+The plugin never promotes this file itself. Core verifies that the file is a regular file inside the granted output workspace, recomputes its hash, promotes it through ArtifactStore, and commits canonical job/attempt/artifact state. Durable provenance must not contain secret values or machine-specific absolute paths.
+
+Generated-image plugins that can use Phase 7 GPU batching declare the existing `resources` object in their manifest, including a provider-neutral `model_group`. No image-specific scheduler or Kaggle-specific field is introduced.
+
 ## Resource declarations
 
 Plugins should expose resource requirements.
