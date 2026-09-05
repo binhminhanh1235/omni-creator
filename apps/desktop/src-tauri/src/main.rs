@@ -13,13 +13,14 @@ use omnicreator_core::{
     GpuBatchBudgetOverviewV1, GpuBatchPlanRequestV1, GpuBatchPlanV1, GpuBurstDispatchSummaryV1,
     GpuBurstPlanV1, GpuJobPreparationV1, GpuWorkbenchQueueSnapshotV1, HandoffManifest,
     build_studio_pack_ux_view_v1, build_studio_review_center_v1,
-    initial_studio_pack_catalog_v1, scan_plugin_roots, HttpComputeProvider,
+    initial_studio_pack_catalog_v1, load_plugin_settings_ui, scan_plugin_roots, HttpComputeProvider,
     HttpComputeProviderConfigV1, LlmGatewayClient, LlmGatewayConfig, LlmGatewayModel,
     MachineBinding, PluginRegistry, PortableStudioPackCatalogV1, ProductionExportHistoryEntryV1,
     ProductionPackV1, ProductionPackageExportOutcomeV1, ProductionPackageExporterV1, Project,
     ProjectDisplayStatus, RemoteComputeJobSpecV1, RemoteReconciliationSummaryV1,
-    RuntimeWorkloadEstimateV1, StateStore, StudioJobReviewSnapshotV1, StudioPackAvailabilityStatusV1,
-    StudioPackOverridesV1, StudioPackRuntimeSnapshotV1, StudioPackUxViewV1, StudioPackV1,
+    PluginRuntimeReadinessV1, RuntimeWorkloadEstimateV1, StateStore, StudioJobReviewSnapshotV1,
+    StudioPackAvailabilityStatusV1, StudioPackOverridesV1, StudioPackRuntimeSnapshotV1,
+    StudioPackUxViewV1, StudioPackV1,
     StudioReviewCenterV1, Workspace, WorkspaceSession, STUDIO_PACK_SCHEMA_V1,
     STUDIO_PACK_VERSION_V1,
 };
@@ -373,7 +374,7 @@ fn create_project_from_studio_pack(
     validate_desktop_studio_pack_overrides_v1(&catalog, &pack_id, &overrides)?;
 
     let registry = studio_pack_plugin_registry_v1(&app);
-    let runtime = StudioPackRuntimeSnapshotV1::default();
+    let runtime = studio_pack_runtime_snapshot_v1(&registry);
     let selected_id = if overrides == StudioPackOverridesV1::default() {
         pack_id.clone()
     } else {
@@ -466,7 +467,7 @@ fn update_project_studio_pack(
     };
 
     let registry = studio_pack_plugin_registry_v1(&app);
-    let runtime = StudioPackRuntimeSnapshotV1::default();
+    let runtime = studio_pack_runtime_snapshot_v1(&registry);
     let availability = catalog
         .evaluate_availability_v1(&selected_id, &registry, &runtime)
         .map_err(error_string)?;
@@ -1062,6 +1063,47 @@ fn studio_pack_plugin_registry_v1(app: &AppHandle) -> PluginRegistry {
     scan_plugin_roots(&roots.into_iter().collect::<Vec<_>>()).registry
 }
 
+fn studio_pack_runtime_snapshot_v1(registry: &PluginRegistry) -> StudioPackRuntimeSnapshotV1 {
+    let mut runtime = StudioPackRuntimeSnapshotV1::default();
+    for plugin in registry.plugins() {
+        let report = load_plugin_settings_ui(plugin);
+        if !report.diagnostics.is_empty() {
+            runtime.set_v1(
+                plugin.manifest.id.clone(),
+                PluginRuntimeReadinessV1::Unavailable {
+                    reason_code: "PLUGIN_SETTINGS_INVALID".to_owned(),
+                },
+            );
+            continue;
+        }
+
+        let missing_credential = report.ui.as_ref().and_then(|ui| {
+            ui.fields
+                .iter()
+                .filter(|field| field.key.ends_with("_env"))
+                .find_map(|field| {
+                    let name = field.default.as_ref()?.as_str()?.trim();
+                    if name.is_empty() {
+                        return None;
+                    }
+                    let present = env::var(name)
+                        .map(|value| !value.trim().is_empty())
+                        .unwrap_or(false);
+                    (!present).then(|| name.to_owned())
+                })
+        });
+
+        let readiness = match missing_credential {
+            Some(name) => PluginRuntimeReadinessV1::SetupRequired {
+                reason_code: format!("CREDENTIAL_ENV_MISSING:{name}"),
+            },
+            None => PluginRuntimeReadinessV1::Ready,
+        };
+        runtime.set_v1(plugin.manifest.id.clone(), readiness);
+    }
+    runtime
+}
+
 fn studio_pack_catalog_view_v1(
     app: &AppHandle,
     state: &State<'_, DesktopState>,
@@ -1075,7 +1117,7 @@ fn studio_pack_catalog_view_v1(
         .map(|pack| pack.id.clone())
         .collect::<BTreeSet<_>>();
     let registry = studio_pack_plugin_registry_v1(app);
-    let runtime = StudioPackRuntimeSnapshotV1::default();
+    let runtime = studio_pack_runtime_snapshot_v1(&registry);
 
     let mut packs = Vec::new();
     for definition in catalog.list_definitions_v1().map_err(error_string)? {
@@ -1159,7 +1201,7 @@ fn studio_review_center_view_v1(
     let store = readable_store(state)?;
     let catalog = load_studio_pack_catalog_v1(&data_root)?;
     let registry = studio_pack_plugin_registry_v1(app);
-    let runtime = StudioPackRuntimeSnapshotV1::default();
+    let runtime = studio_pack_runtime_snapshot_v1(&registry);
     let mut projects = Vec::new();
 
     for project in store.list_projects().map_err(error_string)? {
