@@ -55,10 +55,7 @@ pub enum Error {
         actual_uri: String,
     },
     #[error("artifact {artifact_id} physical file is missing at export boundary: {path}")]
-    ExportArtifactFileMissing {
-        artifact_id: String,
-        path: PathBuf,
-    },
+    ExportArtifactFileMissing { artifact_id: String, path: PathBuf },
     #[error("export path must be absolute: {0}")]
     InvalidExportPath(PathBuf),
     #[error("project not found: {0}")]
