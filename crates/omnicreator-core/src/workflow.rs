@@ -500,7 +500,6 @@ impl StateStore {
     }
 }
 
-
 impl StateStore {
     pub fn commit_attempt_artifact_success(
         &mut self,
@@ -508,12 +507,7 @@ impl StateStore {
         artifact: &Artifact,
     ) -> Result<Attempt> {
         let attempt = self.get_attempt(attempt_id)?;
-        ensure_transition(
-            attempt.status,
-            StepStatus::Succeeded,
-            "attempt",
-            attempt_id,
-        )?;
+        ensure_transition(attempt.status, StepStatus::Succeeded, "attempt", attempt_id)?;
 
         let job = self.get_job(&attempt.job_id)?;
         ensure_transition(job.status, StepStatus::Succeeded, "job", &job.job_id)?;
