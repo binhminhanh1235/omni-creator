@@ -1,10 +1,10 @@
 use chrono::{DateTime, TimeZone, Utc};
 use omnicreator_core::{
-    ComputeAttemptRuntimeContextV1, ComputeProviderCapabilitiesV1,
-    ComputeProviderConnectionState, ComputeProviderSchedulingSnapshotV1,
-    ComputeProviderSessionIdentityV1, ComputeProviderSessionV1, ComputeRequirements,
-    GpuBatchPlanRequestV1, GpuJobPreparationV1, GpuSerialBudgetSignalV1, LogicalUri,
-    ResourceRequirement, StateStore, StepStatus, Workspace, GPU_WEEKLY_BUDGET_SCHEMA_V1,
+    ComputeAttemptRuntimeContextV1, ComputeProviderCapabilitiesV1, ComputeProviderConnectionState,
+    ComputeProviderSchedulingSnapshotV1, ComputeProviderSessionIdentityV1,
+    ComputeProviderSessionV1, ComputeRequirements, GpuBatchPlanRequestV1, GpuJobPreparationV1,
+    GpuSerialBudgetSignalV1, LogicalUri, ResourceRequirement, StateStore, StepStatus, Workspace,
+    GPU_WEEKLY_BUDGET_SCHEMA_V1,
 };
 
 fn at(year: i32, month: u32, day: u32, hour: u32, minute: u32) -> DateTime<Utc> {
@@ -97,10 +97,7 @@ fn seed_runtime_estimate(
         )
         .unwrap();
     let attempt = state
-        .start_attempt(
-            &job.job_id,
-            Some("kaggle-session/history-session/gpu0"),
-        )
+        .start_attempt(&job.job_id, Some("kaggle-session/history-session/gpu0"))
         .unwrap();
     state
         .record_compute_attempt_runtime_context_v1(&ComputeAttemptRuntimeContextV1 {
@@ -116,11 +113,7 @@ fn seed_runtime_estimate(
         .unwrap();
     state.finish_attempt_success(&attempt.attempt_id).unwrap();
     state
-        .record_runtime_observation_v1(
-            &attempt.attempt_id,
-            runtime_seconds,
-            at(2026, 9, 4, 10, 0),
-        )
+        .record_runtime_observation_v1(&attempt.attempt_id, runtime_seconds, at(2026, 9, 4, 10, 0))
         .unwrap()
         .unwrap();
 }
@@ -138,21 +131,13 @@ fn weekly_budget_counts_session_wall_clock_with_boundary_clipping() {
     let crossing = session("crossing", at(2026, 8, 30, 23, 30));
     state.start_compute_session_usage_v1(&crossing).unwrap();
     state
-        .finish_compute_session_usage_v1(
-            "kaggle-session",
-            "crossing",
-            at(2026, 8, 31, 0, 30),
-        )
+        .finish_compute_session_usage_v1("kaggle-session", "crossing", at(2026, 8, 31, 0, 30))
         .unwrap();
 
     let closed = session("closed", at(2026, 9, 1, 10, 0));
     state.start_compute_session_usage_v1(&closed).unwrap();
     state
-        .finish_compute_session_usage_v1(
-            "kaggle-session",
-            "closed",
-            at(2026, 9, 1, 12, 0),
-        )
+        .finish_compute_session_usage_v1("kaggle-session", "closed", at(2026, 9, 1, 12, 0))
         .unwrap();
 
     let open = session("open", at(2026, 9, 5, 0, 0));
@@ -171,10 +156,7 @@ fn weekly_budget_counts_session_wall_clock_with_boundary_clipping() {
     assert_eq!(status.version, 1);
     assert_eq!(status.open_sessions, 1);
     assert!((status.used_session_seconds - 12_600.0).abs() < f64::EPSILON);
-    assert!(
-        (status.remaining_session_seconds - (108_000.0 - 12_600.0)).abs()
-            < f64::EPSILON
-    );
+    assert!((status.remaining_session_seconds - (108_000.0 - 12_600.0)).abs() < f64::EPSILON);
     assert_eq!(status.overage_session_seconds, 0.0);
 }
 
@@ -191,18 +173,10 @@ fn session_usage_registration_and_finish_are_idempotent() {
 
     let finished_at = at(2026, 9, 5, 2, 0);
     let finished = state
-        .finish_compute_session_usage_v1(
-            "kaggle-session",
-            "session-idempotent",
-            finished_at,
-        )
+        .finish_compute_session_usage_v1("kaggle-session", "session-idempotent", finished_at)
         .unwrap();
     let duplicate_finish = state
-        .finish_compute_session_usage_v1(
-            "kaggle-session",
-            "session-idempotent",
-            finished_at,
-        )
+        .finish_compute_session_usage_v1("kaggle-session", "session-idempotent", finished_at)
         .unwrap();
     assert_eq!(finished, duplicate_finish);
 
@@ -275,11 +249,7 @@ fn budget_overview_is_indeterminate_until_all_ready_runtime_is_known() {
     let consumed = session("used", at(2026, 9, 1, 10, 0));
     state.start_compute_session_usage_v1(&consumed).unwrap();
     state
-        .finish_compute_session_usage_v1(
-            "kaggle-session",
-            "used",
-            at(2026, 9, 1, 10, 30),
-        )
+        .finish_compute_session_usage_v1("kaggle-session", "used", at(2026, 9, 1, 10, 30))
         .unwrap();
 
     seed_runtime_estimate(&mut state, &project.id, "history-32", "3.2", 900.0);
@@ -354,11 +324,7 @@ fn weekly_budget_survives_reopen_inside_portable_state() {
     {
         let state = StateStore::open(workspace.sqlite_path()).unwrap();
         state
-            .set_gpu_weekly_budget_v1(
-                "kaggle-session",
-                108_000.0,
-                at(2026, 9, 5, 0, 0),
-            )
+            .set_gpu_weekly_budget_v1("kaggle-session", 108_000.0, at(2026, 9, 5, 0, 0))
             .unwrap();
     }
 
