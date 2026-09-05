@@ -245,6 +245,16 @@ The target resolver consumes readiness facts, not secret values. API credential 
 
 A GPU request does not silently fall back to API/local execution when canonical ComputeProvider readiness is blocked. The caller must resolve the blocking GPU preflight/reconciliation condition or explicitly prepare a non-GPU execution request. This prevents expensive work from starting on an unintended target and preserves the reviewed Phase 7 scheduling decision.
 
+### ComputeProvider generated-image execution
+
+Phase 8 P2C does not add a generated-image transport or scheduler. Once the P2A decision is `compute_provider`, core maps `GeneratedImagePreparationV1` into the canonical `GpuJobPreparationV1` and dispatches the semantic `visual.generate` payload through the existing `ComputeJobDispatchV1` contract.
+
+Remote generated-image work therefore reuses the Phase 5–7 provider/device selection, remote journal, artifact transfer, reconnect/reconciliation, worker-loss and retry semantics. Independent GPU devices remain independently selected resources; VRAM is never pooled.
+
+Remote artifacts are not trusted on arrival. Core transfers them into staging, verifies the declared SHA-256 and metadata, promotes them through `ArtifactStore`, then commits canonical Job/Attempt/Artifact state. Hash mismatch or corruption cannot produce a successful attempt. Retry keeps the logical job ID and appends a new attempt, while restart/reconnect may recover a completed remote artifact before regeneration.
+
+This remains an internal execution bridge. It adds no provider-specific field to `SceneIntentV1`, no Kaggle-specific generated-image contract, and no Plugin API v1 wire-format change.
+
 ## Resource declarations
 
 Plugins should expose resource requirements.
