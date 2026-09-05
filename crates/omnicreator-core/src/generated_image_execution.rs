@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::{
     DiscoveredPlugin, Error, GeneratedImagePreflightIssueCodeV1, GeneratedImagePreparationV1,
@@ -31,6 +32,43 @@ pub enum GeneratedImageCredentialAvailabilityV1 {
 pub struct GeneratedImageApiExecutionAvailabilityV1 {
     pub configured: bool,
     pub credential: GeneratedImageCredentialAvailabilityV1,
+}
+
+pub fn generated_image_api_availability_from_health_v1(
+    health: &Value,
+) -> Result<GeneratedImageApiExecutionAvailabilityV1> {
+    let api = health
+        .get("api_execution")
+        .and_then(Value::as_object)
+        .ok_or_else(|| {
+            Error::InvalidContract(
+                "API-backed generated image plugin health must expose api_execution readiness"
+                    .to_owned(),
+            )
+        })?;
+    let configured = api
+        .get("configured")
+        .and_then(Value::as_bool)
+        .ok_or_else(|| {
+            Error::InvalidContract(
+                "generated image api_execution.configured must be a boolean".to_owned(),
+            )
+        })?;
+    let credential = match api.get("credential").and_then(Value::as_str) {
+        Some("not_required") => GeneratedImageCredentialAvailabilityV1::NotRequired,
+        Some("available") => GeneratedImageCredentialAvailabilityV1::Available,
+        Some("missing") => GeneratedImageCredentialAvailabilityV1::Missing,
+        _ => {
+            return Err(Error::InvalidContract(
+                "generated image api_execution.credential must be not_required, available or missing"
+                    .to_owned(),
+            ))
+        }
+    };
+    Ok(GeneratedImageApiExecutionAvailabilityV1 {
+        configured,
+        credential,
+    })
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -718,6 +756,53 @@ mod tests {
         assert!(decision.rejections.iter().all(|rejection| {
             rejection.code == GeneratedImageExecutionRejectionCodeV1::PreparationPreflightBlocked
         }));
+    }
+
+    #[test]
+    fn api_health_readiness_maps_to_provider_neutral_contract() {
+        let ready = generated_image_api_availability_from_health_v1(&serde_json::json!({
+            "status": "ready",
+            "provider": "fixture-provider",
+            "api_execution": {
+                "configured": true,
+                "credential": "available"
+            },
+            "credential_env": "FIXTURE_API_KEY"
+        }))
+        .unwrap();
+        assert!(ready.configured);
+        assert_eq!(
+            ready.credential,
+            GeneratedImageCredentialAvailabilityV1::Available
+        );
+
+        let missing = generated_image_api_availability_from_health_v1(&serde_json::json!({
+            "api_execution": {
+                "configured": true,
+                "credential": "missing"
+            }
+        }))
+        .unwrap();
+        assert_eq!(
+            missing.credential,
+            GeneratedImageCredentialAvailabilityV1::Missing
+        );
+    }
+
+    #[test]
+    fn api_health_rejects_secret_or_provider_specific_readiness_shapes() {
+        assert!(generated_image_api_availability_from_health_v1(&serde_json::json!({
+            "configured": true,
+            "credential": "available"
+        }))
+        .is_err());
+        assert!(generated_image_api_availability_from_health_v1(&serde_json::json!({
+            "api_execution": {
+                "configured": true,
+                "credential": "token-value"
+            }
+        }))
+        .is_err());
     }
 
     #[test]
