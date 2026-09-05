@@ -7,7 +7,7 @@ use crate::{
     artifact_store::PluginOutputPromotion, deterministic_input_hash, fs_util::sha256_file,
     Artifact, ArtifactStore, ComputeRequirements, DiscoveredPlugin, Error, GpuJobPreparationV1,
     LogicalUri, PluginJobWorkspace, PluginProcess, PluginProcessOptions, PluginResponse, Result,
-    SceneIntentV1, StateStore,
+    SceneIntentV1, StateStore, VisualRouteV1, VisualRoutingDecisionV1, VisualUseCaseV1,
 };
 
 pub const GENERATED_IMAGE_REQUEST_SCHEMA_V1: &str = "omnicreator.generated-image-request";
@@ -443,6 +443,60 @@ pub struct GeneratedImageExecutionV1 {
     pub plugin_result: GeneratedImagePluginResultV1,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct GeneratedImageExecutionContextV1 {
+    pub use_case: VisualUseCaseV1,
+    pub routing: Option<VisualRoutingDecisionV1>,
+}
+
+impl Default for GeneratedImageExecutionContextV1 {
+    fn default() -> Self {
+        Self {
+            use_case: VisualUseCaseV1::SceneVisual,
+            routing: None,
+        }
+    }
+}
+
+impl GeneratedImageExecutionContextV1 {
+    pub fn validate_for_scene_v1(&self, scene: &SceneIntentV1) -> Result<()> {
+        scene.validate_v1()?;
+
+        match self.routing.as_ref() {
+            Some(routing) => {
+                routing.validate_v1()?;
+                if routing.scene_id != scene.id {
+                    return Err(Error::InvalidContract(format!(
+                        "generated image routing scene {} does not match SceneIntent {}",
+                        routing.scene_id, scene.id
+                    )));
+                }
+                if routing.route != VisualRouteV1::GeneratedStill {
+                    return Err(Error::InvalidContract(
+                        "generated image execution context requires a generated_still route"
+                            .to_owned(),
+                    ));
+                }
+                if routing.use_case != self.use_case {
+                    return Err(Error::InvalidContract(
+                        "generated image execution use_case does not match routing decision"
+                            .to_owned(),
+                    ));
+                }
+            }
+            None if self.use_case == VisualUseCaseV1::ThumbnailBackground => {
+                return Err(Error::InvalidContract(
+                    "thumbnail background generation requires an explicit routing decision"
+                        .to_owned(),
+                ));
+            }
+            None => {}
+        }
+
+        Ok(())
+    }
+}
+
 pub fn execute_generated_image_plugin_v1(
     state_store: &mut StateStore,
     artifact_store: &ArtifactStore,
@@ -452,6 +506,29 @@ pub fn execute_generated_image_plugin_v1(
     preparation: &GeneratedImagePreparationV1,
     process_options: PluginProcessOptions,
 ) -> Result<GeneratedImageExecutionV1> {
+    execute_generated_image_plugin_with_context_v1(
+        state_store,
+        artifact_store,
+        plugin,
+        runtime_root,
+        job_id,
+        preparation,
+        &GeneratedImageExecutionContextV1::default(),
+        process_options,
+    )
+}
+
+pub fn execute_generated_image_plugin_with_context_v1(
+    state_store: &mut StateStore,
+    artifact_store: &ArtifactStore,
+    plugin: &DiscoveredPlugin,
+    runtime_root: impl AsRef<Path>,
+    job_id: &str,
+    preparation: &GeneratedImagePreparationV1,
+    context: &GeneratedImageExecutionContextV1,
+    process_options: PluginProcessOptions,
+) -> Result<GeneratedImageExecutionV1> {
+    context.validate_for_scene_v1(&preparation.request.scene)?;
     let preflight = preparation.preflight_v1(plugin);
     if !preflight.is_ready() {
         let codes = preflight
@@ -552,7 +629,8 @@ pub fn execute_generated_image_plugin_v1(
         ));
     }
 
-    let metadata = generated_image_artifact_metadata_v1(preparation, plugin, &plugin_result)?;
+    let metadata =
+        generated_image_artifact_metadata_v1(preparation, plugin, &plugin_result, context)?;
     let output_uri = preparation.output_uri.clone().ok_or_else(|| {
         Error::InvalidContract("generated image output URI is missing".to_owned())
     })?;
@@ -698,8 +776,10 @@ fn generated_image_artifact_metadata_v1(
     preparation: &GeneratedImagePreparationV1,
     plugin: &DiscoveredPlugin,
     result: &GeneratedImagePluginResultV1,
+    context: &GeneratedImageExecutionContextV1,
 ) -> Result<Value> {
-    let metadata = json!({
+    context.validate_for_scene_v1(&preparation.request.scene)?;
+    let mut metadata = json!({
         "source": "generated",
         "provider": plugin.manifest.id,
         "model": {
@@ -717,8 +797,15 @@ fn generated_image_artifact_metadata_v1(
         "settings_fingerprint": result.settings_fingerprint,
         "mime_type": result.mime_type,
         "provider_metadata": result.metadata,
-        "provenance": result.provenance
+        "provenance": result.provenance,
+        "use_case": context.use_case
     });
+    if let Some(routing) = context.routing.as_ref() {
+        metadata
+            .as_object_mut()
+            .expect("generated image artifact metadata is an object")
+            .insert("visual_routing".to_owned(), serde_json::to_value(routing)?);
+    }
     validate_portable_value_v1(&metadata, "generated image artifact metadata")?;
     Ok(metadata)
 }
