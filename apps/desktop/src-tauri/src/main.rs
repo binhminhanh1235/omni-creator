@@ -1019,7 +1019,7 @@ fn load_studio_pack_catalog_v1(
     let built_in_ids = built_in
         .packs
         .iter()
-        .map(|pack| pack.id.as_str())
+        .map(|pack| pack.id.clone())
         .collect::<BTreeSet<_>>();
     let mut packs = built_in.packs;
     packs.extend(
@@ -1072,7 +1072,7 @@ fn studio_pack_catalog_view_v1(
     let built_in_ids = built_in
         .packs
         .iter()
-        .map(|pack| pack.id.as_str())
+        .map(|pack| pack.id.clone())
         .collect::<BTreeSet<_>>();
     let registry = studio_pack_plugin_registry_v1(app);
     let runtime = StudioPackRuntimeSnapshotV1::default();
@@ -1134,7 +1134,7 @@ fn validate_desktop_studio_pack_overrides_v1(
         }
     }
 
-    let mut probe = StudioPackV1 {
+    let probe = StudioPackV1 {
         schema: STUDIO_PACK_SCHEMA_V1.to_owned(),
         schema_version: STUDIO_PACK_VERSION_V1,
         id: "desktop-override-validation".to_owned(),
