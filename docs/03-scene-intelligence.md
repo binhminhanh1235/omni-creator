@@ -264,6 +264,22 @@ sense that the model inspected the preview.
 When vision enrichment succeeds, it adds a compact fit score and one-sentence rationale to the
 existing top-N review card. It does not reorder candidates automatically.
 
+## Runtime v1 stock → generated fallback
+
+Phase 8 P1 adds a provider-neutral routing decision after stock candidate ranking and before any full-asset fetch.
+
+For normal scene visuals:
+
+1. stock discovery/ranking remains preview-first,
+2. core compares the best ranked stock candidate with a configured quality threshold,
+3. a viable stock candidate stays on the existing human review/selection path,
+4. no candidates, unavailable stock discovery, or a below-threshold best candidate routes to `generated_still`,
+5. the decision records only stable core fields such as scene ID, score, threshold, route and reason; provider IDs, selection references, API details and credentials are not part of the routing contract.
+
+The routing decision is persisted in canonical artifact metadata by core. Stock plugins still return workspace outputs that are verified/promoted through ArtifactStore; generated plugins still use the canonical Job/Attempt/Artifact path. There is no fallback-specific database or scheduler.
+
+Thumbnail backgrounds use the same `visual.generate` operation, generated-image request contract, job/attempt state and ArtifactStore boundary. Core marks the execution use case as `thumbnail_background` and persists that provenance; it does not introduce a separate thumbnail generation subsystem.
+
 ## Mixed visual routing
 
 A video does not need one provider for every scene.
