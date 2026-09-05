@@ -115,7 +115,6 @@ struct LlmGatewayModelView {
     is_virtual: bool,
 }
 
-
 #[derive(Debug, Deserialize)]
 struct GpuWorkbenchPrepareInputV1 {
     project_ids: Vec<String>,
@@ -312,7 +311,6 @@ fn save_llmgateway_settings(
 
     llmgateway_status_for_app(&app)
 }
-
 
 #[tauri::command]
 fn gpu_workbench_review(
@@ -594,7 +592,6 @@ fn snapshot_from_active(state: &State<'_, DesktopState>) -> Result<AppSnapshot, 
         projects,
     })
 }
-
 
 fn readable_store(state: &State<'_, DesktopState>) -> Result<StateStore, String> {
     let guard = state.active.lock().map_err(lock_error)?;
