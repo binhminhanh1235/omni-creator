@@ -127,8 +127,7 @@ impl StateStore {
             } else {
                 self.gpu_readiness_facts(&job)?
             };
-            let eligibility =
-                evaluate_gpu_queue(&job, &facts, &preparation, providers, running)?;
+            let eligibility = evaluate_gpu_queue(&job, &facts, &preparation, providers, running)?;
             candidates.push(GpuBatchJobV1 {
                 job_id: job.job_id,
                 project_id: job.project_id,
@@ -140,7 +139,8 @@ impl StateStore {
             });
         }
 
-        candidates.sort_by(|left, right| batch_job_sort_key_v1(left).cmp(&batch_job_sort_key_v1(right)));
+        candidates
+            .sort_by(|left, right| batch_job_sort_key_v1(left).cmp(&batch_job_sort_key_v1(right)));
 
         let mut ready_jobs = Vec::new();
         let mut blocked_jobs = Vec::new();
@@ -274,9 +274,7 @@ fn summarize_projects_v1(
         .iter()
         .map(|project_id| {
             let title = titles.get(project_id).ok_or_else(|| {
-                Error::InvalidContract(format!(
-                    "GPU batch project title missing for {project_id}"
-                ))
+                Error::InvalidContract(format!("GPU batch project title missing for {project_id}"))
             })?;
             let (ready_jobs, blocked_jobs) = counts.get(project_id).copied().unwrap_or_default();
             Ok(GpuBatchProjectSummaryV1 {
@@ -296,33 +294,27 @@ fn summarize_work_kinds_v1(
 ) -> Vec<GpuBatchWorkKindSummaryV1> {
     let mut counts = BTreeMap::<(String, Option<String>), (u64, u64)>::new();
     for job in ready_jobs {
-        let key = (
-            job.step.clone(),
-            job.preparation.plugin_id.clone(),
-        );
+        let key = (job.step.clone(), job.preparation.plugin_id.clone());
         let entry = counts.entry(key).or_default();
         entry.0 = entry.0.saturating_add(1);
     }
     for job in blocked_jobs {
-        let key = (
-            job.step.clone(),
-            job.preparation.plugin_id.clone(),
-        );
+        let key = (job.step.clone(), job.preparation.plugin_id.clone());
         let entry = counts.entry(key).or_default();
         entry.1 = entry.1.saturating_add(1);
     }
 
     counts
         .into_iter()
-        .map(|((step, plugin_id), (ready_jobs, blocked_jobs))| {
-            GpuBatchWorkKindSummaryV1 {
+        .map(
+            |((step, plugin_id), (ready_jobs, blocked_jobs))| GpuBatchWorkKindSummaryV1 {
                 step,
                 plugin_id,
                 candidate_jobs: ready_jobs.saturating_add(blocked_jobs),
                 ready_jobs,
                 blocked_jobs,
-            }
-        })
+            },
+        )
         .collect()
 }
 
@@ -330,8 +322,7 @@ fn summarize_model_groups_v1(
     ready_jobs: &[GpuBatchJobV1],
     blocked_jobs: &[GpuBatchJobV1],
 ) -> Vec<GpuBatchModelGroupSummaryV1> {
-    let mut counts =
-        BTreeMap::<(Option<String>, Option<String>), (u64, u64)>::new();
+    let mut counts = BTreeMap::<(Option<String>, Option<String>), (u64, u64)>::new();
     for job in ready_jobs {
         let key = batch_model_group_key_v1(job);
         let entry = counts.entry(key).or_default();
@@ -345,17 +336,15 @@ fn summarize_model_groups_v1(
 
     counts
         .into_iter()
-        .map(
-            |((provider_id, model_group), (ready_jobs, blocked_jobs))| {
-                GpuBatchModelGroupSummaryV1 {
-                    provider_id,
-                    model_group,
-                    candidate_jobs: ready_jobs.saturating_add(blocked_jobs),
-                    ready_jobs,
-                    blocked_jobs,
-                }
-            },
-        )
+        .map(|((provider_id, model_group), (ready_jobs, blocked_jobs))| {
+            GpuBatchModelGroupSummaryV1 {
+                provider_id,
+                model_group,
+                candidate_jobs: ready_jobs.saturating_add(blocked_jobs),
+                ready_jobs,
+                blocked_jobs,
+            }
+        })
         .collect()
 }
 
