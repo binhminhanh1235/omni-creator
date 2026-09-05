@@ -1,0 +1,63 @@
+{
+  "schema": "omnicreator.studio-pack",
+  "schema_version": 1,
+  "id": "christian-cinematic",
+  "name": "Christian Cinematic",
+  "extends": null,
+  "overrides": {
+    "automation_level": "BALANCED",
+    "routes": {
+      "export": {
+        "targets": [
+          {
+            "plugin_type": "export",
+            "capability": "timeline_export",
+            "plugin_id": null,
+            "preset": null
+          }
+        ]
+      },
+      "visual.literal": {
+        "targets": [
+          {
+            "plugin_type": "visual",
+            "capability": "local_asset",
+            "plugin_id": null,
+            "preset": null
+          },
+          {
+            "plugin_type": "visual",
+            "capability": "stock_video",
+            "plugin_id": null,
+            "preset": null
+          },
+          {
+            "plugin_type": "visual",
+            "capability": "generated_image",
+            "plugin_id": null,
+            "preset": "cinematic"
+          }
+        ]
+      },
+      "voice": {
+        "targets": [
+          {
+            "plugin_type": "voice",
+            "capability": "tts",
+            "plugin_id": "omnivoice",
+            "preset": "warm-narrator"
+          }
+        ]
+      }
+    },
+    "presets": {
+      "thumbnail": "cinematic"
+    },
+    "quality_thresholds": {
+      "visual": 80
+    },
+    "remove_routes": [],
+    "remove_presets": [],
+    "remove_quality_thresholds": []
+  }
+}
