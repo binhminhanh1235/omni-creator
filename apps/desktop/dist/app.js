@@ -9,6 +9,11 @@ const gpuWorkbenchState = {
   review: null,
   syncTimer: null,
 };
+const productionPackState = {
+  selectedProjectId: null,
+  draftTextByProject: new Map(),
+  viewByProject: new Map(),
+};
 
 function escapeHtml(value) {
   return String(value == null ? "" : value)
@@ -168,6 +173,9 @@ function projectCard(item, readOnly) {
     escapeHtml(project.id) +
     "</div></div>" +
     '<div class="project-actions">' +
+    '<button class="icon-btn production-pack-project" data-id="' +
+    escapeHtml(project.id) +
+    '">Export to Resolve</button>' +
     '<button class="icon-btn rename-project" data-id="' +
     escapeHtml(project.id) +
     '" data-title="' +
@@ -184,6 +192,212 @@ function projectCard(item, readOnly) {
     ">Delete</button>" +
     "</div></article>"
   );
+}
+
+function defaultProductionPack(project) {
+  return {
+    schema: "omnicreator.production-pack",
+    version: 1,
+    project_id: project.id,
+    title: project.title,
+    frame_rate: { numerator: 24, denominator: 1 },
+    tracks: [],
+    subtitles: [],
+    markers: [],
+  };
+}
+
+function productionPackDraftText(project, view) {
+  if (productionPackState.draftTextByProject.has(project.id)) {
+    return productionPackState.draftTextByProject.get(project.id);
+  }
+  const value = view && view.last_pack ? view.last_pack : defaultProductionPack(project);
+  const text = JSON.stringify(value, null, 2);
+  productionPackState.draftTextByProject.set(project.id, text);
+  return text;
+}
+
+function productionHistoryMarkup(view) {
+  const history = view && Array.isArray(view.history) ? view.history : [];
+  if (!history.length) {
+    return '<div class="queue-empty">No canonical export Job yet.</div>';
+  }
+  return history
+    .slice(0, 4)
+    .map(function (entry) {
+      const attempts = Array.isArray(entry.attempts) ? entry.attempts : [];
+      const lastAttempt = attempts.length ? attempts[attempts.length - 1] : null;
+      const error = lastAttempt && lastAttempt.error_code
+        ? " · " + lastAttempt.error_code
+        : "";
+      return (
+        '<div class="production-history-row"><strong>' +
+        escapeHtml(statusLabel(entry.job.status)) +
+        '</strong><span>' +
+        escapeHtml(attempts.length + " attempt(s)" + error) +
+        '</span><code>' +
+        escapeHtml(entry.package_base_uri) +
+        "</code></div>"
+      );
+    })
+    .join("");
+}
+
+function productionDiagnosticMarkup(view) {
+  const diagnostic = view && view.diagnostic;
+  if (!diagnostic) return "";
+  const identity = diagnostic.artifact_id
+    ? '<div class="production-diagnostic-id"><strong>ARTIFACT</strong><code>' +
+      escapeHtml(diagnostic.artifact_id) +
+      "</code></div>"
+    : "";
+  const logical = diagnostic.logical_uri
+    ? '<div class="production-diagnostic-id"><strong>LOGICAL URI</strong><code>' +
+      escapeHtml(diagnostic.logical_uri) +
+      "</code></div>"
+    : "";
+  return (
+    '<div class="production-diagnostic ' +
+    escapeHtml(diagnostic.kind || "export_failure") +
+    '"><strong>' +
+    escapeHtml(statusLabel(diagnostic.kind || "export_failure")) +
+    "</strong><p>" +
+    escapeHtml(diagnostic.message) +
+    "</p>" +
+    identity +
+    logical +
+    '<p class="diagnostic-action">' +
+    escapeHtml(diagnostic.action) +
+    "</p></div>"
+  );
+}
+
+function renderProductionPackPanel(project, readOnly, view) {
+  const panel = document.getElementById("production-pack-panel");
+  if (!panel) return;
+
+  if (!project) {
+    panel.innerHTML =
+      '<div class="production-pack-empty"><p class="eyebrow">DAVINCI PRODUCTION PACK</p>' +
+      '<h3>Export an editable handoff without turning OmniCreator into an editor.</h3>' +
+      '<p class="muted compact">Choose “Export to Resolve” on a project. Export state is derived from canonical Job / Attempt / Artifact history.</p></div>';
+    return;
+  }
+
+  const history = view && Array.isArray(view.history) ? view.history : [];
+  const latest = history.length ? history[0] : null;
+  const state = view ? view.state : "not_exported";
+  const packageUri = latest ? latest.package_base_uri : "";
+  const cacheNote =
+    view && view.outcome && view.outcome.cache_hit
+      ? '<span class="production-cache-hit">VERIFIED CACHE HIT</span>'
+      : "";
+  const draftText = productionPackDraftText(project, view);
+  const actionLabel = latest ? "Regenerate Production Pack" : "Export Production Pack";
+
+  panel.innerHTML =
+    '<div class="production-pack-head"><div><p class="eyebrow">DAVINCI PRODUCTION PACK</p><h3>' +
+    escapeHtml(project.title) +
+    '</h3></div><span class="review-state ' +
+    (state === "succeeded" || state === "cached" ? "ready" : "blocked") +
+    '">' +
+    escapeHtml(statusLabel(state)) +
+    "</span></div>" +
+    '<div class="production-pack-body">' +
+    (packageUri
+      ? '<div class="info-row"><div class="info-label">LOGICAL PACKAGE LOCATION</div><div class="info-value hash">' +
+        escapeHtml(packageUri) +
+        "</div></div>"
+      : '<div class="notice subtle">No committed production package yet. A successful export will expose a portable logical package location here.</div>') +
+    cacheNote +
+    productionDiagnosticMarkup(view) +
+    '<div class="field production-pack-editor"><label>CANONICAL PRODUCTIONPACK V1 JSON</label><textarea id="production-pack-json" rows="13"' +
+    (readOnly ? " readonly" : "") +
+    ">" +
+    escapeHtml(draftText) +
+    "</textarea></div>" +
+    '<div class="production-pack-actions"><button class="btn primary" id="run-production-export"' +
+    (readOnly ? " disabled" : "") +
+    ">" +
+    actionLabel +
+    '</button><button class="btn" id="refresh-production-export">Refresh Status</button></div>' +
+    '<details class="advanced-details production-history"><summary>Canonical export history</summary>' +
+    productionHistoryMarkup(view) +
+    "</details></div>";
+
+  const editor = document.getElementById("production-pack-json");
+  if (editor) {
+    editor.oninput = function () {
+      productionPackState.draftTextByProject.set(project.id, editor.value);
+    };
+  }
+
+  document.getElementById("refresh-production-export").onclick = function () {
+    openProductionPack(project, readOnly);
+  };
+
+  const exportButton = document.getElementById("run-production-export");
+  if (exportButton) {
+    exportButton.onclick = async function () {
+      let parsed;
+      try {
+        parsed = JSON.parse(editor.value);
+      } catch (_error) {
+        showToast("ProductionPack must be valid JSON.");
+        return;
+      }
+      if (parsed.project_id !== project.id) {
+        showToast("ProductionPack project_id must match the selected project.");
+        return;
+      }
+
+      exportButton.disabled = true;
+      try {
+        const updated = await call("export_production_pack", {
+          productionPack: parsed,
+        });
+        productionPackState.viewByProject.set(project.id, updated);
+        if (!updated.diagnostic && updated.last_pack) {
+          productionPackState.draftTextByProject.set(
+            project.id,
+            JSON.stringify(updated.last_pack, null, 2),
+          );
+        }
+        renderProductionPackPanel(project, readOnly, updated);
+        showToast(
+          updated.state === "cached"
+            ? "Production Pack verified from cache."
+            : updated.diagnostic
+              ? "Production Pack needs attention before export can succeed."
+              : "Production Pack exported and committed.",
+        );
+      } finally {
+        const current = document.getElementById("run-production-export");
+        if (current && !readOnly) current.disabled = false;
+      }
+    };
+  }
+}
+
+async function openProductionPack(project, readOnly) {
+  productionPackState.selectedProjectId = project.id;
+  renderProductionPackPanel(
+    project,
+    readOnly,
+    productionPackState.viewByProject.get(project.id) || null,
+  );
+  const view = await call("production_export_status", { projectId: project.id });
+  productionPackState.viewByProject.set(project.id, view);
+  if (
+    view.last_pack &&
+    !productionPackState.draftTextByProject.has(project.id)
+  ) {
+    productionPackState.draftTextByProject.set(
+      project.id,
+      JSON.stringify(view.last_pack, null, 2),
+    );
+  }
+  renderProductionPackPanel(project, readOnly, view);
 }
 
 function llmStateLabel(state) {
@@ -805,6 +1019,12 @@ function renderWorkspace(snapshot) {
   setMode(workspace.read_only ? "READ ONLY" : "WRITER", workspace.read_only ? "read-only" : "writer");
 
   const projectIds = new Set(projects.map(function (item) { return item.project.id; }));
+  if (
+    productionPackState.selectedProjectId &&
+    !projectIds.has(productionPackState.selectedProjectId)
+  ) {
+    productionPackState.selectedProjectId = null;
+  }
   Array.from(gpuWorkbenchState.selectedProjectIds).forEach(function (projectId) {
     if (!projectIds.has(projectId)) gpuWorkbenchState.selectedProjectIds.delete(projectId);
   });
@@ -830,6 +1050,7 @@ function renderWorkspace(snapshot) {
     (workspace.read_only ? " disabled" : "") +
     ">Create</button></div>" +
     '<div class="project-list">' + cards + "</div>" +
+    '<div id="production-pack-panel" class="production-pack-panel"></div>' +
     '<div class="batch-toolbar"><div><strong id="gpu-selected-count">' +
     escapeHtml(gpuWorkbenchState.selectedProjectIds.size) +
     ' selected</strong><span>Prepare projects before consuming GPU quota.</span></div>' +
@@ -883,6 +1104,15 @@ function renderWorkspace(snapshot) {
     prepareGpuWorkbench(workspace.read_only);
   };
 
+  document.querySelectorAll(".production-pack-project").forEach(function (button) {
+    button.onclick = function () {
+      const item = projects.find(function (candidate) {
+        return candidate.project.id === button.dataset.id;
+      });
+      if (item) openProductionPack(item.project, workspace.read_only);
+    };
+  });
+
   document.querySelectorAll(".rename-project").forEach(function (button) {
     button.onclick = async function () {
       const title = window.prompt("Rename project", button.dataset.title);
@@ -905,6 +1135,16 @@ function renderWorkspace(snapshot) {
     render(await call("prepare_device_handoff"));
   };
   document.getElementById("change-root").onclick = renderFirstLaunch;
+  const selectedProductionItem = projects.find(function (item) {
+    return item.project.id === productionPackState.selectedProjectId;
+  });
+  renderProductionPackPanel(
+    selectedProductionItem ? selectedProductionItem.project : null,
+    workspace.read_only,
+    selectedProductionItem
+      ? productionPackState.viewByProject.get(selectedProductionItem.project.id) || null
+      : null,
+  );
   renderGpuWorkbench(gpuWorkbenchState.review, workspace.read_only);
   loadComputeProviderStatus(workspace.read_only);
   loadLlmGatewayPanel();

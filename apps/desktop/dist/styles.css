@@ -377,3 +377,93 @@ button { cursor: pointer; }
     grid-column: auto;
   }
 }
+
+
+.production-pack-panel {
+  margin-top: 18px;
+  border: 1px solid #292f3a;
+  border-radius: 16px;
+  background: #101318;
+  overflow: hidden;
+}
+.production-pack-empty { padding: 20px; }
+.production-pack-empty h3 { margin: 7px 0 4px; }
+.production-pack-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 16px;
+  padding: 19px 20px;
+  border-bottom: 1px solid #282e38;
+}
+.production-pack-head h3 { margin: 6px 0 0; }
+.production-pack-body { padding: 18px 20px 0; }
+.production-pack-editor { margin-top: 16px; }
+.production-pack-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 13px;
+}
+.production-cache-hit {
+  display: inline-flex;
+  margin-top: 12px;
+  padding: 5px 8px;
+  border: 1px solid #27593b;
+  border-radius: 999px;
+  color: #bdf5d2;
+  background: #112719;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 0.07em;
+}
+.production-diagnostic {
+  margin-top: 14px;
+  border: 1px solid #6c5627;
+  border-radius: 12px;
+  padding: 13px 14px;
+  background: #2c2411;
+  color: #f5e7b7;
+}
+.production-diagnostic > strong {
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+.production-diagnostic p {
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.production-diagnostic-id {
+  display: grid;
+  gap: 3px;
+  margin-top: 9px;
+}
+.production-diagnostic-id strong {
+  color: #bda96d;
+  font-size: 8px;
+  letter-spacing: 0.08em;
+}
+.production-diagnostic-id code,
+.production-history-row code {
+  color: #d1d7e0;
+  font: 9px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow-wrap: anywhere;
+}
+.production-diagnostic .diagnostic-action { color: #fff0bc; }
+.production-history { margin: 17px -20px 0; }
+.production-history-row {
+  display: grid;
+  grid-template-columns: 95px 125px minmax(0, 1fr);
+  gap: 9px;
+  align-items: baseline;
+  padding: 9px 0;
+  border-top: 1px solid #252a33;
+}
+.production-history-row strong { font-size: 9px; }
+.production-history-row span { color: #858e9d; font-size: 9px; }
+
+@media (max-width: 700px) {
+  .production-pack-head { flex-direction: column; }
+  .production-history-row { grid-template-columns: 1fr; }
+}

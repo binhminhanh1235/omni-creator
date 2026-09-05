@@ -13,9 +13,10 @@ use omnicreator_core::{
     GpuBatchBudgetOverviewV1, GpuBatchPlanRequestV1, GpuBatchPlanV1, GpuBurstDispatchSummaryV1,
     GpuBurstPlanV1, GpuJobPreparationV1, GpuWorkbenchQueueSnapshotV1, HandoffManifest,
     HttpComputeProvider, HttpComputeProviderConfigV1, LlmGatewayClient, LlmGatewayConfig,
-    LlmGatewayModel, MachineBinding, Project, ProjectDisplayStatus, RemoteComputeJobSpecV1,
-    RemoteReconciliationSummaryV1, RuntimeWorkloadEstimateV1, StateStore, Workspace,
-    WorkspaceSession,
+    LlmGatewayModel, MachineBinding, ProductionExportHistoryEntryV1, ProductionPackV1,
+    ProductionPackageExportOutcomeV1, ProductionPackageExporterV1, Project, ProjectDisplayStatus,
+    RemoteComputeJobSpecV1, RemoteReconciliationSummaryV1, RuntimeWorkloadEstimateV1, StateStore,
+    Workspace, WorkspaceSession,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
@@ -178,6 +179,25 @@ struct ComputeBurstSyncViewV1 {
     queues: GpuWorkbenchQueueSnapshotV1,
 }
 
+#[derive(Debug, Serialize)]
+struct ProductionExportDiagnosticViewV1 {
+    kind: String,
+    artifact_id: Option<String>,
+    logical_uri: Option<String>,
+    message: String,
+    action: String,
+}
+
+#[derive(Debug, Serialize)]
+struct ProductionExportViewV1 {
+    project_id: String,
+    state: String,
+    outcome: Option<ProductionPackageExportOutcomeV1>,
+    history: Vec<ProductionExportHistoryEntryV1>,
+    last_pack: Option<ProductionPackV1>,
+    diagnostic: Option<ProductionExportDiagnosticViewV1>,
+}
+
 #[tauri::command]
 fn pick_data_root() -> Option<String> {
     rfd::FileDialog::new()
@@ -310,6 +330,41 @@ fn delete_project(
 ) -> Result<AppSnapshot, String> {
     with_writable_store(&state, |store| store.delete_project(&project_id))?;
     snapshot_from_active(&state)
+}
+
+#[tauri::command]
+fn production_export_status(
+    state: State<'_, DesktopState>,
+    project_id: String,
+) -> Result<ProductionExportViewV1, String> {
+    let data_root = active_data_root(&state)?;
+    let store = readable_store(&state)?;
+    store.get_project(&project_id).map_err(error_string)?;
+    let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
+    production_export_view_v1(&store, &artifacts, &project_id, None, None)
+}
+
+#[tauri::command]
+fn export_production_pack(
+    state: State<'_, DesktopState>,
+    production_pack: ProductionPackV1,
+) -> Result<ProductionExportViewV1, String> {
+    let project_id = production_pack.project_id.clone();
+    let data_root = active_data_root(&state)?;
+    let mut store = writable_store(&state)?;
+    store.get_project(&project_id).map_err(error_string)?;
+    let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
+    let exporter = ProductionPackageExporterV1::default();
+
+    match exporter.export_v1(&mut store, &artifacts, &production_pack) {
+        Ok(outcome) => {
+            production_export_view_v1(&store, &artifacts, &project_id, Some(outcome), None)
+        }
+        Err(error) => {
+            let diagnostic = production_export_diagnostic_v1(&error, &production_pack);
+            production_export_view_v1(&store, &artifacts, &project_id, None, Some(diagnostic))
+        }
+    }
 }
 
 #[tauri::command]
@@ -915,6 +970,136 @@ fn writable_store(state: &State<'_, DesktopState>) -> Result<StateStore, String>
     StateStore::open(sqlite_path).map_err(error_string)
 }
 
+fn production_export_view_v1(
+    store: &StateStore,
+    artifacts: &ArtifactStore,
+    project_id: &str,
+    outcome: Option<ProductionPackageExportOutcomeV1>,
+    diagnostic: Option<ProductionExportDiagnosticViewV1>,
+) -> Result<ProductionExportViewV1, String> {
+    let history = store
+        .production_export_history_v1(project_id)
+        .map_err(error_string)?;
+    let last_pack = latest_portable_production_pack_v1(artifacts, project_id, &history);
+    let state = if let Some(outcome) = outcome.as_ref() {
+        if outcome.cache_hit {
+            "cached".to_owned()
+        } else {
+            "succeeded".to_owned()
+        }
+    } else if diagnostic.is_some() {
+        history
+            .first()
+            .map(|entry| entry.job.status.as_str().to_ascii_lowercase())
+            .unwrap_or_else(|| "failed".to_owned())
+    } else {
+        history
+            .first()
+            .map(|entry| entry.job.status.as_str().to_ascii_lowercase())
+            .unwrap_or_else(|| "not_exported".to_owned())
+    };
+
+    Ok(ProductionExportViewV1 {
+        project_id: project_id.to_owned(),
+        state,
+        outcome,
+        history,
+        last_pack,
+        diagnostic,
+    })
+}
+
+fn latest_portable_production_pack_v1(
+    artifacts: &ArtifactStore,
+    project_id: &str,
+    history: &[ProductionExportHistoryEntryV1],
+) -> Option<ProductionPackV1> {
+    for entry in history {
+        for artifact in &entry.artifacts {
+            if artifact.artifact_type != "production-pack" {
+                continue;
+            }
+            if !matches!(artifacts.verify_artifact(artifact), Ok(true)) {
+                continue;
+            }
+            let Ok(path) = artifacts.resolve_artifact_path(artifact) else {
+                continue;
+            };
+            let Ok(bytes) = fs::read(path) else {
+                continue;
+            };
+            let Ok(pack) = serde_json::from_slice::<ProductionPackV1>(&bytes) else {
+                continue;
+            };
+            if pack.project_id == project_id {
+                return Some(pack);
+            }
+        }
+    }
+    None
+}
+
+fn production_export_diagnostic_v1(
+    error: &CoreError,
+    production_pack: &ProductionPackV1,
+) -> ProductionExportDiagnosticViewV1 {
+    match error {
+        CoreError::ArtifactNotFound(artifact_id)
+        | CoreError::ExportArtifactFileMissing { artifact_id, .. } => {
+            ProductionExportDiagnosticViewV1 {
+                kind: "missing_artifact".to_owned(),
+                artifact_id: Some(artifact_id.clone()),
+                logical_uri: production_pack_logical_uri_v1(production_pack, artifact_id),
+                message: "A source artifact required by this Production Pack is missing at the current Data Root binding.".to_owned(),
+                action: "Restore or relink the Data Folder/source artifact, then Regenerate Production Pack.".to_owned(),
+            }
+        }
+        CoreError::ArtifactHashMismatch(artifact_id) => ProductionExportDiagnosticViewV1 {
+            kind: "artifact_changed".to_owned(),
+            artifact_id: Some(artifact_id.clone()),
+            logical_uri: production_pack_logical_uri_v1(production_pack, artifact_id),
+            message: "A source artifact no longer matches its canonical SHA256.".to_owned(),
+            action: "Restore the expected artifact or promote the changed source canonically, then regenerate.".to_owned(),
+        },
+        CoreError::ExportArtifactUriMismatch { artifact_id, .. }
+        | CoreError::ExportArtifactProjectMismatch { artifact_id, .. } => {
+            ProductionExportDiagnosticViewV1 {
+                kind: "invalid_production_pack".to_owned(),
+                artifact_id: Some(artifact_id.clone()),
+                logical_uri: production_pack_logical_uri_v1(production_pack, artifact_id),
+                message: error.to_string(),
+                action: "Refresh the canonical ProductionPack input before exporting again.".to_owned(),
+            }
+        }
+        CoreError::InvalidContract(message) => ProductionExportDiagnosticViewV1 {
+            kind: "invalid_production_pack".to_owned(),
+            artifact_id: None,
+            logical_uri: None,
+            message: format!("Production Pack validation failed: {message}"),
+            action: "Correct the portable ProductionPack input and export again.".to_owned(),
+        },
+        _ => ProductionExportDiagnosticViewV1 {
+            kind: "export_failure".to_owned(),
+            artifact_id: None,
+            logical_uri: None,
+            message: "Production export failed before the package could be committed successfully.".to_owned(),
+            action: "Review canonical Job/Attempt status, resolve the dependency, then retry.".to_owned(),
+        },
+    }
+}
+
+fn production_pack_logical_uri_v1(
+    production_pack: &ProductionPackV1,
+    artifact_id: &str,
+) -> Option<String> {
+    production_pack
+        .tracks
+        .iter()
+        .flat_map(|track| track.clips.iter())
+        .find(|clip| clip.artifact_id == artifact_id)
+        .map(|clip| clip.uri.to_string())
+}
+
 fn parse_utc(raw: &str, label: &str) -> Result<DateTime<Utc>, String> {
     DateTime::parse_from_rfc3339(raw)
         .map(|value| value.with_timezone(&Utc))
@@ -1151,6 +1336,58 @@ fn clean_shutdown(state: &DesktopState) {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use omnicreator_core::{
+        LogicalUri, TimelineClipV1, TimelineFrameRateV1, TimelineTrackRoleV1, TimelineTrackV1,
+        PRODUCTION_PACK_SCHEMA_V1, PRODUCTION_PACK_VERSION_V1,
+    };
+
+    #[test]
+    fn missing_artifact_diagnostic_exposes_portable_identity_without_machine_path() {
+        let pack = ProductionPackV1 {
+            schema: PRODUCTION_PACK_SCHEMA_V1.to_owned(),
+            version: PRODUCTION_PACK_VERSION_V1,
+            project_id: "project-1".to_owned(),
+            title: "Diagnostic".to_owned(),
+            frame_rate: TimelineFrameRateV1 {
+                numerator: 24,
+                denominator: 1,
+            },
+            tracks: vec![TimelineTrackV1 {
+                role: TimelineTrackRoleV1::VideoPrimary,
+                clips: vec![TimelineClipV1 {
+                    clip_id: "clip-1".to_owned(),
+                    artifact_id: "artifact-1".to_owned(),
+                    uri: LogicalUri::parse("project://video/SC01.mp4").unwrap(),
+                    timeline_start_ms: 0,
+                    source_start_ms: 0,
+                    duration_ms: 1_000,
+                    label: None,
+                }],
+            }],
+            subtitles: Vec::new(),
+            markers: Vec::new(),
+        };
+        let error = CoreError::ExportArtifactFileMissing {
+            artifact_id: "artifact-1".to_owned(),
+            path: PathBuf::from("/Users/alice/private/source.mp4"),
+        };
+
+        let diagnostic = production_export_diagnostic_v1(&error, &pack);
+
+        assert_eq!(diagnostic.kind, "missing_artifact");
+        assert_eq!(diagnostic.artifact_id.as_deref(), Some("artifact-1"));
+        assert_eq!(
+            diagnostic.logical_uri.as_deref(),
+            Some("project://video/SC01.mp4")
+        );
+        assert!(!diagnostic.message.contains("/Users/alice"));
+        assert!(!diagnostic.action.contains("/Users/alice"));
+    }
+}
+
 fn main() {
     let app = tauri::Builder::default()
         .manage(DesktopState::default())
@@ -1166,6 +1403,8 @@ fn main() {
             create_project,
             rename_project,
             delete_project,
+            production_export_status,
+            export_production_pack,
             llmgateway_status,
             save_llmgateway_settings,
             compute_provider_status,
