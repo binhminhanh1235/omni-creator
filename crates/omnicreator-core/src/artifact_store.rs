@@ -600,7 +600,7 @@ mod tests {
             artifacts.lookup_verified_cache(&state, &input_hash),
             Err(Error::ArtifactHashMismatch(_))
         ));
-    }    
+    }
     #[test]
     fn local_attempt_promotion_commits_attempt_job_and_artifact_atomically() {
         let temp = tempfile::tempdir().unwrap();
@@ -609,7 +609,12 @@ mod tests {
         let project = state.create_project("Local Export Project").unwrap();
         let input_hash = deterministic_input_hash(&[b"export", b"package"]);
         let job = state
-            .create_job(&project.id, "export.production-pack", "package", &input_hash)
+            .create_job(
+                &project.id,
+                "export.production-pack",
+                "package",
+                &input_hash,
+            )
             .unwrap();
         let attempt = state.start_attempt(&job.job_id, Some("local")).unwrap();
 
@@ -623,7 +628,8 @@ mod tests {
                 &attempt.attempt_id,
                 &job.job_id,
                 &source,
-                LogicalUri::parse("project://production/test/metadata/production-pack.json").unwrap(),
+                LogicalUri::parse("project://production/test/metadata/production-pack.json")
+                    .unwrap(),
                 "production-pack-metadata",
                 serde_json::json!({"portable": true}),
             )
@@ -706,5 +712,4 @@ mod tests {
             .join("production/test/timeline/subtitles.srt")
             .exists());
     }
-
 }

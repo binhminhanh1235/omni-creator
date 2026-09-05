@@ -614,7 +614,6 @@ impl StateStore {
 
         self.get_attempt(attempt_id)
     }
-
 }
 
 fn ensure_transition(current: StepStatus, next: StepStatus, entity: &str, id: &str) -> Result<()> {
