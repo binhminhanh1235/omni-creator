@@ -56,18 +56,16 @@ impl GeneratedImageRequestV1 {
         scene.validate_v1()?;
         validate_style_v1(&style)?;
         validate_resolution_v1(&resolution)?;
-        validate_portable_value_v1(&serde_json::to_value(&settings)?, "generated image settings")?;
+        validate_portable_value_v1(
+            &serde_json::to_value(&settings)?,
+            "generated image settings",
+        )?;
 
         let prompt = build_generated_image_prompt_v1(&scene, &style)?;
         let negative_prompt = canonical_list_v1(&scene.avoid);
         let prompt_sha256 = prompt_hash_v1(&prompt);
-        let settings_fingerprint = settings_fingerprint_v1(
-            &style,
-            &resolution,
-            &scene.aspect_ratio,
-            seed,
-            &settings,
-        )?;
+        let settings_fingerprint =
+            settings_fingerprint_v1(&style, &resolution, &scene.aspect_ratio, seed, &settings)?;
 
         let request = Self {
             schema: GENERATED_IMAGE_REQUEST_SCHEMA_V1.to_owned(),
@@ -103,7 +101,10 @@ impl GeneratedImageRequestV1 {
                 "generated image aspect_ratio must match SceneIntent".to_owned(),
             ));
         }
-        validate_portable_value_v1(&serde_json::to_value(&self.settings)?, "generated image settings")?;
+        validate_portable_value_v1(
+            &serde_json::to_value(&self.settings)?,
+            "generated image settings",
+        )?;
 
         let expected_prompt_hash = prompt_hash_v1(&self.prompt);
         if self.prompt_sha256 != expected_prompt_hash {
@@ -347,7 +348,8 @@ impl GeneratedImagePreparationV1 {
                 "Generated image model version is not pinned.",
             );
         }
-        if self.gpu_execution_requested && normalized_option(self.provider_id.as_deref()).is_none() {
+        if self.gpu_execution_requested && normalized_option(self.provider_id.as_deref()).is_none()
+        {
             push_issue(
                 &mut issues,
                 GeneratedImagePreflightIssueCodeV1::ProviderMissing,
@@ -488,7 +490,8 @@ pub fn execute_generated_image_plugin_v1(
     let capabilities = response_result_v1(plugin, capabilities.response, "plugin.capabilities")?;
     validate_runtime_capabilities_v1(&capabilities)?;
 
-    let attempt = state_store.start_attempt(job_id, Some(&format!("plugin:{}", plugin.manifest.id)))?;
+    let attempt =
+        state_store.start_attempt(job_id, Some(&format!("plugin:{}", plugin.manifest.id)))?;
     let call = match process.execute(
         GENERATED_IMAGE_OPERATION_V1,
         serde_json::to_value(&preparation.request)?,
@@ -520,7 +523,8 @@ pub fn execute_generated_image_plugin_v1(
     let plugin_result: GeneratedImagePluginResultV1 = match serde_json::from_value(result_value) {
         Ok(result) => result,
         Err(error) => {
-            let _ = state_store.finish_attempt_failure(&attempt.attempt_id, "INVALID_PLUGIN_OUTPUT");
+            let _ =
+                state_store.finish_attempt_failure(&attempt.attempt_id, "INVALID_PLUGIN_OUTPUT");
             return Err(Error::InvalidArtifact(format!(
                 "generated image plugin returned invalid result metadata: {error}"
             )));
@@ -548,10 +552,9 @@ pub fn execute_generated_image_plugin_v1(
     }
 
     let metadata = generated_image_artifact_metadata_v1(preparation, plugin, &plugin_result)?;
-    let output_uri = preparation
-        .output_uri
-        .clone()
-        .ok_or_else(|| Error::InvalidContract("generated image output URI is missing".to_owned()))?;
+    let output_uri = preparation.output_uri.clone().ok_or_else(|| {
+        Error::InvalidContract("generated image output URI is missing".to_owned())
+    })?;
 
     let artifact = match artifact_store.promote_plugin_output_for_attempt(
         state_store,
@@ -606,11 +609,17 @@ pub fn build_generated_image_prompt_v1(
             after.as_deref().unwrap_or("unspecified")
         ));
     }
-    lines.push(format!("Style preset: {}", normalize_text_v1(&style.preset)));
+    lines.push(format!(
+        "Style preset: {}",
+        normalize_text_v1(&style.preset)
+    ));
     if let Some(description) = normalized_option(style.description.as_deref()) {
         lines.push(format!("Style direction: {description}"));
     }
-    lines.push(format!("Aspect ratio: {}", normalize_text_v1(&scene.aspect_ratio)));
+    lines.push(format!(
+        "Aspect ratio: {}",
+        normalize_text_v1(&scene.aspect_ratio)
+    ));
 
     Ok(lines.join("\n"))
 }
@@ -637,7 +646,8 @@ fn validate_plugin_result_v1(
     require_non_empty("generated image model_id", &result.model_id)?;
     require_non_empty("generated image model_version", &result.model_version)?;
 
-    if normalized_option(preparation.model_id.as_deref()).as_deref() != Some(result.model_id.as_str())
+    if normalized_option(preparation.model_id.as_deref()).as_deref()
+        != Some(result.model_id.as_str())
     {
         return Err(Error::InvalidArtifact(
             "generated image result model_id does not match resolved execution model".to_owned(),
@@ -647,7 +657,8 @@ fn validate_plugin_result_v1(
         != Some(result.model_version.as_str())
     {
         return Err(Error::InvalidArtifact(
-            "generated image result model_version does not match resolved execution model".to_owned(),
+            "generated image result model_version does not match resolved execution model"
+                .to_owned(),
         ));
     }
     if plugin
@@ -977,7 +988,10 @@ mod tests {
         .unwrap();
 
         assert_eq!(first, second);
-        assert_eq!(first.input_hash_v1().unwrap(), second.input_hash_v1().unwrap());
+        assert_eq!(
+            first.input_hash_v1().unwrap(),
+            second.input_hash_v1().unwrap()
+        );
         let scene_json = serde_json::to_value(&first.scene).unwrap();
         assert!(scene_json.get("provider").is_none());
         assert!(scene_json.get("model").is_none());
