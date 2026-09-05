@@ -222,13 +222,7 @@ pub fn resolve_generated_image_execution_target_v1(
 
     let mut rejections = Vec::new();
     for target in &policy.target_order {
-        match evaluate_target(
-            *target,
-            job_id,
-            preparation,
-            plugin,
-            availability,
-        ) {
+        match evaluate_target(*target, job_id, preparation, plugin, availability) {
             Ok(()) => {
                 return decision(
                     GeneratedImageExecutionDecisionStatusV1::Ready,
@@ -733,8 +727,7 @@ mod tests {
             .preflight_issues
             .contains(&GeneratedImagePreflightIssueCodeV1::OutputMissing));
         assert!(decision.rejections.iter().all(|rejection| {
-            rejection.code
-                == GeneratedImageExecutionRejectionCodeV1::PreparationPreflightBlocked
+            rejection.code == GeneratedImageExecutionRejectionCodeV1::PreparationPreflightBlocked
         }));
     }
 
