@@ -2,13 +2,13 @@ use std::{collections::BTreeMap, path::PathBuf};
 
 use chrono::{TimeZone, Utc};
 use omnicreator_core::{
-    evaluate_gpu_queue, scan_plugin_roots, ArtifactStore, CacheLookupV1,
-    ComputeDeviceV1, ComputeProviderCapabilitiesV1, ComputeProviderConnectionState,
+    evaluate_gpu_queue, scan_plugin_roots, ArtifactStore, CacheLookupV1, ComputeDeviceV1,
+    ComputeProviderCapabilitiesV1, ComputeProviderConnectionState,
     ComputeProviderSchedulingSnapshotV1, ComputeProviderSessionIdentityV1,
     ComputeProviderSessionV1, GeneratedImagePreparationV1, GeneratedImageRequestV1,
     GeneratedImageResolutionV1, GeneratedImageStyleV1, GpuQueueEligibilityStatusV1,
-    GpuReadinessFactsV1, LogicalUri, PluginProcessOptions, SceneIntentV1, StateStore,
-    StepStatus, Workspace, SCENE_INTENT_SCHEMA, SCENE_INTENT_SCHEMA_VERSION,
+    GpuReadinessFactsV1, LogicalUri, PluginProcessOptions, SceneIntentV1, StateStore, StepStatus,
+    Workspace, SCENE_INTENT_SCHEMA, SCENE_INTENT_SCHEMA_VERSION,
 };
 
 fn plugin_root() -> PathBuf {
@@ -208,7 +208,10 @@ fn preflight_blocks_missing_generate_capability_before_attempt_creation() {
 
     assert!(error.to_string().contains("preflight blocked"));
     assert!(state.list_attempts(&job.job_id).unwrap().is_empty());
-    assert_eq!(state.get_job(&job.job_id).unwrap().status, StepStatus::Ready);
+    assert_eq!(
+        state.get_job(&job.job_id).unwrap().status,
+        StepStatus::Ready
+    );
 }
 
 #[test]
@@ -315,8 +318,7 @@ fn generated_image_resource_declaration_is_phase7_scheduler_compatible() {
         cache_lookup: CacheLookupV1::Miss,
     };
 
-    let decision =
-        evaluate_gpu_queue(&job, &facts, &gpu_preparation, &[provider], &[]).unwrap();
+    let decision = evaluate_gpu_queue(&job, &facts, &gpu_preparation, &[provider], &[]).unwrap();
     assert_eq!(decision.status, GpuQueueEligibilityStatusV1::GpuReady);
     assert_eq!(decision.selection.unwrap().device_id, "gpu0");
 }
