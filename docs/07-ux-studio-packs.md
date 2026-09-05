@@ -376,4 +376,3 @@ The panel is intentionally a controller over core export contracts. It does not 
 After restart, the panel reconstructs export history from SQLite and can reload the latest verified portable `production-pack.json` artifact. A failed export stays visibly retryable; retry preserves the previous Attempt. In read-only workspace mode, history remains inspectable while export/regeneration is disabled.
 
 Default diagnostics do not expose machine-local absolute paths. Missing media is described through portable artifact identity and an action to restore/relink the Data Root or source before regenerating.
-\n
