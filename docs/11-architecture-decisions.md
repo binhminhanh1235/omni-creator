@@ -187,3 +187,15 @@ If a future feature proposal conflicts with these decisions, require an explicit
 The P1 evaluator exposes `AVAILABLE`, `AVAILABLE_WITH_SETUP` and `UNAVAILABLE` with machine-readable reasons. Missing preferred or fallback implementations are non-corrupting diagnostics when another compatible target is usable.
 
 `Christian Stick Explainer` uses `stick_figure_visual` as its semantic capability gate. The definition may ship before Phase 11, but it remains unavailable until a compatible visual plugin advertises that exact capability. Generic generated still/image capability does not satisfy the stick-figure semantic contract.
+
+## ADR-028: Phase 10 P2 UI is a projection over canonical state
+
+**Decision:** Basic / Customize / Advanced Studio Pack UX and Review Center are projections/controllers over existing Studio Pack, PluginRegistry, Project, WorkflowStep, Job, Attempt, LLMGateway, ComputeProvider and ProductionPack ownership boundaries.
+
+**Reason:** Phase 10 exists to reduce creator complexity, not to introduce a second workflow engine or UI database.
+
+Project-specific creative customization is an ordinary child `StudioPackV1` in the portable catalog and is resolved by the existing deterministic inheritance/override resolver. `Project.studio_pack` remains the project binding. Resetting customization rebinds the project to its built-in parent.
+
+Review Center is rebuilt from canonical state on demand. Retry actions use canonical Job transitions. Automation levels are deterministic policy projections and never become shadow Job/Attempt state.
+
+Machine-local plugin credential readiness is evaluated ephemerally from symbolic environment-variable references; plaintext credential values and machine-specific absolute paths remain outside portable Studio Pack/project data. `Christian Stick Explainer` remains gated by the exact `stick_figure_visual` capability.
