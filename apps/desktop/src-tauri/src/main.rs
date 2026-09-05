@@ -7,22 +7,21 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use omnicreator_core::{
-    dispatch_gpu_burst_v1, reconcile_remote_session_v1, ArtifactStore,
-    ComputeProviderConnectionState, ComputeProviderLivenessPolicyV1, ComputeProviderRuntime,
-    ComputeProviderSchedulingSnapshotV1, ComputeRunningAssignmentV1, Error as CoreError,
-    GpuBatchBudgetOverviewV1, GpuBatchPlanRequestV1, GpuBatchPlanV1, GpuBurstDispatchSummaryV1,
-    GpuBurstPlanV1, GpuJobPreparationV1, GpuWorkbenchQueueSnapshotV1, HandoffManifest,
-    build_studio_pack_ux_view_v1, build_studio_review_center_v1,
-    initial_studio_pack_catalog_v1, load_plugin_settings_ui, scan_plugin_roots, HttpComputeProvider,
+    build_studio_pack_ux_view_v1, build_studio_review_center_v1, dispatch_gpu_burst_v1,
+    initial_studio_pack_catalog_v1, load_plugin_settings_ui, reconcile_remote_session_v1,
+    scan_plugin_roots, ArtifactStore, ComputeProviderConnectionState,
+    ComputeProviderLivenessPolicyV1, ComputeProviderRuntime, ComputeProviderSchedulingSnapshotV1,
+    ComputeRunningAssignmentV1, Error as CoreError, GpuBatchBudgetOverviewV1,
+    GpuBatchPlanRequestV1, GpuBatchPlanV1, GpuBurstDispatchSummaryV1, GpuBurstPlanV1,
+    GpuJobPreparationV1, GpuWorkbenchQueueSnapshotV1, HandoffManifest, HttpComputeProvider,
     HttpComputeProviderConfigV1, LlmGatewayClient, LlmGatewayConfig, LlmGatewayModel,
-    MachineBinding, PluginRegistry, PortableStudioPackCatalogV1, ProductionExportHistoryEntryV1,
-    ProductionPackV1, ProductionPackageExportOutcomeV1, ProductionPackageExporterV1, Project,
-    ProjectDisplayStatus, RemoteComputeJobSpecV1, RemoteReconciliationSummaryV1,
-    PluginRuntimeReadinessV1, RuntimeWorkloadEstimateV1, StateStore, StudioJobReviewSnapshotV1,
-    StudioPackAvailabilityStatusV1, StudioPackOverridesV1, StudioPackRuntimeSnapshotV1,
-    StudioPackUxViewV1, StudioPackV1,
-    StudioReviewCenterV1, Workspace, WorkspaceSession, STUDIO_PACK_SCHEMA_V1,
-    STUDIO_PACK_VERSION_V1,
+    MachineBinding, PluginRegistry, PluginRuntimeReadinessV1, PortableStudioPackCatalogV1,
+    ProductionExportHistoryEntryV1, ProductionPackV1, ProductionPackageExportOutcomeV1,
+    ProductionPackageExporterV1, Project, ProjectDisplayStatus, RemoteComputeJobSpecV1,
+    RemoteReconciliationSummaryV1, RuntimeWorkloadEstimateV1, StateStore,
+    StudioJobReviewSnapshotV1, StudioPackAvailabilityStatusV1, StudioPackOverridesV1,
+    StudioPackRuntimeSnapshotV1, StudioPackUxViewV1, StudioPackV1, StudioReviewCenterV1, Workspace,
+    WorkspaceSession, STUDIO_PACK_SCHEMA_V1, STUDIO_PACK_VERSION_V1,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
@@ -1019,9 +1018,7 @@ fn studio_pack_catalog_path_v1(data_root: &Path) -> PathBuf {
     data_root.join(".omnicreator/studio-pack-catalog.json")
 }
 
-fn load_studio_pack_catalog_v1(
-    data_root: &Path,
-) -> Result<PortableStudioPackCatalogV1, String> {
+fn load_studio_pack_catalog_v1(data_root: &Path) -> Result<PortableStudioPackCatalogV1, String> {
     let built_in = initial_studio_pack_catalog_v1().map_err(error_string)?;
     let path = studio_pack_catalog_path_v1(data_root);
     if !path.exists() {
