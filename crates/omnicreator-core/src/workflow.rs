@@ -469,6 +469,44 @@ impl StateStore {
         })
     }
 
+    pub fn list_project_jobs(&self, project_id: &str) -> Result<Vec<Job>> {
+        self.get_project(project_id)?;
+        let mut statement = self.connection.prepare(
+            "SELECT id,project_id,step_key,unit_key,status,input_hash,selected_attempt_id,selected_artifact_id \
+             FROM jobs WHERE project_id=?1 ORDER BY step_key,unit_key,id",
+        )?;
+        let jobs = statement
+            .query_map([project_id], job_from_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(jobs)
+    }
+
+    pub fn list_project_steps(&self, project_id: &str) -> Result<Vec<WorkflowStep>> {
+        self.get_project(project_id)?;
+        let mut statement = self.connection.prepare(
+            "SELECT id,project_id,step_key,unit_key,status,input_hash \
+             FROM steps WHERE project_id=?1 ORDER BY step_key,unit_key,id",
+        )?;
+        let steps = statement
+            .query_map([project_id], step_from_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(steps)
+    }
+
+    pub fn prepare_job_retry(&mut self, job_id: &str) -> Result<Job> {
+        let job = self.get_job(job_id)?;
+        if !matches!(job.status, StepStatus::Failed | StepStatus::Retryable) {
+            return Err(Error::InvalidTransition(format!(
+                "job {job_id}: {} cannot be prepared for retry",
+                job.status.as_str()
+            )));
+        }
+        ensure_transition(job.status, StepStatus::Ready, "job", job_id)?;
+        self.connection
+            .execute("UPDATE jobs SET status='READY' WHERE id=?1", [job_id])?;
+        Ok(self.get_job(job_id)?)
+    }
+
     pub fn derive_project_status(&self, project_id: &str) -> Result<ProjectDisplayStatus> {
         self.get_project(project_id)?;
 
