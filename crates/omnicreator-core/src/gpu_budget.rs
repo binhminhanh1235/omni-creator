@@ -248,22 +248,15 @@ impl StateStore {
              ORDER BY connected_at,session_id",
         )?;
         let rows = statement.query_map(
-            params![
-                provider_id,
-                week_end.to_rfc3339(),
-                week_start.to_rfc3339()
-            ],
+            params![provider_id, week_end.to_rfc3339(), week_start.to_rfc3339()],
             |row| {
                 let connected_at: String = row.get(1)?;
                 let finished_at: Option<String> = row.get(2)?;
                 Ok(ComputeSessionUsageV1 {
                     provider_id: provider_id.to_owned(),
                     session_id: row.get(0)?,
-                    connected_at: parse_utc_v1(
-                        &connected_at,
-                        "compute session usage connected_at",
-                    )
-                    .map_err(to_sql_conversion_v1)?,
+                    connected_at: parse_utc_v1(&connected_at, "compute session usage connected_at")
+                        .map_err(to_sql_conversion_v1)?,
                     finished_at: finished_at
                         .as_deref()
                         .map(|value| {
@@ -301,10 +294,8 @@ impl StateStore {
             }
         }
 
-        let remaining_session_seconds =
-            (config.allowance_seconds - used_session_seconds).max(0.0);
-        let overage_session_seconds =
-            (used_session_seconds - config.allowance_seconds).max(0.0);
+        let remaining_session_seconds = (config.allowance_seconds - used_session_seconds).max(0.0);
+        let overage_session_seconds = (used_session_seconds - config.allowance_seconds).max(0.0);
 
         Ok(Some(GpuWeeklyBudgetStatusV1 {
             schema: GPU_WEEKLY_BUDGET_SCHEMA_V1.to_owned(),
@@ -390,8 +381,7 @@ impl StateStore {
         }
 
         let workload = self.estimate_gpu_batch_workload_v1(plan)?;
-        let Some(weekly_budget) =
-            self.gpu_weekly_budget_status_v1(provider_id, week_start, now)?
+        let Some(weekly_budget) = self.gpu_weekly_budget_status_v1(provider_id, week_start, now)?
         else {
             return Ok(None);
         };
@@ -452,17 +442,11 @@ fn parse_utc_v1(value: &str, label: &str) -> Result<DateTime<Utc>> {
 }
 
 fn to_sql_conversion_v1(error: Error) -> rusqlite::Error {
-    rusqlite::Error::FromSqlConversionFailure(
-        0,
-        rusqlite::types::Type::Text,
-        Box::new(error),
-    )
+    rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(error))
 }
 
 fn duration_seconds_v1(start: DateTime<Utc>, end: DateTime<Utc>) -> Result<f64> {
-    let milliseconds = end
-        .signed_duration_since(start)
-        .num_milliseconds();
+    let milliseconds = end.signed_duration_since(start).num_milliseconds();
     if milliseconds < 0 {
         return Err(Error::InvalidContract(
             "compute session usage duration must not be negative".to_owned(),
