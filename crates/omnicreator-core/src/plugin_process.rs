@@ -407,20 +407,11 @@ impl PluginProcess {
     }
 
     fn process_exited_error(&self) -> Result<Error> {
-        let mut child = self.child.lock().map_err(|_| Error::PluginRuntimeIo {
-            plugin: self.plugin_id.clone(),
-            message: "child lock was poisoned".to_owned(),
-        })?;
-        let status = match child.try_wait() {
-            Ok(Some(status)) => status.code(),
-            Ok(None) => None,
-            Err(error) => {
-                return Err(Error::PluginRuntimeIo {
-                    plugin: self.plugin_id.clone(),
-                    message: error.to_string(),
-                });
-            }
-        };
+        // The stdout reader can observe EOF a few milliseconds before the OS makes the
+        // child's exit status visible through try_wait(). Give process teardown a short,
+        // bounded grace period so diagnostics preserve the real exit code instead of
+        // nondeterministically reporting None.
+        let status = self.wait_for_exit(Duration::from_millis(250))?;
         Ok(Error::PluginProcessExited {
             plugin: self.plugin_id.clone(),
             status,
