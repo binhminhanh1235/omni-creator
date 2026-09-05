@@ -506,63 +506,95 @@ impl StateStore {
         attempt_id: &str,
         artifact: &Artifact,
     ) -> Result<Attempt> {
+        self.commit_attempt_artifacts_success(
+            attempt_id,
+            std::slice::from_ref(artifact),
+            &artifact.artifact_id,
+        )
+    }
+
+    pub fn commit_attempt_artifacts_success(
+        &mut self,
+        attempt_id: &str,
+        artifacts: &[Artifact],
+        selected_artifact_id: &str,
+    ) -> Result<Attempt> {
+        if artifacts.is_empty() {
+            return Err(Error::InvalidArtifact(
+                "attempt success requires at least one artifact".to_owned(),
+            ));
+        }
+        if !artifacts
+            .iter()
+            .any(|artifact| artifact.artifact_id == selected_artifact_id)
+        {
+            return Err(Error::InvalidArtifact(
+                "selected artifact must be part of attempt artifacts".to_owned(),
+            ));
+        }
+
         let attempt = self.get_attempt(attempt_id)?;
         ensure_transition(attempt.status, StepStatus::Succeeded, "attempt", attempt_id)?;
 
         let job = self.get_job(&attempt.job_id)?;
         ensure_transition(job.status, StepStatus::Succeeded, "job", &job.job_id)?;
 
-        let producer_job = artifact
-            .producer_job
-            .as_deref()
-            .ok_or_else(|| Error::InvalidArtifact("producer_job is required".to_owned()))?;
-        if producer_job != job.job_id {
-            return Err(Error::InvalidArtifact(
-                "artifact producer_job does not match attempt job".to_owned(),
-            ));
+        let mut serialized = Vec::with_capacity(artifacts.len());
+        for artifact in artifacts {
+            let producer_job = artifact
+                .producer_job
+                .as_deref()
+                .ok_or_else(|| Error::InvalidArtifact("producer_job is required".to_owned()))?;
+            if producer_job != job.job_id {
+                return Err(Error::InvalidArtifact(
+                    "artifact producer_job does not match attempt job".to_owned(),
+                ));
+            }
+
+            let artifact_project_id = artifact
+                .project_id
+                .as_deref()
+                .ok_or_else(|| Error::InvalidArtifact("project_id is required".to_owned()))?;
+            if artifact_project_id != job.project_id {
+                return Err(Error::InvalidArtifact(
+                    "artifact project_id does not match producer job".to_owned(),
+                ));
+            }
+
+            let artifact_input_hash = artifact
+                .input_hash
+                .as_deref()
+                .ok_or_else(|| Error::InvalidArtifact("input_hash is required".to_owned()))?;
+            if artifact_input_hash != job.input_hash {
+                return Err(Error::InvalidArtifact(
+                    "artifact input_hash does not match producer job".to_owned(),
+                ));
+            }
+
+            serialized.push((artifact, serde_json::to_string(&artifact.metadata)?));
         }
 
-        let artifact_project_id = artifact
-            .project_id
-            .as_deref()
-            .ok_or_else(|| Error::InvalidArtifact("project_id is required".to_owned()))?;
-        if artifact_project_id != job.project_id {
-            return Err(Error::InvalidArtifact(
-                "artifact project_id does not match producer job".to_owned(),
-            ));
-        }
-
-        let artifact_input_hash = artifact
-            .input_hash
-            .as_deref()
-            .ok_or_else(|| Error::InvalidArtifact("input_hash is required".to_owned()))?;
-        if artifact_input_hash != job.input_hash {
-            return Err(Error::InvalidArtifact(
-                "artifact input_hash does not match producer job".to_owned(),
-            ));
-        }
-
-        let metadata_json = serde_json::to_string(&artifact.metadata)?;
         let finished_at = Utc::now();
         let runtime_seconds = runtime_seconds(attempt.started_at, finished_at);
-
         let transaction = self.connection.transaction()?;
-        transaction.execute(
-            "INSERT INTO artifacts(id,project_id,artifact_type,uri,sha256,size_bytes,producer_job_id,created_at,metadata_json,input_hash) \
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
-            params![
-                &artifact.artifact_id,
-                &artifact.project_id,
-                &artifact.artifact_type,
-                artifact.uri.as_str(),
-                &artifact.sha256,
-                artifact.size_bytes as i64,
-                &artifact.producer_job,
-                artifact.created_at.to_rfc3339(),
-                metadata_json,
-                &artifact.input_hash,
-            ],
-        )?;
+        for (artifact, metadata_json) in serialized {
+            transaction.execute(
+                "INSERT INTO artifacts(id,project_id,artifact_type,uri,sha256,size_bytes,producer_job_id,created_at,metadata_json,input_hash) \
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
+                params![
+                    &artifact.artifact_id,
+                    &artifact.project_id,
+                    &artifact.artifact_type,
+                    artifact.uri.as_str(),
+                    &artifact.sha256,
+                    artifact.size_bytes as i64,
+                    &artifact.producer_job,
+                    artifact.created_at.to_rfc3339(),
+                    metadata_json,
+                    &artifact.input_hash,
+                ],
+            )?;
+        }
         transaction.execute(
             "UPDATE attempts SET status='SUCCEEDED',finished_at=?1,runtime_seconds=?2,error_code=NULL \
              WHERE id=?3 AND job_id=?4",
@@ -576,12 +608,13 @@ impl StateStore {
         transaction.execute(
             "UPDATE jobs SET status='SUCCEEDED',selected_attempt_id=?1,selected_artifact_id=?2 \
              WHERE id=?3",
-            params![attempt_id, &artifact.artifact_id, &job.job_id],
+            params![attempt_id, selected_artifact_id, &job.job_id],
         )?;
         transaction.commit()?;
 
         self.get_attempt(attempt_id)
     }
+
 }
 
 fn ensure_transition(current: StepStatus, next: StepStatus, entity: &str, id: &str) -> Result<()> {
