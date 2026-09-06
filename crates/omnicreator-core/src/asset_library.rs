@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{DateTime, Duration, Utc};
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -119,9 +119,10 @@ impl StateStore {
         let mut statement = self
             .connection
             .prepare("SELECT tag FROM artifact_tags WHERE artifact_id=?1 ORDER BY tag")?;
-        Ok(statement
+        let tags = statement
             .query_map([artifact_id], |row| row.get(0))?
-            .collect::<std::result::Result<Vec<_>, _>>()?)
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(tags)
     }
 
     pub fn record_asset_usage_v1(
@@ -296,7 +297,7 @@ impl StateStore {
         let snapshot = self.asset_library_snapshot_v1(reference_time)?;
         let mut artifact_ids = BTreeSet::new();
         let mut usage_count = 0_u32;
-        let mut last_used_at = None;
+        let mut last_used_at: Option<DateTime<Utc>> = None;
 
         for entry in snapshot.entries {
             if entry.source_identity.as_ref() != Some(&identity) {
@@ -414,9 +415,10 @@ fn list_usage_v1(connection: &Connection, artifact_id: &str) -> Result<Vec<Asset
     let mut statement = connection.prepare(
         "SELECT artifact_id,project_id,usage_kind,usage_key,used_at          FROM artifact_usages WHERE artifact_id=?1          ORDER BY used_at DESC,usage_kind,usage_key",
     )?;
-    Ok(statement
+    let usages = statement
         .query_map([artifact_id], usage_from_row)?
-        .collect::<std::result::Result<Vec<_>, _>>()?)
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(usages)
 }
 
 fn usage_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<AssetUsageV1> {
