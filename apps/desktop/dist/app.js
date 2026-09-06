@@ -566,16 +566,6 @@ async function openProductionPack(project, readOnly) {
   );
   const view = await call("production_export_status", { projectId: project.id });
   productionPackState.viewByProject.set(project.id, view);
-  if (
-    vieasync function openProductionPack(project, readOnly) {
-  productionPackState.selectedProjectId = project.id;
-  renderProductionPackPanel(
-    project,
-    readOnly,
-    productionPackState.viewByProject.get(project.id) || null,
-  );
-  const view = await call("production_export_status", { projectId: project.id });
-  productionPackState.viewByProject.set(project.id, view);
   renderProductionPackPanel(project, readOnly, view);
 }
 
