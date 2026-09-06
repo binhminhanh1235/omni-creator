@@ -182,6 +182,27 @@ Primary input is SceneIntent.
 
 Output is one or more VisualCandidate records.
 
+### Provider transaction context
+
+Provider adapters that are contractually required to identify the creator project may consume an additive canonical `project_id` at the visual-operation payload root:
+
+```json
+{
+  "operation": "visual.resolve",
+  "payload": {
+    "project_id": "PRJ_123",
+    "scene": {}
+  }
+}
+```
+
+The same canonical project identifier may be supplied to `visual.fetch_selected`. It is project identity already owned by core, not a provider-specific SceneIntent field.
+
+Provider-specific end-user/account identifiers remain machine-local adapter configuration. They must not be added to SceneIntent, Project IR, Asset IR or portable Studio Pack settings. In Phase 13 Storyblocks, the API-required `user_id` is therefore read from a symbolic environment-variable name while the canonical OmniCreator project ID supplies the API `project_id`.
+
+Commercial/test entitlement is also machine-local readiness. A test credential may be usable for provider search without being allowed to return a promotable selected asset. Plugins must fail before selected download/promotion when the account/license mode does not authorize durable production use.
+
+
 ## Visual generate input
 
 Generated visual plugins receive:
