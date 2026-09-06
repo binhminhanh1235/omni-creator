@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     env, fs,
     path::{Path, PathBuf},
     sync::Mutex,
@@ -7,25 +7,44 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use omnicreator_core::{
-    build_studio_pack_ux_view_v1, build_studio_review_center_v1, dispatch_gpu_burst_v1,
+    approve_creator_generated_visual_v1, assemble_creator_production_pack_v1,
+    build_studio_pack_ux_view_v1, build_studio_review_center_v1, compile_creator_workflow_plan_v1,
+    default_segment_tts_compute_requirements_v1, derive_creator_run_coordinator_v1,
+    dispatch_creator_voice_burst_v1, dispatch_gpu_burst_v1, execute_creator_visual_plan_v1,
     initial_studio_pack_catalog_v1, inspect_local_plugin_update_v1, install_local_plugin_folder_v1,
-    load_plugin_settings_ui, preview_plugin_capability_impact_v1, project_board_projection_v1,
-    reconcile_remote_session_v1, scan_plugin_inventory_v1, uninstall_user_plugin_v1,
-    update_local_plugin_folder_v1, ArtifactStore, AssetLibrarySnapshotV1,
+    load_latest_creator_content_scene_v1, load_latest_creator_content_v1,
+    load_latest_creator_production_pack_v1, load_plugin_settings_ui,
+    materialize_creator_workflow_plan_v1, plan_creator_visuals_v1,
+    plan_creator_voice_orchestration_v1, preview_plugin_capability_impact_v1,
+    project_board_projection_v1, reconcile_remote_session_v1, run_creator_content_scene_v1,
+    scan_plugin_inventory_v1, select_creator_stock_candidate_v1, uninstall_user_plugin_v1,
+    update_local_plugin_folder_v1, Artifact, ArtifactStore, AssetLibrarySnapshotV1,
     ComputeProviderConnectionState, ComputeProviderLivenessPolicyV1, ComputeProviderRuntime,
-    ComputeProviderSchedulingSnapshotV1, ComputeRunningAssignmentV1, Error as CoreError,
-    GpuBatchBudgetOverviewV1, GpuBatchPlanRequestV1, GpuBatchPlanV1, GpuBurstDispatchSummaryV1,
-    GpuBurstPlanV1, GpuJobPreparationV1, GpuWorkbenchQueueSnapshotV1, HandoffManifest,
-    HttpComputeProvider, HttpComputeProviderConfigV1, LlmGatewayClient, LlmGatewayConfig,
-    LlmGatewayModel, MachineBinding, PluginCapabilityImpactV1, PluginInventoryEntryV1,
-    PluginInventoryReportV1, PluginLifecycleStateV1, PluginMutationKindV1, PluginRegistry,
+    ComputeProviderSchedulingSnapshotV1, ComputeRunningAssignmentV1, CreatorContentSceneOptionsV1,
+    CreatorContentSceneOutcomeV1, CreatorInputV1, CreatorProductionPackOptionsV1,
+    CreatorRunCoordinatorV1, CreatorStockDiscoveryV1, CreatorVisualActionV1,
+    CreatorVisualAssetExecutorV1, CreatorVisualDiscoveryExecutorV1,
+    CreatorVisualGenerationRequestV1, CreatorVisualPlanV1, CreatorVisualPlanningOptionsV1,
+    CreatorVisualStockFetchRequestV1, CreatorVoiceRuntimeV1, DiscoveredPlugin, Error as CoreError,
+    GeneratedImagePluginResultV1, GeneratedImageRequestV1, GeneratedImageResolutionV1,
+    GeneratedImageStyleV1, GpuBatchBudgetOverviewV1, GpuBatchPlanRequestV1, GpuBatchPlanV1,
+    GpuBurstDispatchSummaryV1, GpuBurstPlanV1, GpuJobPreparationV1, GpuWorkbenchQueueSnapshotV1,
+    HandoffManifest, HttpComputeProvider, HttpComputeProviderConfigV1, LlmGatewayClient,
+    LlmGatewayConfig, LlmGatewayModel, MachineBinding, PluginCapabilityImpactV1,
+    PluginInventoryEntryV1, PluginInventoryReportV1, PluginJobWorkspace, PluginLifecycleStateV1,
+    PluginMutationKindV1, PluginProcess, PluginProcessOptions, PluginRegistry, PluginResponse,
     PluginRuntimeReadinessV1, PluginUpdatePreviewV1, PortableStudioPackCatalogV1,
     ProductionExportHistoryEntryV1, ProductionPackV1, ProductionPackageExportOutcomeV1,
     ProductionPackageExporterV1, Project, ProjectBoardProjectionV1, ProjectDisplayStatus,
-    RemoteComputeJobSpecV1, RemoteReconciliationSummaryV1, RuntimeWorkloadEstimateV1, StateStore,
-    StudioJobReviewSnapshotV1, StudioPackAvailabilityStatusV1, StudioPackOverridesV1,
-    StudioPackRuntimeSnapshotV1, StudioPackUxViewV1, StudioPackV1, StudioReviewCenterV1, Workspace,
-    WorkspaceSession, STUDIO_PACK_SCHEMA_V1, STUDIO_PACK_VERSION_V1,
+    RemoteComputeJobSpecV1, RemoteReconciliationSummaryV1, Result as CoreResult,
+    RuntimeWorkloadEstimateV1, SegmentTtsLockStateV1, SelectedVisualOutput, StateStore,
+    StockDiscoveryStatusV1, StudioAutomationLevelV1, StudioJobReviewSnapshotV1,
+    StudioPackAvailabilityStatusV1, StudioPackOverridesV1, StudioPackRouteTargetV1,
+    StudioPackRuntimeSnapshotV1, StudioPackUxViewV1, StudioPackV1, StudioReviewCenterV1,
+    VisualCandidate, VisualCandidateRankingInput, VisualCandidateSignals, VisualReviewSet,
+    VoiceIdentityV1, VoiceModelIdentityV1, WorkflowStep, Workspace, WorkspaceSession,
+    CREATOR_STEP_VISUAL_PREPARE_V1, STICK_FIGURE_VISUAL_CAPABILITY_V1, STUDIO_PACK_SCHEMA_V1,
+    STUDIO_PACK_VERSION_V1,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
@@ -121,6 +140,8 @@ struct ProjectView {
     project: Project,
     status: ProjectDisplayStatus,
     board: ProjectBoardProjectionV1,
+    steps: Vec<WorkflowStep>,
+    run: Option<CreatorRunCoordinatorV1>,
 }
 
 #[derive(Debug, Serialize)]
@@ -238,6 +259,23 @@ struct ProductionExportViewV1 {
     history: Vec<ProductionExportHistoryEntryV1>,
     last_pack: Option<ProductionPackV1>,
     diagnostic: Option<ProductionExportDiagnosticViewV1>,
+}
+
+#[derive(Debug, Serialize)]
+struct CreatorVisualReviewSceneDesktopViewV1 {
+    scene_id: String,
+    narration: String,
+    purpose: String,
+    action: CreatorVisualActionV1,
+    review: Option<VisualReviewSet>,
+    generated_preset: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct CreatorVisualReviewDesktopViewV1 {
+    project_id: String,
+    complete: bool,
+    scenes: Vec<CreatorVisualReviewSceneDesktopViewV1>,
 }
 
 #[tauri::command]
@@ -657,9 +695,12 @@ fn create_project_from_studio_pack(
     }
 
     let store = writable_store(&state)?;
-    store
+    let effective = catalog.resolve_v1(&selected_id).map_err(error_string)?;
+    let project = store
         .create_project_with_studio_pack(title.trim(), Some(&selected_id))
         .map_err(error_string)?;
+    let workflow = compile_creator_workflow_plan_v1(&project, &effective).map_err(error_string)?;
+    materialize_creator_workflow_plan_v1(&store, &workflow).map_err(error_string)?;
     snapshot_from_active(&state)
 }
 
@@ -781,6 +822,575 @@ fn remove_asset_tag(
         .map_err(error_string)
 }
 
+struct DesktopVisualRuntimeV1<'a> {
+    registry: &'a PluginRegistry,
+    runtime: &'a StudioPackRuntimeSnapshotV1,
+    runtime_root: PathBuf,
+}
+
+impl DesktopVisualRuntimeV1<'_> {
+    fn resolve_plugin_v1(
+        &self,
+        target: &StudioPackRouteTargetV1,
+        preferred_provider: Option<&str>,
+    ) -> CoreResult<&DiscoveredPlugin> {
+        let ready = |plugin_id: &str| {
+            matches!(
+                self.runtime.get_v1(plugin_id),
+                PluginRuntimeReadinessV1::Ready
+            )
+        };
+
+        if let Some(plugin_id) = preferred_provider.or(target.plugin_id.as_deref()) {
+            let plugin = self.registry.get(plugin_id).ok_or_else(|| {
+                CoreError::InvalidContract(format!("visual plugin {plugin_id} is not installed"))
+            })?;
+            if !ready(&plugin.manifest.id) {
+                return Err(CoreError::InvalidContract(format!(
+                    "visual plugin {} is not runtime-ready",
+                    plugin.manifest.id
+                )));
+            }
+            if !plugin
+                .manifest
+                .capabilities
+                .iter()
+                .any(|capability| capability == &target.capability)
+            {
+                return Err(CoreError::InvalidContract(format!(
+                    "visual plugin {} does not provide {}",
+                    plugin.manifest.id, target.capability
+                )));
+            }
+            return Ok(plugin);
+        }
+
+        self.registry
+            .plugin_ids_for_capability(&target.capability)
+            .iter()
+            .filter(|plugin_id| ready(plugin_id))
+            .find_map(|plugin_id| self.registry.get(plugin_id))
+            .ok_or_else(|| {
+                CoreError::InvalidContract(format!(
+                    "no runtime-ready visual plugin provides {}",
+                    target.capability
+                ))
+            })
+    }
+
+    fn process_result_v1(
+        plugin: &DiscoveredPlugin,
+        response: PluginResponse,
+        operation: &str,
+    ) -> CoreResult<serde_json::Value> {
+        match response {
+            PluginResponse::Success { result, .. } => Ok(result),
+            PluginResponse::Failure { error, .. } => Err(CoreError::PluginProtocol {
+                plugin: plugin.manifest.id.clone(),
+                message: format!("{operation} failed with {}: {}", error.code, error.message),
+            }),
+        }
+    }
+
+    fn deterministic_signals_v1(
+        candidate: &VisualCandidate,
+        ordinal: usize,
+    ) -> VisualCandidateSignals {
+        let relevance = (0.96 - ordinal as f64 * 0.025).clamp(0.72, 0.96);
+        let quality = match (candidate.width, candidate.height) {
+            (Some(width), Some(height)) if width >= 1920 || height >= 1080 => 0.92,
+            (Some(width), Some(height)) if width >= 1280 || height >= 720 => 0.86,
+            _ => 0.78,
+        };
+        let editability = if candidate.media_type == omnicreator_core::VisualMediaType::Video {
+            0.88
+        } else {
+            0.82
+        };
+        VisualCandidateSignals {
+            semantic_relevance: relevance,
+            emotional_relevance: (relevance - 0.04).max(0.0),
+            narrative_purpose: (relevance - 0.02).max(0.0),
+            visual_quality: quality,
+            channel_continuity: 0.80,
+            editability,
+            usage_count: 0,
+            used_recently: false,
+        }
+    }
+
+    fn target_uri_v1(
+        scene_id: &str,
+        job_id: &str,
+        relative_output: &str,
+    ) -> CoreResult<omnicreator_core::LogicalUri> {
+        let extension = Path::new(relative_output)
+            .extension()
+            .and_then(|value| value.to_str())
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or("bin");
+        omnicreator_core::LogicalUri::parse(&format!(
+            "project://visual/{scene_id}/{job_id}.{extension}"
+        ))
+    }
+
+    fn finish_attempt_for_error_v1(
+        state_store: &mut StateStore,
+        attempt_id: &str,
+        error: &CoreError,
+    ) {
+        let code = match error {
+            CoreError::PluginProtocol { .. } => "PROVIDER_UNAVAILABLE",
+            CoreError::PluginTimeout { .. } => "NETWORK_TIMEOUT",
+            CoreError::PluginProcessExited { .. } | CoreError::PluginSpawn { .. } => {
+                "LOCAL_RUNTIME_CONTEXT_ERROR"
+            }
+            _ => "LOCAL_RUNTIME_CONTEXT_ERROR",
+        };
+        let _ = state_store.finish_attempt_failure(attempt_id, code);
+    }
+}
+
+impl CreatorVisualDiscoveryExecutorV1 for DesktopVisualRuntimeV1<'_> {
+    fn discover_stock_v1(
+        &self,
+        scene: &omnicreator_core::SceneIntentV1,
+        ordered_targets: &[StudioPackRouteTargetV1],
+    ) -> CoreResult<CreatorStockDiscoveryV1> {
+        let mut ranking_inputs = Vec::new();
+        let mut seen = BTreeSet::new();
+        let mut any_runtime_ready = false;
+
+        for target in ordered_targets {
+            let Ok(plugin) = self.resolve_plugin_v1(target, target.plugin_id.as_deref()) else {
+                continue;
+            };
+            any_runtime_ready = true;
+
+            let process = match PluginProcess::spawn(plugin, PluginProcessOptions::default()) {
+                Ok(process) => process,
+                Err(_) => continue,
+            };
+            let initialized = process.initialize(serde_json::json!({}));
+            if initialized
+                .ok()
+                .and_then(|call| {
+                    Self::process_result_v1(plugin, call.response, "plugin.initialize").ok()
+                })
+                .is_none()
+            {
+                let _ = process.shutdown();
+                continue;
+            }
+
+            let media_type = match target.capability.as_str() {
+                "stock_image" => "image",
+                "stock_video" => "video",
+                _ => {
+                    let _ = process.shutdown();
+                    continue;
+                }
+            };
+            let call = process.execute(
+                "visual.resolve",
+                serde_json::json!({
+                    "scene": scene,
+                    "media_type": media_type,
+                }),
+            );
+            let result = match call.ok().and_then(|call| {
+                Self::process_result_v1(plugin, call.response, "visual.resolve").ok()
+            }) {
+                Some(result) => result,
+                None => {
+                    let _ = process.shutdown();
+                    continue;
+                }
+            };
+            let _ = process.shutdown();
+
+            let candidates = result
+                .get("candidates")
+                .and_then(serde_json::Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            for raw in candidates {
+                let candidate: VisualCandidate = match serde_json::from_value(raw) {
+                    Ok(candidate) => candidate,
+                    Err(_) => continue,
+                };
+                if candidate.validate().is_err() || !seen.insert(candidate.candidate_id.clone()) {
+                    continue;
+                }
+                let ordinal = ranking_inputs.len();
+                ranking_inputs.push(VisualCandidateRankingInput {
+                    signals: Self::deterministic_signals_v1(&candidate, ordinal),
+                    candidate,
+                });
+            }
+        }
+
+        Ok(CreatorStockDiscoveryV1 {
+            status: if !ranking_inputs.is_empty() || any_runtime_ready {
+                StockDiscoveryStatusV1::Complete
+            } else {
+                StockDiscoveryStatusV1::Unavailable
+            },
+            ranking_inputs,
+        })
+    }
+}
+
+impl CreatorVisualAssetExecutorV1 for DesktopVisualRuntimeV1<'_> {
+    fn fetch_selected_stock_v1(
+        &self,
+        state_store: &mut StateStore,
+        artifact_store: &ArtifactStore,
+        request: CreatorVisualStockFetchRequestV1<'_>,
+    ) -> CoreResult<Artifact> {
+        let plugin = self.resolve_plugin_v1(
+            request.target,
+            Some(request.candidate.source_provider.as_str()),
+        )?;
+        let workspace = PluginJobWorkspace::create(&self.runtime_root, request.job_id)?;
+        let process = PluginProcess::spawn(plugin, PluginProcessOptions::default())?;
+        let initialize = process.initialize(workspace.initialization_context(plugin)?)?;
+        Self::process_result_v1(plugin, initialize.response, "plugin.initialize")?;
+
+        let started = state_store.start_attempt(
+            request.job_id,
+            Some(&format!("plugin:{}", plugin.manifest.id)),
+        )?;
+        let result = (|| {
+            let call = process.execute(
+                "visual.fetch_selected",
+                serde_json::json!({
+                    "selection_ref": request.candidate.selection_ref,
+                    "quality_mode": "standard",
+                }),
+            )?;
+            let value = Self::process_result_v1(plugin, call.response, "visual.fetch_selected")?;
+            let selected: SelectedVisualOutput = serde_json::from_value(value)?;
+            selected.validate()?;
+            if selected.source_provider != request.candidate.source_provider
+                || selected.source_asset_id != request.candidate.source_asset_id
+                || selected.selection_ref != request.candidate.selection_ref
+            {
+                return Err(CoreError::InvalidArtifact(
+                    "selected stock plugin output does not match reviewed candidate".to_owned(),
+                ));
+            }
+            let verified = workspace.verify_output_file(&selected.relative_output)?;
+            let mut promotion = selected.promotion(Self::target_uri_v1(
+                &request.scene.id,
+                request.job_id,
+                &selected.relative_output,
+            )?)?;
+            let metadata = promotion.metadata.as_object_mut().ok_or_else(|| {
+                CoreError::InvalidArtifact("selected visual metadata must be an object".to_owned())
+            })?;
+            metadata.insert(
+                "route_target".to_owned(),
+                serde_json::to_value(request.target)?,
+            );
+            metadata.insert(
+                "visual_routing".to_owned(),
+                serde_json::to_value(request.routing)?,
+            );
+
+            let artifacts = artifact_store.promote_attempt_outputs(
+                state_store,
+                omnicreator_core::artifact_store::AttemptPromotionRequest {
+                    attempt_id: started.attempt_id.clone(),
+                    job_id: request.job_id.to_owned(),
+                    outputs: vec![omnicreator_core::artifact_store::AttemptOutputPromotion {
+                        source: verified.path().to_path_buf(),
+                        target_uri: promotion.target_uri,
+                        artifact_type: promotion.artifact_type,
+                        metadata: promotion.metadata,
+                        expected_sha256: None,
+                    }],
+                    selected_output_index: 0,
+                },
+            )?;
+            artifacts.into_iter().next().ok_or_else(|| {
+                CoreError::InvalidArtifact(
+                    "selected stock plugin produced no promoted artifact".to_owned(),
+                )
+            })
+        })();
+
+        let _ = process.shutdown();
+        match result {
+            Ok(artifact) => Ok(artifact),
+            Err(error) => {
+                Self::finish_attempt_for_error_v1(state_store, &started.attempt_id, &error);
+                Err(error)
+            }
+        }
+    }
+
+    fn generate_visual_v1(
+        &self,
+        state_store: &mut StateStore,
+        artifact_store: &ArtifactStore,
+        request: CreatorVisualGenerationRequestV1<'_>,
+    ) -> CoreResult<Artifact> {
+        let plugin = self.resolve_plugin_v1(request.target, request.target.plugin_id.as_deref())?;
+        let workspace = PluginJobWorkspace::create(&self.runtime_root, request.job_id)?;
+        let process = PluginProcess::spawn(plugin, PluginProcessOptions::default())?;
+        let initialize = process.initialize(workspace.initialization_context(plugin)?)?;
+        Self::process_result_v1(plugin, initialize.response, "plugin.initialize")?;
+
+        let style = GeneratedImageStyleV1 {
+            preset: request
+                .target
+                .preset
+                .clone()
+                .unwrap_or_else(|| "default".to_owned()),
+            description: None,
+        };
+        let seed = request.scene.id.bytes().fold(0_u64, |value, byte| {
+            value.wrapping_mul(131).wrapping_add(u64::from(byte))
+        });
+        let generated = GeneratedImageRequestV1::from_scene_v1(
+            request.scene.clone(),
+            style,
+            GeneratedImageResolutionV1 {
+                width: 1280,
+                height: 720,
+            },
+            Some(seed),
+            BTreeMap::new(),
+        )?;
+
+        let started = state_store.start_attempt(
+            request.job_id,
+            Some(&format!("plugin:{}", plugin.manifest.id)),
+        )?;
+        let result = (|| {
+            let call = process.execute("visual.generate", serde_json::to_value(&generated)?)?;
+            let value = Self::process_result_v1(plugin, call.response, "visual.generate")?;
+            let generated_result: GeneratedImagePluginResultV1 = serde_json::from_value(value)?;
+            let verified = workspace.verify_output_file(&generated_result.relative_output)?;
+
+            let target_uri = Self::target_uri_v1(
+                &request.scene.id,
+                request.job_id,
+                &generated_result.relative_output,
+            )?;
+            let artifacts = artifact_store.promote_attempt_outputs(
+                state_store,
+                omnicreator_core::artifact_store::AttemptPromotionRequest {
+                    attempt_id: started.attempt_id.clone(),
+                    job_id: request.job_id.to_owned(),
+                    outputs: vec![omnicreator_core::artifact_store::AttemptOutputPromotion {
+                        source: verified.path().to_path_buf(),
+                        target_uri,
+                        artifact_type: "image".to_owned(),
+                        metadata: serde_json::json!({
+                            "source_provider": plugin.manifest.id,
+                            "capability": request.target.capability,
+                            "route_target": request.target,
+                            "visual_routing": request.routing,
+                            "model": {
+                                "id": generated_result.model_id,
+                                "version": generated_result.model_version,
+                            },
+                            "seed": generated_result.seed,
+                            "prompt_sha256": generated_result.prompt_sha256,
+                            "settings_fingerprint": generated_result.settings_fingerprint,
+                            "provider_metadata": generated_result.metadata,
+                            "provenance": generated_result.provenance,
+                        }),
+                        expected_sha256: Some(generated_result.sha256),
+                    }],
+                    selected_output_index: 0,
+                },
+            )?;
+            artifacts.into_iter().next().ok_or_else(|| {
+                CoreError::InvalidArtifact(
+                    "generated visual plugin produced no promoted artifact".to_owned(),
+                )
+            })
+        })();
+
+        let _ = process.shutdown();
+        match result {
+            Ok(artifact) => Ok(artifact),
+            Err(error) => {
+                Self::finish_attempt_for_error_v1(state_store, &started.attempt_id, &error);
+                Err(error)
+            }
+        }
+    }
+}
+
+fn creator_visual_plan_for_desktop_v1(
+    app: &AppHandle,
+    store: &StateStore,
+    artifacts: &ArtifactStore,
+    project_id: &str,
+) -> Result<
+    (
+        CreatorContentSceneOutcomeV1,
+        CreatorVisualPlanV1,
+        PluginInventoryReportV1,
+        StudioPackRuntimeSnapshotV1,
+        PathBuf,
+    ),
+    String,
+> {
+    let project = store.get_project(project_id).map_err(error_string)?;
+    let pack_id = project
+        .studio_pack
+        .as_deref()
+        .ok_or_else(|| "Bind a Studio Pack before reviewing creator visuals.".to_owned())?;
+    let catalog = load_studio_pack_catalog_v1(artifacts.data_root())?;
+    let pack = catalog.resolve_v1(pack_id).map_err(error_string)?;
+    let creator = load_latest_creator_content_scene_v1(store, artifacts, project_id)
+        .map_err(error_string)?
+        .ok_or_else(|| "Content + SceneIntent must be prepared before visual review.".to_owned())?;
+    let inventory = plugin_inventory_report_v1(app)?;
+    let runtime = studio_pack_runtime_snapshot_v1(app, &inventory.registry)?;
+    let runtime_root = creator_plugin_runtime_root_v1(app)?;
+    let visual_runtime = DesktopVisualRuntimeV1 {
+        registry: &inventory.registry,
+        runtime: &runtime,
+        runtime_root: runtime_root.clone(),
+    };
+    let plan = plan_creator_visuals_v1(
+        &project,
+        &pack,
+        &creator.content,
+        &creator.scene_plan,
+        &creator.scene_plan_artifact.sha256,
+        &visual_runtime,
+        &CreatorVisualPlanningOptionsV1::default(),
+    )
+    .map_err(error_string)?;
+    Ok((creator, plan, inventory, runtime, runtime_root))
+}
+
+fn creator_visual_review_view_v1(
+    creator: &CreatorContentSceneOutcomeV1,
+    plan: &CreatorVisualPlanV1,
+) -> Result<CreatorVisualReviewDesktopViewV1, String> {
+    let mut scenes = Vec::new();
+    for planned in &plan.scenes {
+        if !matches!(
+            planned.action,
+            CreatorVisualActionV1::AwaitingStockSelection
+                | CreatorVisualActionV1::AwaitingGenerationApproval
+        ) {
+            continue;
+        }
+        let scene = creator
+            .scene_plan
+            .scenes
+            .iter()
+            .find(|scene| scene.id == planned.scene_id)
+            .ok_or_else(|| {
+                format!(
+                    "Visual review references missing SceneIntent {}.",
+                    planned.scene_id
+                )
+            })?;
+        scenes.push(CreatorVisualReviewSceneDesktopViewV1 {
+            scene_id: planned.scene_id.clone(),
+            narration: scene.narration.clone(),
+            purpose: scene.purpose.clone(),
+            action: planned.action,
+            review: planned.review.clone(),
+            generated_preset: planned
+                .execution_target
+                .as_ref()
+                .and_then(|target| target.preset.clone()),
+        });
+    }
+
+    Ok(CreatorVisualReviewDesktopViewV1 {
+        project_id: plan.project_id.clone(),
+        complete: scenes.is_empty(),
+        scenes,
+    })
+}
+
+#[tauri::command]
+fn creator_visual_review_status(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    project_id: String,
+) -> Result<CreatorVisualReviewDesktopViewV1, String> {
+    let data_root = active_data_root(&state)?;
+    let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
+    let store = readable_store(&state)?;
+    let (creator, plan, _, _, _) =
+        creator_visual_plan_for_desktop_v1(&app, &store, &artifacts, &project_id)?;
+    creator_visual_review_view_v1(&creator, &plan)
+}
+
+#[tauri::command]
+fn select_creator_visual_candidate(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    project_id: String,
+    scene_id: String,
+    candidate_id: String,
+) -> Result<AppSnapshot, String> {
+    let data_root = active_data_root(&state)?;
+    let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
+    let mut store = writable_store(&state)?;
+    let (creator, mut plan, inventory, runtime, runtime_root) =
+        creator_visual_plan_for_desktop_v1(&app, &store, &artifacts, &project_id)?;
+    select_creator_stock_candidate_v1(&mut plan, &scene_id, &candidate_id).map_err(error_string)?;
+    let visual_runtime = DesktopVisualRuntimeV1 {
+        registry: &inventory.registry,
+        runtime: &runtime,
+        runtime_root,
+    };
+    execute_creator_visual_plan_v1(
+        &mut store,
+        &artifacts,
+        &plan,
+        &creator.scene_plan,
+        &visual_runtime,
+    )
+    .map_err(error_string)?;
+    drop(store);
+    snapshot_from_active(&state)
+}
+
+#[tauri::command]
+fn approve_creator_generated_visual(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    project_id: String,
+    scene_id: String,
+) -> Result<AppSnapshot, String> {
+    let data_root = active_data_root(&state)?;
+    let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
+    let mut store = writable_store(&state)?;
+    let (creator, mut plan, inventory, runtime, runtime_root) =
+        creator_visual_plan_for_desktop_v1(&app, &store, &artifacts, &project_id)?;
+    approve_creator_generated_visual_v1(&mut plan, &scene_id).map_err(error_string)?;
+    let visual_runtime = DesktopVisualRuntimeV1 {
+        registry: &inventory.registry,
+        runtime: &runtime,
+        runtime_root,
+    };
+    execute_creator_visual_plan_v1(
+        &mut store,
+        &artifacts,
+        &plan,
+        &creator.scene_plan,
+        &visual_runtime,
+    )
+    .map_err(error_string)?;
+    drop(store);
+    snapshot_from_active(&state)
+}
+
 #[tauri::command]
 fn review_center(
     app: AppHandle,
@@ -801,6 +1411,275 @@ fn retry_review_job(
     studio_review_center_view_v1(&app, &state)
 }
 
+fn creator_plugin_runtime_root_v1(app: &AppHandle) -> Result<PathBuf, String> {
+    let cache_dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|error| format!("Cannot resolve app cache directory: {error}"))?;
+    let root = cache_dir.join("creator-plugin-runtime");
+    fs::create_dir_all(&root)
+        .map_err(|error| format!("Cannot create creator plugin runtime directory: {error}"))?;
+    Ok(root)
+}
+
+fn creator_input_v1(input_kind: &str, input_text: &str) -> Result<Option<CreatorInputV1>, String> {
+    let input_text = input_text.trim();
+    if input_text.is_empty() {
+        return Ok(None);
+    }
+    match input_kind.trim().to_ascii_uppercase().as_str() {
+        "TOPIC" => Ok(Some(CreatorInputV1::topic(input_text))),
+        "SCRIPT" => Ok(Some(CreatorInputV1::script(input_text))),
+        _ => Err("Creator input kind must be TOPIC or SCRIPT.".to_owned()),
+    }
+}
+
+fn creator_voice_runtime_v1(
+    app: &AppHandle,
+    pack: &omnicreator_core::EffectiveStudioPackV1,
+    provider: Option<&ComputeProviderSchedulingSnapshotV1>,
+) -> Result<CreatorVoiceRuntimeV1, String> {
+    let provider_id = provider
+        .map(|value| value.session.identity.provider_id.clone())
+        .unwrap_or(load_compute_provider_config(app)?.provider_id);
+    let model_group = provider
+        .and_then(|value| {
+            value
+                .session
+                .capabilities
+                .model_groups
+                .iter()
+                .find(|group| group.to_ascii_lowercase().contains("omnivoice"))
+                .cloned()
+                .or_else(|| value.session.capabilities.model_groups.first().cloned())
+        })
+        .unwrap_or_else(|| "omnivoice".to_owned());
+
+    let env_or = |name: &str, fallback: String| {
+        env::var(name)
+            .ok()
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty())
+            .unwrap_or(fallback)
+    };
+    let plugin_id = env_or("OMNICREATOR_VOICE_PLUGIN_ID", "omnivoice".to_owned());
+    let voice_id = env_or(
+        "OMNICREATOR_VOICE_ID",
+        pack.config
+            .presets
+            .get("voice")
+            .cloned()
+            .unwrap_or_else(|| "warm-narrator".to_owned()),
+    );
+    let voice_version = env_or("OMNICREATOR_VOICE_VERSION", "1".to_owned());
+    let model_id = env_or("OMNICREATOR_VOICE_MODEL_ID", model_group.clone());
+    let model_version = env_or("OMNICREATOR_VOICE_MODEL_VERSION", "1".to_owned());
+    let fingerprint = omnicreator_core::deterministic_input_hash(&[
+        b"desktop-creator-voice-runtime-v1",
+        provider_id.as_bytes(),
+        plugin_id.as_bytes(),
+        voice_id.as_bytes(),
+        voice_version.as_bytes(),
+        model_id.as_bytes(),
+        model_version.as_bytes(),
+    ]);
+
+    Ok(CreatorVoiceRuntimeV1 {
+        plugin_id,
+        provider_id,
+        voice: VoiceIdentityV1 {
+            voice_id,
+            voice_version,
+        },
+        model: VoiceModelIdentityV1 {
+            model_id,
+            model_version,
+        },
+        settings_fingerprint: fingerprint,
+        pronunciation_rules: Vec::new(),
+        locks: SegmentTtsLockStateV1 {
+            normalization_locked: true,
+            pronunciation_locked: true,
+        },
+        approval_required: false,
+        approval_complete: true,
+        production_lock_required: false,
+        gpu_execution_requested: true,
+        requirements: default_segment_tts_compute_requirements_v1(model_group, 12_000),
+    })
+}
+
+#[tauri::command]
+fn start_creator_production(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    project_id: String,
+    input_kind: String,
+    input_text: String,
+) -> Result<AppSnapshot, String> {
+    let requested_input = creator_input_v1(&input_kind, &input_text)?;
+    let data_root = active_data_root(&state)?;
+    let artifacts = ArtifactStore::new(&data_root).map_err(error_string)?;
+    let catalog = load_studio_pack_catalog_v1(&data_root)?;
+    let inventory = plugin_inventory_report_v1(&app)?;
+    let plugin_runtime = studio_pack_runtime_snapshot_v1(&app, &inventory.registry)?;
+    let runtime_root = creator_plugin_runtime_root_v1(&app)?;
+
+    let mut store = writable_store(&state)?;
+    let project = store.get_project(&project_id).map_err(error_string)?;
+    let pack_id = project
+        .studio_pack
+        .as_deref()
+        .ok_or_else(|| "Bind a Studio Pack before starting creator production.".to_owned())?;
+    let pack = catalog.resolve_v1(pack_id).map_err(error_string)?;
+
+    let mut creator = load_latest_creator_content_scene_v1(&store, &artifacts, &project_id)
+        .map_err(error_string)?;
+    let recovered_input = if creator.is_none() && requested_input.is_none() {
+        load_latest_creator_content_v1(&store, &artifacts, &project_id)
+            .map_err(error_string)?
+            .map(|(content, _)| content.source)
+    } else {
+        None
+    };
+    let effective_input = requested_input.as_ref().or(recovered_input.as_ref());
+    let should_run_content = match (effective_input, &creator) {
+        (Some(input), Some(existing)) => existing.content.source != *input,
+        (Some(_), None) => true,
+        (None, Some(_)) => false,
+        (None, None) => return Err(
+            "Creator topic or script is required until Content has a verified canonical artifact."
+                .to_owned(),
+        ),
+    };
+    if should_run_content {
+        let input = effective_input.expect("creator input is present when content must run");
+        let llm = LlmGatewayClient::new(load_llmgateway_config(&app)?).map_err(error_string)?;
+        creator = Some(
+            run_creator_content_scene_v1(
+                &mut store,
+                &artifacts,
+                &llm,
+                &project_id,
+                input,
+                &CreatorContentSceneOptionsV1::default(),
+            )
+            .map_err(error_string)?,
+        );
+    }
+    let creator = creator.ok_or_else(|| {
+        "Creator content state is unavailable after content orchestration.".to_owned()
+    })?;
+
+    let visual_step = store
+        .list_project_steps(&project_id)
+        .map_err(error_string)?
+        .into_iter()
+        .find(|step| {
+            step.step == CREATOR_STEP_VISUAL_PREPARE_V1
+                && step.unit == omnicreator_core::CREATOR_WORKFLOW_UNIT_PROJECT_V1
+        })
+        .ok_or_else(|| "Creator visual workflow step is missing.".to_owned())?;
+    if visual_step.status != omnicreator_core::StepStatus::Succeeded {
+        let visual_runtime = DesktopVisualRuntimeV1 {
+            registry: &inventory.registry,
+            runtime: &plugin_runtime,
+            runtime_root,
+        };
+        let visual_plan = plan_creator_visuals_v1(
+            &project,
+            &pack,
+            &creator.content,
+            &creator.scene_plan,
+            &creator.scene_plan_artifact.sha256,
+            &visual_runtime,
+            &CreatorVisualPlanningOptionsV1::default(),
+        )
+        .map_err(error_string)?;
+        let visual = execute_creator_visual_plan_v1(
+            &mut store,
+            &artifacts,
+            &visual_plan,
+            &creator.scene_plan,
+            &visual_runtime,
+        )
+        .map_err(error_string)?;
+        if !visual.completed {
+            drop(store);
+            return snapshot_from_active(&state);
+        }
+    }
+
+    let provider_snapshot = {
+        let mut guard = state.compute.lock().map_err(lock_error)?;
+        if let Some(runtime) = guard.as_mut() {
+            let _ = runtime.heartbeat(Utc::now());
+            let connection_state = runtime.state();
+            if let Some(session) = runtime.session().cloned() {
+                let _ = reconcile_remote_session_v1(
+                    &mut store,
+                    &artifacts,
+                    runtime.provider_mut(),
+                    &session.identity.provider_id,
+                    &session.identity.session_id,
+                    connection_state,
+                    compute_staging_dir(&app)?,
+                );
+                Some(ComputeProviderSchedulingSnapshotV1 {
+                    state: runtime.state(),
+                    session,
+                })
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    };
+    let providers = provider_snapshot
+        .clone()
+        .map(|provider| vec![provider])
+        .unwrap_or_default();
+    let voice_runtime = creator_voice_runtime_v1(&app, &pack, provider_snapshot.as_ref())?;
+    let voice_plan = plan_creator_voice_orchestration_v1(
+        &mut store,
+        &artifacts,
+        &creator.content,
+        &voice_runtime,
+        &providers,
+    )
+    .map_err(error_string)?;
+
+    if !voice_plan.all_complete() {
+        if voice_plan.burst.scheduled_job_count() > 0 {
+            let mut guard = state.compute.lock().map_err(lock_error)?;
+            if let Some(runtime) = guard.as_mut() {
+                if runtime.state() == ComputeProviderConnectionState::Ready {
+                    let _ = dispatch_creator_voice_burst_v1(
+                        &mut store,
+                        runtime.provider_mut(),
+                        &voice_plan,
+                    )
+                    .map_err(error_string)?;
+                }
+            }
+        }
+        drop(store);
+        return snapshot_from_active(&state);
+    }
+
+    assemble_creator_production_pack_v1(
+        &mut store,
+        &artifacts,
+        &project_id,
+        &CreatorProductionPackOptionsV1::default(),
+    )
+    .map_err(error_string)?;
+
+    drop(store);
+    snapshot_from_active(&state)
+}
+
 #[tauri::command]
 fn production_export_status(
     state: State<'_, DesktopState>,
@@ -814,23 +1693,48 @@ fn production_export_status(
 }
 
 #[tauri::command]
-fn export_production_pack(
+fn assemble_production_pack(
     state: State<'_, DesktopState>,
-    production_pack: ProductionPackV1,
+    project_id: String,
 ) -> Result<ProductionExportViewV1, String> {
-    let project_id = production_pack.project_id.clone();
     let data_root = active_data_root(&state)?;
     let mut store = writable_store(&state)?;
     store.get_project(&project_id).map_err(error_string)?;
     let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
+    assemble_creator_production_pack_v1(
+        &mut store,
+        &artifacts,
+        &project_id,
+        &CreatorProductionPackOptionsV1::default(),
+    )
+    .map_err(error_string)?;
+    production_export_view_v1(&store, &artifacts, &project_id, None, None)
+}
+
+#[tauri::command]
+fn export_production_pack(
+    state: State<'_, DesktopState>,
+    project_id: String,
+) -> Result<ProductionExportViewV1, String> {
+    let data_root = active_data_root(&state)?;
+    let mut store = writable_store(&state)?;
+    store.get_project(&project_id).map_err(error_string)?;
+    let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
+    let assembled = assemble_creator_production_pack_v1(
+        &mut store,
+        &artifacts,
+        &project_id,
+        &CreatorProductionPackOptionsV1::default(),
+    )
+    .map_err(error_string)?;
     let exporter = ProductionPackageExporterV1::default();
 
-    match exporter.export_v1(&mut store, &artifacts, &production_pack) {
+    match exporter.export_v1(&mut store, &artifacts, &assembled.production_pack) {
         Ok(outcome) => {
             production_export_view_v1(&store, &artifacts, &project_id, Some(outcome), None)
         }
         Err(error) => {
-            let diagnostic = production_export_diagnostic_v1(&error, &production_pack);
+            let diagnostic = production_export_diagnostic_v1(&error, &assembled.production_pack);
             production_export_view_v1(&store, &artifacts, &project_id, None, Some(diagnostic))
         }
     }
@@ -1273,6 +2177,7 @@ fn snapshot_from_active(state: &State<'_, DesktopState>) -> Result<AppSnapshot, 
         StateStore::open(workspace.sqlite_path()).map_err(error_string)?
     };
 
+    let artifacts = ArtifactStore::new(workspace.data_root()).map_err(error_string)?;
     let projects = store
         .list_projects()
         .map_err(error_string)?
@@ -1286,10 +2191,15 @@ fn snapshot_from_active(state: &State<'_, DesktopState>) -> Result<AppSnapshot, 
                 .list_project_steps(&project.id)
                 .map_err(error_string)?;
             let board = project_board_projection_v1(status, &jobs, &steps);
+            let run = project.studio_pack.as_ref().and_then(|_| {
+                derive_creator_run_coordinator_v1(&store, &artifacts, &project.id).ok()
+            });
             Ok(ProjectView {
                 project,
                 status,
                 board,
+                steps,
+                run,
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
@@ -1768,7 +2678,14 @@ fn production_export_view_v1(
     let history = store
         .production_export_history_v1(project_id)
         .map_err(error_string)?;
-    let last_pack = latest_portable_production_pack_v1(artifacts, project_id, &history);
+    let assembled = load_latest_creator_production_pack_v1(store, artifacts, project_id)
+        .map_err(error_string)?;
+    let last_pack =
+        latest_portable_production_pack_v1(artifacts, project_id, &history).or_else(|| {
+            assembled
+                .as_ref()
+                .map(|outcome| outcome.production_pack.clone())
+        });
     let state = if let Some(outcome) = outcome.as_ref() {
         if outcome.cache_hit {
             "cached".to_owned()
@@ -1780,11 +2697,12 @@ fn production_export_view_v1(
             .first()
             .map(|entry| entry.job.status.as_str().to_ascii_lowercase())
             .unwrap_or_else(|| "failed".to_owned())
+    } else if let Some(entry) = history.first() {
+        entry.job.status.as_str().to_ascii_lowercase()
+    } else if assembled.is_some() {
+        "assembled".to_owned()
     } else {
-        history
-            .first()
-            .map(|entry| entry.job.status.as_str().to_ascii_lowercase())
-            .unwrap_or_else(|| "not_exported".to_owned())
+        "not_assembled".to_owned()
     };
 
     Ok(ProductionExportViewV1 {
@@ -2205,9 +3123,14 @@ fn main() {
             remove_asset_tag,
             review_center,
             retry_review_job,
+            creator_visual_review_status,
+            select_creator_visual_candidate,
+            approve_creator_generated_visual,
+            start_creator_production,
             rename_project,
             delete_project,
             production_export_status,
+            assemble_production_pack,
             export_production_pack,
             llmgateway_status,
             save_llmgateway_settings,

@@ -1265,3 +1265,142 @@ button { cursor: pointer; }
     flex: 1;
   }
 }
+
+
+.creator-stage-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.creator-stage-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 7px;
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.creator-stage-pill b {
+  font-weight: 700;
+}
+
+.creator-stage-pill small {
+  opacity: 0.68;
+  font-size: 9px;
+}
+
+.creator-stage-pill.succeeded,
+.creator-stage-pill.skipped {
+  border-color: rgba(83, 196, 133, 0.5);
+}
+
+.creator-stage-pill.running,
+.creator-stage-pill.queued {
+  border-color: rgba(91, 154, 255, 0.55);
+}
+
+.creator-stage-pill.retryable,
+.creator-stage-pill.failed,
+.creator-stage-pill.fatal {
+  border-color: rgba(255, 125, 102, 0.65);
+}
+
+.creator-stage-pill.notready,
+.creator-stage-pill.not_ready,
+.creator-stage-pill.stale {
+  opacity: 0.72;
+}
+
+
+.creator-run-status {
+  display: grid;
+  grid-template-columns: max-content max-content 1fr;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 10px 0 16px;
+}
+
+.creator-run-status p {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.creator-visual-review {
+  display: grid;
+  gap: 12px;
+  margin: 14px 0;
+}
+
+.creator-review-head,
+.creator-review-decision {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.creator-review-scene {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.creator-review-scene p,
+.creator-review-scene small {
+  margin: 4px 0 0;
+}
+
+.creator-review-candidates {
+  display: grid;
+  gap: 10px;
+}
+
+.creator-review-candidate {
+  display: grid;
+  grid-template-columns: minmax(90px, 140px) 1fr max-content;
+  gap: 10px;
+  align-items: center;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.creator-review-candidate img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.creator-review-candidate-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.creator-review-candidate-copy span,
+.creator-review-candidate-copy small {
+  opacity: 0.72;
+}
+
+@media (max-width: 900px) {
+  .creator-review-candidate {
+    grid-template-columns: 1fr;
+  }
+
+  .creator-review-candidate img {
+    max-width: 320px;
+  }
+
+  .creator-run-status {
+    grid-template-columns: 1fr;
+  }
+}
