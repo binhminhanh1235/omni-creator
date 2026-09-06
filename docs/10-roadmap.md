@@ -287,6 +287,17 @@ P1 Unsplash implementation notes:
 - the tracking URL and full CDN URL are transport details and are not persisted into canonical selected-output metadata
 - the access key stays machine-local through `UNSPLASH_ACCESS_KEY`; no provider-specific core state is added
 
+P2 Storyblocks implementation notes:
+
+- Storyblocks is selected over Shutterstock after license-compatibility review because OmniCreator's current single-creator local ArtifactStore -> DaVinci workflow requires the licensed creator to retain selected raw media locally
+- the checked-in `storyblocks` plugin supports image + video preview-first search behind the same VisualCandidate boundary
+- Storyblocks HMAC authentication is generated per request from machine-local public/private keys and never persisted
+- canonical OmniCreator `project_id` is passed at the visual-operation payload root when the upstream API requires a project identifier; the provider's end-user identifier stays machine-local
+- test API credentials may search/preview, but `visual.fetch_selected` refuses to produce a promotable selected output unless machine-local API mode is explicitly `production`
+- selected production downloads are requested only after selection, copied into the granted job workspace, then verified/promoted by core
+- full-size Storyblocks CDN URLs, HMACs, private keys and provider user identifiers are transport/configuration details and are not persisted into canonical output metadata
+- no stockpiling, bulk pre-download or raw-file redistribution workflow is added
+
 Success:
 
 - a SceneIntent can search multiple stock sources without changing core workflow
