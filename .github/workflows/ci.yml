@@ -25,9 +25,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Python syntax
-        run: python3 -m py_compile plugins/pexels/plugin.py plugins/pexels/tests/test_plugin.py plugins/generated-image-reference/plugin.py plugins/generated-image-reference/tests/test_plugin.py plugins/generated-image-api/plugin.py plugins/generated-image-api/image_api_support.py plugins/generated-image-api/tests/test_plugin.py
+        run: python3 -m py_compile plugins/pexels/plugin.py plugins/pexels/tests/test_plugin.py plugins/pixabay/plugin.py plugins/pixabay/tests/test_plugin.py plugins/generated-image-reference/plugin.py plugins/generated-image-reference/tests/test_plugin.py plugins/generated-image-api/plugin.py plugins/generated-image-api/image_api_support.py plugins/generated-image-api/tests/test_plugin.py
       - name: Pexels offline tests
         run: python3 -m unittest discover -s plugins/pexels/tests -p 'test_*.py'
+      - name: Pixabay offline tests
+        run: python3 -m unittest discover -s plugins/pixabay/tests -p 'test_*.py'
       - name: Generated image offline tests
         run: python3 -m unittest discover -s plugins/generated-image-reference/tests -p 'test_*.py'
       - name: Generated image API offline tests
