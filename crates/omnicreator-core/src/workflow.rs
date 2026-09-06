@@ -976,6 +976,60 @@ mod tests {
     }
 
     #[test]
+    fn creator_semantic_steps_prevent_premature_ready_for_edit() {
+        let temp = tempfile::tempdir().unwrap();
+        let workspace = Workspace::create(temp.path().join("data")).unwrap();
+        let mut state = StateStore::open(workspace.sqlite_path()).unwrap();
+        let project = state.create_project("Creator status").unwrap();
+
+        let content = state
+            .create_step(
+                &project.id,
+                "content.prepare",
+                "project",
+                StepStatus::Ready,
+                Some("content-step"),
+            )
+            .unwrap();
+        state
+            .create_step(
+                &project.id,
+                "visual.prepare",
+                "project",
+                StepStatus::NotReady,
+                Some("visual-step"),
+            )
+            .unwrap();
+        let job = state
+            .create_job(&project.id, "content.prepare", "project", "content-job")
+            .unwrap();
+        let attempt = state.start_attempt(&job.job_id, Some("llm")).unwrap();
+        let artifact = Artifact {
+            artifact_id: "content-artifact".to_owned(),
+            project_id: Some(project.id.clone()),
+            artifact_type: "creator_content".to_owned(),
+            uri: crate::LogicalUri::parse("project://content/content.json").unwrap(),
+            sha256: "0".repeat(64),
+            size_bytes: 1,
+            input_hash: Some(job.input_hash.clone()),
+            producer_job: Some(job.job_id.clone()),
+            created_at: Utc::now(),
+            metadata: serde_json::json!({}),
+        };
+        state
+            .commit_attempt_artifact_success(&attempt.attempt_id, &artifact)
+            .unwrap();
+        state
+            .set_step_status(&content.step_id, StepStatus::Succeeded)
+            .unwrap();
+
+        assert_eq!(
+            state.derive_project_status(&project.id).unwrap(),
+            ProjectDisplayStatus::Preparing
+        );
+    }
+
+    #[test]
     fn retries_create_new_attempts_and_preserve_history() {
         let temp = tempfile::tempdir().unwrap();
         let workspace = Workspace::create(temp.path().join("data")).unwrap();
