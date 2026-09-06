@@ -1056,10 +1056,9 @@ mod tests {
         compile_creator_workflow_plan_v1, initial_studio_pack_catalog_v1,
         materialize_creator_workflow_plan_v1, CreatorInputV1, LogicalUri, SegmentV1,
         VisualCandidatePreview, VisualCandidateSignals, VisualPreviewKind, VoiceDirectionV1,
-        CREATOR_CONTENT_SCHEMA_V1,
-        CREATOR_CONTENT_VERSION_V1, CREATOR_SCENE_PLAN_SCHEMA_V1,
-        CREATOR_SCENE_PLAN_VERSION_V1, SCENE_INTENT_SCHEMA, SCENE_INTENT_SCHEMA_VERSION,
-        SEGMENT_SCHEMA, SEGMENT_SCHEMA_VERSION, Workspace,
+        Workspace, CREATOR_CONTENT_SCHEMA_V1, CREATOR_CONTENT_VERSION_V1,
+        CREATOR_SCENE_PLAN_SCHEMA_V1, CREATOR_SCENE_PLAN_VERSION_V1, SCENE_INTENT_SCHEMA,
+        SCENE_INTENT_SCHEMA_VERSION, SEGMENT_SCHEMA, SEGMENT_SCHEMA_VERSION,
     };
 
     struct FixtureDiscovery {
@@ -1632,11 +1631,7 @@ mod tests {
         assert_eq!(executor.fetch_calls.get(), 0);
         assert_eq!(executor.generate_calls.get(), 1);
         assert_eq!(
-            plan.scenes[0]
-                .execution_target
-                .as_ref()
-                .unwrap()
-                .capability,
+            plan.scenes[0].execution_target.as_ref().unwrap().capability,
             GENERATED_STILL_CAPABILITY_ROUTE_V1
         );
     }
@@ -1673,11 +1668,7 @@ mod tests {
         assert!(outcome.completed);
         assert_eq!(executor.generate_calls.get(), 1);
         assert_eq!(
-            plan.scenes[0]
-                .execution_target
-                .as_ref()
-                .unwrap()
-                .capability,
+            plan.scenes[0].execution_target.as_ref().unwrap().capability,
             STICK_FIGURE_VISUAL_CAPABILITY_V1
         );
     }
