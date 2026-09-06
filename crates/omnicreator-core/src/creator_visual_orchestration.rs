@@ -1238,8 +1238,7 @@ mod tests {
             &scene_plan("conceptual"),
             sha(),
             &discovery,
-            &VisualRankingPolicy::default(),
-            VisualReviewOptions::default(),
+            &CreatorVisualPlanningOptionsV1::default(),
         )
         .unwrap();
 
@@ -1278,8 +1277,7 @@ mod tests {
             &scene_plan("conceptual"),
             sha(),
             &discovery,
-            &VisualRankingPolicy::default(),
-            VisualReviewOptions::default(),
+            &CreatorVisualPlanningOptionsV1::default(),
         )
         .unwrap();
 
@@ -1313,8 +1311,7 @@ mod tests {
             &scene_plan("literal"),
             sha(),
             &discovery,
-            &VisualRankingPolicy::default(),
-            VisualReviewOptions::default(),
+            &CreatorVisualPlanningOptionsV1::default(),
         )
         .unwrap();
 
@@ -1347,8 +1344,7 @@ mod tests {
             &scene_plan("conceptual"),
             sha(),
             &discovery,
-            &VisualRankingPolicy::default(),
-            VisualReviewOptions::default(),
+            &CreatorVisualPlanningOptionsV1::default(),
         )
         .unwrap();
 
@@ -1541,8 +1537,7 @@ mod tests {
             &scene_plan,
             sha(),
             &discovery,
-            &VisualRankingPolicy::default(),
-            VisualReviewOptions::default(),
+            &CreatorVisualPlanningOptionsV1::default(),
         )
         .unwrap();
         let executor = FixtureAssetExecutor {
@@ -1584,8 +1579,7 @@ mod tests {
             &scene_plan,
             sha(),
             &discovery,
-            &VisualRankingPolicy::default(),
-            VisualReviewOptions::default(),
+            &CreatorVisualPlanningOptionsV1::default(),
         )
         .unwrap();
         select_creator_stock_candidate_v1(&mut plan, "SC001", "pexels:video:42").unwrap();
@@ -1642,8 +1636,7 @@ mod tests {
             &scene_plan,
             sha(),
             &discovery,
-            &VisualRankingPolicy::default(),
-            VisualReviewOptions::default(),
+            &CreatorVisualPlanningOptionsV1::default(),
         )
         .unwrap();
         let executor = FixtureAssetExecutor {
@@ -1693,8 +1686,7 @@ mod tests {
             &scene_plan,
             sha(),
             &discovery,
-            &VisualRankingPolicy::default(),
-            VisualReviewOptions::default(),
+            &CreatorVisualPlanningOptionsV1::default(),
         )
         .unwrap();
         let executor = FixtureAssetExecutor {
