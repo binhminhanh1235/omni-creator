@@ -9,10 +9,9 @@ use omnicreator_core::{
     CreatorScenePlanV1, LogicalUri, PathResolver, ProductionPackageExporterV1, SceneIntentV1,
     SegmentV1, StateStore, StepStatus, VoiceDirectionV1, VoiceTimingCueV1, VoiceTimingV1,
     Workspace, CREATOR_CONTENT_ARTIFACT_TYPE_V1, CREATOR_CONTENT_SCHEMA_V1,
-    CREATOR_CONTENT_VERSION_V1, CREATOR_SCENE_PLAN_ARTIFACT_TYPE_V1,
-    CREATOR_SCENE_PLAN_SCHEMA_V1, CREATOR_SCENE_PLAN_VERSION_V1,
-    CREATOR_STEP_CONTENT_PREPARE_V1, CREATOR_STEP_PRODUCTION_PACK_V1,
-    CREATOR_STEP_SCENE_PLAN_V1, CREATOR_STEP_VISUAL_PREPARE_V1,
+    CREATOR_CONTENT_VERSION_V1, CREATOR_SCENE_PLAN_ARTIFACT_TYPE_V1, CREATOR_SCENE_PLAN_SCHEMA_V1,
+    CREATOR_SCENE_PLAN_VERSION_V1, CREATOR_STEP_CONTENT_PREPARE_V1,
+    CREATOR_STEP_PRODUCTION_PACK_V1, CREATOR_STEP_SCENE_PLAN_V1, CREATOR_STEP_VISUAL_PREPARE_V1,
     CREATOR_STEP_VOICE_PREPARE_V1, CREATOR_TTS_STEP_V1, CREATOR_WORKFLOW_UNIT_PROJECT_V1,
     SCENE_INTENT_SCHEMA, SCENE_INTENT_SCHEMA_VERSION, SEGMENT_SCHEMA, SEGMENT_SCHEMA_VERSION,
     VOICE_AUDIO_ARTIFACT_TYPE_V1, VOICE_TIMING_ARTIFACT_TYPE_V1, VOICE_TIMING_SCHEMA_V1,
@@ -148,11 +147,7 @@ fn promote_json<T: serde::Serialize>(
         .unwrap()
 }
 
-fn promote_bytes(
-    fixture: &mut Fixture,
-    scene_id: &str,
-    bytes: &[u8],
-) -> Artifact {
+fn promote_bytes(fixture: &mut Fixture, scene_id: &str, bytes: &[u8]) -> Artifact {
     let input_hash = format!("visual-input-{scene_id}");
     let job = fixture
         .store
@@ -178,10 +173,8 @@ fn promote_bytes(
                 job_id: job.job_id,
                 outputs: vec![AttemptOutputPromotion {
                     source,
-                    target_uri: LogicalUri::parse(&format!(
-                        "project://visual/{scene_id}.png"
-                    ))
-                    .unwrap(),
+                    target_uri: LogicalUri::parse(&format!("project://visual/{scene_id}.png"))
+                        .unwrap(),
                     artifact_type: "image".to_owned(),
                     metadata: serde_json::json!({"visual_routing": {"fixture": true}}),
                     expected_sha256: None,
@@ -226,8 +219,10 @@ fn commit_voice(
 
     let audio_uri =
         LogicalUri::parse(&format!("project://audio/{segment_id}/take-0001.wav")).unwrap();
-    let timing_uri =
-        LogicalUri::parse(&format!("project://audio/{segment_id}/take-0001.timing.json")).unwrap();
+    let timing_uri = LogicalUri::parse(&format!(
+        "project://audio/{segment_id}/take-0001.timing.json"
+    ))
+    .unwrap();
     let resolver = PathResolver::new(fixture.workspace.data_root()).unwrap();
     let audio_path = resolver
         .resolve(&audio_uri, Some(&fixture.project_id))
@@ -281,11 +276,7 @@ fn commit_voice(
 
     fixture
         .store
-        .commit_remote_voice_bundle_success_v1(
-            &started.attempt.attempt_id,
-            &audio,
-            &timing,
-        )
+        .commit_remote_voice_bundle_success_v1(&started.attempt.attempt_id, &audio, &timing)
         .unwrap();
     (audio, timing)
 }
@@ -314,7 +305,10 @@ fn prepare_canonical_outputs(fixture: &mut Fixture) {
         .store
         .set_step_status(&content_step, StepStatus::Succeeded)
         .unwrap();
-    fixture.store.refresh_ready_steps(&fixture.project_id).unwrap();
+    fixture
+        .store
+        .refresh_ready_steps(&fixture.project_id)
+        .unwrap();
 
     let scene_plan = CreatorScenePlanV1 {
         schema: CREATOR_SCENE_PLAN_SCHEMA_V1.to_owned(),
@@ -346,7 +340,10 @@ fn prepare_canonical_outputs(fixture: &mut Fixture) {
         .store
         .set_step_status(&scene_step, StepStatus::Succeeded)
         .unwrap();
-    fixture.store.refresh_ready_steps(&fixture.project_id).unwrap();
+    fixture
+        .store
+        .refresh_ready_steps(&fixture.project_id)
+        .unwrap();
 
     promote_bytes(fixture, "SC001", b"visual one");
     promote_bytes(fixture, "SC002", b"visual two");
@@ -371,7 +368,10 @@ fn prepare_canonical_outputs(fixture: &mut Fixture) {
         .store
         .set_step_status(&voice_step, StepStatus::Succeeded)
         .unwrap();
-    fixture.store.refresh_ready_steps(&fixture.project_id).unwrap();
+    fixture
+        .store
+        .refresh_ready_steps(&fixture.project_id)
+        .unwrap();
 
     assert_eq!(
         fixture
@@ -459,11 +459,7 @@ fn p4_assembled_pack_exports_through_existing_phase9_package_exporter() {
     .unwrap();
 
     let exported = ProductionPackageExporterV1::default()
-        .export_v1(
-            &mut fixture.store,
-            &artifacts,
-            &assembled.production_pack,
-        )
+        .export_v1(&mut fixture.store, &artifacts, &assembled.production_pack)
         .unwrap();
 
     assert!(!exported.cache_hit);
@@ -505,13 +501,10 @@ fn p4_latest_assembly_survives_data_root_move_in_read_only_mode() {
     let reopened = Workspace::open(&moved).unwrap();
     let read_only = StateStore::open_read_only(reopened.sqlite_path()).unwrap();
     let moved_artifacts = ArtifactStore::new(reopened.data_root()).unwrap();
-    let loaded = load_latest_creator_production_pack_v1(
-        &read_only,
-        &moved_artifacts,
-        &fixture.project_id,
-    )
-    .unwrap()
-    .unwrap();
+    let loaded =
+        load_latest_creator_production_pack_v1(&read_only, &moved_artifacts, &fixture.project_id)
+            .unwrap()
+            .unwrap();
 
     assert_eq!(loaded.production_pack, assembled.production_pack);
     assert_eq!(loaded.input_hash, assembled.input_hash);
