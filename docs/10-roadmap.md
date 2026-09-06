@@ -394,6 +394,20 @@ P2 implementation boundary:
 - stock artifacts must preserve the reviewed provider asset identity plus the canonical `visual_routing` provenance
 - generated/stick targets reuse the existing Studio Pack capabilities `generated_still` and `stick_figure_visual`; no provider-specific fields are added to Project state
 - P3 — voice/TTS + ComputeProvider orchestration through existing Job/Attempt/GPU readiness contracts
+
+P3 implementation boundary:
+
+- canonical `CreatorContentV1.segments` materialize deterministic per-segment `tts/<segment_id>` WorkflowStep + Job work under the existing `voice.prepare/project` semantic stage
+- segment TTS input hashes reuse the existing normalization, pronunciation, voice/model version, voice-direction and settings fingerprint contract
+- `content.prepare/project -> tts/<segment_id> -> voice.prepare/project` dependencies are stored only in the canonical DAG; `production.pack/project` remains downstream of aggregate voice + visual completion
+- machine-local voice plugin, ComputeProvider, immutable voice/model version and resolved settings are execution-time inputs, never portable Project/StudioPack provider state
+- preflight and lock requirements reuse `SegmentTtsPreparationV1`; unresolved approval/runtime/provider conditions remain explicit GPU NOT_READY reasons
+- schedulable segment jobs compose the existing deterministic Voice Burst and GPU readiness scheduler; no P3-specific queue or worker database is introduced
+- remote execution uses the existing voice-take dispatch path, preserving take history, timing sidecar output, ComputeAttemptRuntimeContext and retry policy
+- restart and worker loss continue through the existing remote journal reconciliation path; RUNNING work is treated as in-flight rather than redispatched
+- a changed voice/model/settings input invalidates the affected TTS step and canonical downstream voice/ProductionPack work by hash
+- `voice.prepare/project` succeeds only after every segment has a selected, physically verified audio artifact and verified timing artifact
+
 - P4 — ProductionPack assembly plus creator Start/Resume/Review/Export UX and end-to-end restart/read-only/portability hardening
 
 P0 architecture rules:
