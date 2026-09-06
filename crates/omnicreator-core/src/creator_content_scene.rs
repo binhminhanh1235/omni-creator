@@ -247,6 +247,46 @@ pub struct CreatorContentSceneOutcomeV1 {
     pub scene_plan_cache_hit: bool,
 }
 
+pub fn load_latest_creator_content_v1(
+    state_store: &StateStore,
+    artifact_store: &ArtifactStore,
+    project_id: &str,
+) -> Result<Option<(CreatorContentV1, Artifact)>> {
+    let mut matches = Vec::new();
+    for job in state_store.list_project_jobs(project_id)? {
+        if job.step != CREATOR_STEP_CONTENT_PREPARE_V1
+            || job.unit != CREATOR_WORKFLOW_UNIT_PROJECT_V1
+            || job.status != StepStatus::Succeeded
+        {
+            continue;
+        }
+        let Some(artifact_id) = job.selected_artifact.as_deref() else {
+            continue;
+        };
+        let artifact = state_store.get_artifact(artifact_id)?;
+        if artifact.project_id.as_deref() != Some(project_id)
+            || artifact.artifact_type != CREATOR_CONTENT_ARTIFACT_TYPE_V1
+            || !artifact_store.verify_artifact(&artifact)?
+        {
+            continue;
+        }
+        matches.push(artifact);
+    }
+    matches.sort_by(|left, right| {
+        right
+            .created_at
+            .cmp(&left.created_at)
+            .then_with(|| right.artifact_id.cmp(&left.artifact_id))
+    });
+
+    let Some(artifact) = matches.into_iter().next() else {
+        return Ok(None);
+    };
+    let content: CreatorContentV1 = read_json_artifact_v1(artifact_store, &artifact)?;
+    content.validate_v1()?;
+    Ok(Some((content, artifact)))
+}
+
 pub fn load_latest_creator_content_scene_v1(
     state_store: &StateStore,
     artifact_store: &ArtifactStore,
