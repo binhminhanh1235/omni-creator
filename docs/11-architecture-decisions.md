@@ -199,3 +199,10 @@ Project-specific creative customization is an ordinary child `StudioPackV1` in t
 Review Center is rebuilt from canonical state on demand. Retry actions use canonical Job transitions. Automation levels are deterministic policy projections and never become shadow Job/Attempt state.
 
 Machine-local plugin credential readiness is evaluated ephemerally from symbolic environment-variable references; plaintext credential values and machine-specific absolute paths remain outside portable Studio Pack/project data. `Christian Stick Explainer` remains gated by the exact `stick_figure_visual` capability.
+\n## ADR-029: Project Kanban is derived, never authoritative
+
+**Decision:** The Phase 10 P3 project board is a projection of canonical `ProjectDisplayStatus`, WorkflowStep and Job state. Column placement is not directly editable and is not stored in browser state, SQLite columns or a second board database.
+
+`GPU_PARTIAL` maps to the `NEEDS REVIEW` creator column because retryable partial GPU work requires action rather than representing a distinct lifecycle stage.
+
+Action summaries are derived from canonical counts. Restart reconciliation, Data Root moves and read-only opens therefore reconstruct the same board from the portable workspace. Studio Pack, Review Center, GPU Workbench and Production Pack remain the owning surfaces for their respective mutations.

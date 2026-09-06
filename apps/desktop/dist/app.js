@@ -176,15 +176,22 @@ function projectCard(item, readOnly) {
     ' /><span>GPU BATCH</span></label>' +
     '<div class="project-main">' +
     '<div class="project-title">' + escapeHtml(project.title) + "</div>" +
+    '<div class="project-action-summary">' +
+    escapeHtml(item.board && item.board.summary ? item.board.summary : "Review project state.") +
+    "</div>" +
     '<div class="project-meta"><span class="status">' +
     escapeHtml(statusLabel(item.status)) +
     "</span>" +
-    escapeHtml(project.id) +
     (project.studio_pack
       ? '<span class="studio-pack-project-tag">' + escapeHtml(project.studio_pack) + "</span>"
       : '<span class="studio-pack-project-tag missing">NO STUDIO PACK</span>') +
     "</div></div>" +
     '<div class="project-actions">' +
+    (item.board && item.board.column === "NEEDS_REVIEW"
+      ? '<button class="icon-btn project-review-center" data-id="' +
+        escapeHtml(project.id) +
+        '">Review Issues</button>'
+      : "") +
     '<button class="icon-btn studio-pack-project" data-id="' +
     escapeHtml(project.id) +
     '">Studio Pack</button>' +
@@ -206,6 +213,48 @@ function projectCard(item, readOnly) {
     (readOnly ? " disabled" : "") +
     ">Delete</button>" +
     "</div></article>"
+  );
+}
+
+const projectBoardColumns = [
+  { id: "IDEAS", label: "Ideas" },
+  { id: "PREPARING", label: "Preparing" },
+  { id: "NEEDS_REVIEW", label: "Needs Review" },
+  { id: "GPU_READY", label: "GPU Ready" },
+  { id: "GPU_RUNNING", label: "GPU Running" },
+  { id: "READY_TO_EDIT", label: "Ready to Edit" },
+  { id: "DONE", label: "Done" },
+];
+
+function renderProjectKanban(projects, readOnly) {
+  return (
+    '<div class="project-kanban" aria-label="Project Kanban">' +
+    projectBoardColumns
+      .map(function (column) {
+        const items = projects.filter(function (item) {
+          return item.board && item.board.column === column.id;
+        });
+        const cards = items.length
+          ? items
+              .map(function (item) {
+                return projectCard(item, readOnly);
+              })
+              .join("")
+          : '<div class="kanban-empty">No projects</div>';
+        return (
+          '<section class="kanban-column" data-board-column="' +
+          escapeHtml(column.id) +
+          '"><div class="kanban-column-head"><strong>' +
+          escapeHtml(column.label) +
+          '</strong><span>' +
+          escapeHtml(items.length) +
+          "</span></div><div class=\"kanban-column-body\">" +
+          cards +
+          "</div></section>"
+        );
+      })
+      .join("") +
+    "</div>"
   );
 }
 
@@ -1628,9 +1677,7 @@ function renderWorkspace(snapshot) {
     if (!projectIds.has(projectId)) gpuWorkbenchState.selectedProjectIds.delete(projectId);
   });
 
-  const cards = projects.length
-    ? projects.map(function (item) { return projectCard(item, workspace.read_only); }).join("")
-    : '<div class="empty">No projects yet. Create the first production to verify portable state.</div>';
+  const board = renderProjectKanban(projects, workspace.read_only);
 
   const readOnlyNotice = workspace.read_only
     ? '<div class="notice">Read-only mode. Project state is visible, but no production data will be changed.</div>'
@@ -1642,7 +1689,7 @@ function renderWorkspace(snapshot) {
     '<p class="eyebrow">PROJECT BOARD</p><h2>Productions</h2>' +
     readOnlyNotice +
     '<div id="studio-pack-creator" class="studio-pack-creator"></div>' +
-    '<div class="project-list">' + cards + "</div>" +
+    board +
     '<div id="review-center" class="review-center"></div>' +
     '<div id="production-pack-panel" class="production-pack-panel"></div>' +
     '<div class="batch-toolbar"><div><strong id="gpu-selected-count">' +
@@ -1684,6 +1731,13 @@ function renderWorkspace(snapshot) {
   document.getElementById("prepare-gpu-batch").onclick = function () {
     prepareGpuWorkbench(workspace.read_only);
   };
+
+  document.querySelectorAll(".project-review-center").forEach(function (button) {
+    button.onclick = function () {
+      const review = document.getElementById("review-center");
+      if (review) review.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+  });
 
   document.querySelectorAll(".studio-pack-project").forEach(function (button) {
     button.onclick = function () {

@@ -534,3 +534,33 @@ Review Center is reconstructed on demand from existing canonical state:
 Failed/retryable jobs expose a canonical retry preparation action. The action transitions the existing Job back to `READY` through the existing state-transition rules; it does not edit a UI-only review record. Once the canonical problem is resolved, the item disappears from the next projection.
 
 No Review Center database, JSON state file, browser local storage or shadow workflow state is introduced.
+\n## Phase 10 P3 derived Project Kanban
+
+P3 turns the existing derived `ProjectDisplayStatus` into the creator-facing seven-column board:
+
+- `DRAFT` -> `IDEAS`
+- `PREPARING` -> `PREPARING`
+- `NEEDS_REVIEW` -> `NEEDS REVIEW`
+- `GPU_PARTIAL` -> `NEEDS REVIEW`
+- `GPU_READY` -> `GPU READY`
+- `GPU_RUNNING` -> `GPU RUNNING`
+- `READY_FOR_EDIT` -> `READY TO EDIT`
+- `DONE` -> `DONE`
+
+`GPU_PARTIAL` is intentionally folded into `NEEDS REVIEW` because it is an exception/retry state, not a separate top-level creator stage.
+
+Board placement is never persisted separately. Desktop snapshots reconstruct the column and actionable summary from canonical Project / WorkflowStep / Job state on every load, including restart and read-only opens.
+
+Cards expose a next-action summary such as retryable jobs, remaining preparation work, GPU-ready work or the existing Production Pack editing action. Raw provider execution details do not become the default card surface.
+
+Existing Studio Pack settings, Review Center, GPU Workbench and Production Pack panels remain the owning control surfaces. Kanban only organizes projects and links to those actions.
+
+### P3 hardening
+
+P3 regression coverage requires:
+
+- interrupted RUNNING work reconciles through the existing restart contract and reappears as an actionable review card
+- moving the Data Root preserves the same derived board projection
+- read-only workspaces reconstruct board state but cannot mutate project state
+- browser local/session storage is not used as board truth
+- GPU Workbench and Production Pack regressions continue to pass

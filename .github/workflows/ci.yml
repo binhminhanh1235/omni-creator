@@ -54,6 +54,8 @@ jobs:
         run: node apps/desktop/tests/production-pack-smoke.mjs
       - name: Desktop Studio Pack P2 regression
         run: node apps/desktop/tests/studio-pack-p2-smoke.mjs
+      - name: Desktop Studio Pack P3 regression
+        run: node apps/desktop/tests/studio-pack-p3-smoke.mjs
       - name: Desktop clippy
         run: cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets -- -D warnings
       - name: Desktop tests
