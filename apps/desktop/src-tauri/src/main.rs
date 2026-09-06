@@ -12,7 +12,8 @@ use omnicreator_core::{
     default_segment_tts_compute_requirements_v1, derive_creator_run_coordinator_v1,
     dispatch_creator_voice_burst_v1, dispatch_gpu_burst_v1, execute_creator_visual_plan_v1,
     initial_studio_pack_catalog_v1, inspect_local_plugin_update_v1, install_local_plugin_folder_v1,
-    load_latest_creator_content_scene_v1, load_latest_creator_production_pack_v1,
+    load_latest_creator_content_scene_v1, load_latest_creator_content_v1,
+    load_latest_creator_production_pack_v1,
     load_plugin_settings_ui, materialize_creator_workflow_plan_v1, plan_creator_visuals_v1,
     plan_creator_voice_orchestration_v1, preview_plugin_capability_impact_v1,
     project_board_projection_v1, reconcile_remote_session_v1, run_creator_content_scene_v1,
@@ -1537,21 +1538,27 @@ fn start_creator_production(
 
     let mut creator = load_latest_creator_content_scene_v1(&store, &artifacts, &project_id)
         .map_err(error_string)?;
-    let should_run_content = match (&requested_input, &creator) {
+    let recovered_input = if creator.is_none() && requested_input.is_none() {
+        load_latest_creator_content_v1(&store, &artifacts, &project_id)
+            .map_err(error_string)?
+            .map(|(content, _)| content.source)
+    } else {
+        None
+    };
+    let effective_input = requested_input.as_ref().or(recovered_input.as_ref());
+    let should_run_content = match (effective_input, &creator) {
         (Some(input), Some(existing)) => existing.content.source != *input,
         (Some(_), None) => true,
         (None, Some(_)) => false,
         (None, None) => {
             return Err(
-                "Creator topic or script is required until Content + SceneIntent are prepared."
+                "Creator topic or script is required until Content has a verified canonical artifact."
                     .to_owned(),
             )
         }
     };
     if should_run_content {
-        let input = requested_input
-            .as_ref()
-            .expect("creator input is present when content must run");
+        let input = effective_input.expect("creator input is present when content must run");
         let llm = LlmGatewayClient::new(load_llmgateway_config(&app)?).map_err(error_string)?;
         creator = Some(
             run_creator_content_scene_v1(
