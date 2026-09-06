@@ -261,6 +261,23 @@ struct ProductionExportViewV1 {
     diagnostic: Option<ProductionExportDiagnosticViewV1>,
 }
 
+#[derive(Debug, Serialize)]
+struct CreatorVisualReviewSceneDesktopViewV1 {
+    scene_id: String,
+    narration: String,
+    purpose: String,
+    action: CreatorVisualActionV1,
+    review: Option<VisualReviewSet>,
+    generated_preset: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct CreatorVisualReviewDesktopViewV1 {
+    project_id: String,
+    complete: bool,
+    scenes: Vec<CreatorVisualReviewSceneDesktopViewV1>,
+}
+
 #[tauri::command]
 fn pick_data_root() -> Option<String> {
     rfd::FileDialog::new()
