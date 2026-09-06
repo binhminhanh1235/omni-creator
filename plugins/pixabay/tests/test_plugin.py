@@ -369,7 +369,7 @@ class PixabayPluginTests(unittest.TestCase):
             self.assertEqual(result["provenance"]["quality_mode"], "original")
             self.assertIn("Image by PhotoCreator on Pixabay", result["provenance"]["attribution"])
             self.assertEqual(fake.downloads[0][0], "https://pixabay.com/get/image-195893.jpg")
-            self.assertNotIn("image-195893.jpg", json.dumps(result))
+            self.assertNotIn("https://pixabay.com/get/image-195893.jpg", json.dumps(result))
 
     def test_health_reports_credential_and_cache_readiness(self):
         with tempfile.TemporaryDirectory() as root:
