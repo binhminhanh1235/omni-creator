@@ -212,7 +212,6 @@ CREATE INDEX IF NOT EXISTS idx_artifact_usages_project_time
 ON artifact_usages(project_id,used_at DESC);
 "#;
 
-
 pub struct StateStore {
     pub(crate) connection: Connection,
 }
