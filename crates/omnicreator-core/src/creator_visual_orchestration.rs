@@ -254,6 +254,28 @@ impl CreatorVisualPlanV1 {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct CreatorVisualPlanningOptionsV1 {
+    pub ranking_policy: VisualRankingPolicy,
+    pub review_options: VisualReviewOptions,
+}
+
+impl Default for CreatorVisualPlanningOptionsV1 {
+    fn default() -> Self {
+        Self {
+            ranking_policy: VisualRankingPolicy::default(),
+            review_options: VisualReviewOptions::default(),
+        }
+    }
+}
+
+impl CreatorVisualPlanningOptionsV1 {
+    pub fn validate_v1(&self) -> Result<()> {
+        self.ranking_policy.validate()?;
+        self.review_options.validate()
+    }
+}
+
 pub fn plan_creator_visuals_v1(
     project: &Project,
     studio_pack: &EffectiveStudioPackV1,
@@ -261,14 +283,12 @@ pub fn plan_creator_visuals_v1(
     scene_plan: &CreatorScenePlanV1,
     scene_plan_sha256: &str,
     discovery: &impl CreatorVisualDiscoveryExecutorV1,
-    ranking_policy: &VisualRankingPolicy,
-    review_options: VisualReviewOptions,
+    options: &CreatorVisualPlanningOptionsV1,
 ) -> Result<CreatorVisualPlanV1> {
     studio_pack.validate_v1()?;
     content.validate_v1()?;
     scene_plan.validate_v1(content)?;
-    ranking_policy.validate()?;
-    review_options.validate()?;
+    options.validate_v1()?;
     if project.id != content.project_id || project.id != scene_plan.project_id {
         return Err(Error::InvalidContract(
             "creator visual Project/content/scene-plan ids must match".to_owned(),
@@ -342,7 +362,11 @@ pub fn plan_creator_visuals_v1(
                 };
                 discovered.validate_v1(scene)?;
                 let ranked_stock =
-                    rank_visual_candidates(scene, discovered.ranking_inputs, ranking_policy)?;
+                    rank_visual_candidates(
+                        scene,
+                        discovered.ranking_inputs,
+                        &options.ranking_policy,
+                    )?;
                 for ranked in &ranked_stock {
                     stock_target_for_candidate_v1(&stock_targets, &ranked.candidate)?;
                 }
@@ -355,7 +379,8 @@ pub fn plan_creator_visuals_v1(
 
                 match routing.route {
                     VisualRouteV1::StockReview => {
-                        let review = build_visual_review(scene, &ranked_stock, review_options)?;
+                        let review =
+                            build_visual_review(scene, &ranked_stock, options.review_options)?;
                         if review.candidates.is_empty() {
                             return Err(Error::InvalidContract(
                                 "stock review route produced no review candidates".to_owned(),
@@ -536,26 +561,34 @@ pub struct CreatorVisualExecutionOutcomeV1 {
     pub completed: bool,
 }
 
+pub struct CreatorVisualStockFetchRequestV1<'a> {
+    pub job_id: &'a str,
+    pub scene: &'a SceneIntentV1,
+    pub candidate: &'a VisualCandidate,
+    pub target: &'a StudioPackRouteTargetV1,
+    pub routing: &'a VisualRoutingDecisionV1,
+}
+
+pub struct CreatorVisualGenerationRequestV1<'a> {
+    pub job_id: &'a str,
+    pub scene: &'a SceneIntentV1,
+    pub target: &'a StudioPackRouteTargetV1,
+    pub routing: &'a VisualRoutingDecisionV1,
+}
+
 pub trait CreatorVisualAssetExecutorV1 {
     fn fetch_selected_stock_v1(
         &self,
         state_store: &mut StateStore,
         artifact_store: &ArtifactStore,
-        job_id: &str,
-        scene: &SceneIntentV1,
-        candidate: &VisualCandidate,
-        target: &StudioPackRouteTargetV1,
-        routing: &VisualRoutingDecisionV1,
+        request: CreatorVisualStockFetchRequestV1<'_>,
     ) -> Result<Artifact>;
 
     fn generate_visual_v1(
         &self,
         state_store: &mut StateStore,
         artifact_store: &ArtifactStore,
-        job_id: &str,
-        scene: &SceneIntentV1,
-        target: &StudioPackRouteTargetV1,
-        routing: &VisualRoutingDecisionV1,
+        request: CreatorVisualGenerationRequestV1<'_>,
     ) -> Result<Artifact>;
 }
 
@@ -679,20 +712,24 @@ pub fn execute_creator_visual_plan_v1(
                 executor.fetch_selected_stock_v1(
                     state_store,
                     artifact_store,
-                    &job.job_id,
-                    scene,
-                    candidate,
-                    target,
-                    &planned.routing,
+                    CreatorVisualStockFetchRequestV1 {
+                        job_id: &job.job_id,
+                        scene,
+                        candidate,
+                        target,
+                        routing: &planned.routing,
+                    },
                 )?
             }
             CreatorVisualActionV1::Generate => executor.generate_visual_v1(
                 state_store,
                 artifact_store,
-                &job.job_id,
-                scene,
-                target,
-                &planned.routing,
+                CreatorVisualGenerationRequestV1 {
+                    job_id: &job.job_id,
+                    scene,
+                    target,
+                    routing: &planned.routing,
+                },
             )?,
             CreatorVisualActionV1::AwaitingStockSelection
             | CreatorVisualActionV1::AwaitingGenerationApproval => unreachable!(),
@@ -1155,8 +1192,7 @@ mod tests {
             &scene_plan("literal"),
             sha(),
             &discovery,
-            &VisualRankingPolicy::default(),
-            VisualReviewOptions::default(),
+            &CreatorVisualPlanningOptionsV1::default(),
         )
         .unwrap();
 
@@ -1373,28 +1409,24 @@ mod tests {
             &self,
             state_store: &mut StateStore,
             artifact_store: &ArtifactStore,
-            job_id: &str,
-            scene: &SceneIntentV1,
-            candidate: &VisualCandidate,
-            target: &StudioPackRouteTargetV1,
-            routing: &VisualRoutingDecisionV1,
+            request: CreatorVisualStockFetchRequestV1<'_>,
         ) -> Result<Artifact> {
             self.fetch_calls.set(self.fetch_calls.get() + 1);
             self.promote(
                 state_store,
                 artifact_store,
-                job_id,
-                scene,
-                match candidate.media_type {
+                request.job_id,
+                request.scene,
+                match request.candidate.media_type {
                     VisualMediaType::Image => "image",
                     VisualMediaType::Video => "video",
                 },
                 serde_json::json!({
-                    "source_provider": candidate.source_provider.clone(),
-                    "source_asset_id": candidate.source_asset_id.clone(),
-                    "selection_ref": candidate.selection_ref.clone(),
-                    "route_target": target,
-                    "visual_routing": routing,
+                    "source_provider": request.candidate.source_provider.clone(),
+                    "source_asset_id": request.candidate.source_asset_id.clone(),
+                    "selection_ref": request.candidate.selection_ref.clone(),
+                    "route_target": request.target,
+                    "visual_routing": request.routing,
                 }),
             )
         }
@@ -1403,23 +1435,20 @@ mod tests {
             &self,
             state_store: &mut StateStore,
             artifact_store: &ArtifactStore,
-            job_id: &str,
-            scene: &SceneIntentV1,
-            target: &StudioPackRouteTargetV1,
-            routing: &VisualRoutingDecisionV1,
+            request: CreatorVisualGenerationRequestV1<'_>,
         ) -> Result<Artifact> {
             self.generate_calls.set(self.generate_calls.get() + 1);
             self.promote(
                 state_store,
                 artifact_store,
-                job_id,
-                scene,
+                request.job_id,
+                request.scene,
                 "image",
                 serde_json::json!({
-                    "source_provider": target.plugin_id.clone(),
-                    "capability": target.capability.clone(),
-                    "route_target": target,
-                    "visual_routing": routing,
+                    "source_provider": request.target.plugin_id.clone(),
+                    "capability": request.target.capability.clone(),
+                    "route_target": request.target,
+                    "visual_routing": request.routing,
                 }),
             )
         }
