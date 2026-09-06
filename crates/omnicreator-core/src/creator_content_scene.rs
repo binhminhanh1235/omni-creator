@@ -704,6 +704,12 @@ fn get_or_create_job_v1(
             "creator job {} is FATAL for unchanged input; change input or resolve the blocking condition",
             job.job_id
         ))),
+        Some(job) if matches!(job.status, StepStatus::Running | StepStatus::Queued) => {
+            Err(Error::InvalidJobState(format!(
+                "creator job {} is already active for unchanged input",
+                job.job_id
+            )))
+        }
         _ => state_store.create_job(project_id, step_key, unit, input_hash),
     }
 }
@@ -1166,12 +1172,18 @@ mod tests {
                 .status,
             StepStatus::Succeeded
         );
-        for key in ["visual.prepare", "voice.prepare", "production.pack"] {
-            assert_eq!(
-                find_project_step_v1(&steps, key).unwrap().status,
-                StepStatus::Ready.min(StepStatus::NotReady)
-            );
-        }
+        assert_eq!(
+            find_project_step_v1(&steps, "visual.prepare").unwrap().status,
+            StepStatus::Ready
+        );
+        assert_eq!(
+            find_project_step_v1(&steps, "voice.prepare").unwrap().status,
+            StepStatus::Ready
+        );
+        assert_eq!(
+            find_project_step_v1(&steps, "production.pack").unwrap().status,
+            StepStatus::NotReady
+        );
     }
 
     #[test]
