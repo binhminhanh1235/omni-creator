@@ -10,6 +10,7 @@ use serde_json::{json, Value};
 use crate::{DiscoveredPlugin, Error, PluginManifest, Result};
 
 pub const JOB_WORKSPACE_PERMISSION: &str = "job-workspace";
+pub const PROVIDER_CACHE_PERMISSION: &str = "provider-cache";
 
 #[derive(Debug, Clone)]
 pub struct PluginJobWorkspace {
@@ -121,6 +122,12 @@ impl PluginJobWorkspace {
         &self.temp
     }
 
+    pub fn provider_cache_dir(&self, plugin_id: &str) -> Result<PathBuf> {
+        validate_job_id(plugin_id)?;
+        let cache_root = create_scoped_directory(&self.runtime_root, "provider-cache")?;
+        create_scoped_directory(&cache_root, plugin_id)
+    }
+
     pub fn resolve_input(&self, relative: &str) -> Result<PathBuf> {
         resolve_scoped_path(&self.input, relative)
     }
@@ -169,8 +176,21 @@ impl PluginJobWorkspace {
     }
 
     pub fn initialization_context(&self, plugin: &DiscoveredPlugin) -> Result<Value> {
+        let provider_cache = if plugin
+            .manifest
+            .permissions
+            .filesystem
+            .iter()
+            .any(|permission| permission.trim() == PROVIDER_CACHE_PERMISSION)
+        {
+            Some(path_utf8(&self.provider_cache_dir(&plugin.manifest.id)?)?)
+        } else {
+            None
+        };
+
         Ok(json!({
             "job_workspace": self.protocol_paths()?,
+            "provider_cache": provider_cache,
             "permissions": review_plugin_permissions(&plugin.manifest, self)?,
         }))
     }
@@ -181,6 +201,9 @@ pub fn review_plugin_permissions(
     workspace: &PluginJobWorkspace,
 ) -> Result<PluginPermissionReview> {
     let workspace_root = path_utf8(workspace.root())?;
+    let provider_cache_root = path_utf8(
+        &workspace.provider_cache_dir(&manifest.id)?
+    )?;
     let mut warnings = Vec::new();
     let mut filesystem = Vec::new();
     let mut seen_filesystem = BTreeSet::new();
@@ -201,6 +224,13 @@ pub fn review_plugin_permissions(
                 allowed: true,
                 enforcement: PluginPermissionEnforcement::WorkspaceBound,
                 root: Some(workspace_root.clone()),
+            });
+        } else if permission == PROVIDER_CACHE_PERMISSION {
+            filesystem.push(PluginFilesystemPermissionReview {
+                permission: permission.to_owned(),
+                allowed: true,
+                enforcement: PluginPermissionEnforcement::WorkspaceBound,
+                root: Some(provider_cache_root.clone()),
             });
         } else {
             filesystem.push(PluginFilesystemPermissionReview {
@@ -399,24 +429,34 @@ mod tests {
     }
 
     #[test]
-    fn permission_review_grants_only_job_workspace_filesystem_scope() {
+    fn permission_review_grants_scoped_workspace_and_provider_cache_only() {
         let temp = tempfile::tempdir().unwrap();
         let workspace = PluginJobWorkspace::create(temp.path(), "job_permissions").unwrap();
         let manifest = manifest(
-            vec!["job-workspace", "host-home", "job-workspace"],
+            vec!["job-workspace", "provider-cache", "host-home", "job-workspace"],
             vec!["api.pexels.com", "api.pexels.com"],
         );
 
         let review = review_plugin_permissions(&manifest, &workspace).unwrap();
-        assert_eq!(review.filesystem.len(), 2);
+        assert_eq!(review.filesystem.len(), 3);
         assert!(review.filesystem[0].allowed);
         assert_eq!(
             review.filesystem[0].enforcement,
             PluginPermissionEnforcement::WorkspaceBound
         );
-        assert!(!review.filesystem[1].allowed);
+        assert!(review.filesystem[1].allowed);
         assert_eq!(
-            review.filesystem[1].enforcement,
+            review.filesystem[1].permission,
+            PROVIDER_CACHE_PERMISSION
+        );
+        assert!(review.filesystem[1]
+            .root
+            .as_ref()
+            .unwrap()
+            .contains("provider-cache/fixture"));
+        assert!(!review.filesystem[2].allowed);
+        assert_eq!(
+            review.filesystem[2].enforcement,
             PluginPermissionEnforcement::Unsupported
         );
         assert_eq!(review.network.len(), 1);
@@ -437,7 +477,7 @@ mod tests {
         let plugin = DiscoveredPlugin {
             directory: temp.path().join("plugin"),
             manifest_path: temp.path().join("plugin/plugin.json"),
-            manifest: manifest(vec!["job-workspace"], Vec::new()),
+            manifest: manifest(vec!["job-workspace", "provider-cache"], Vec::new()),
         };
 
         let context = workspace.initialization_context(&plugin).unwrap();
@@ -446,6 +486,10 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("job_context"));
+        assert!(context["provider_cache"]
+            .as_str()
+            .unwrap()
+            .contains("provider-cache/fixture"));
     }
 
     #[cfg(unix)]
