@@ -86,6 +86,34 @@ impl StateStore {
         Ok(())
     }
 
+    pub fn replace_asset_tags_v1(
+        &mut self,
+        artifact_id: &str,
+        tags: &[String],
+    ) -> Result<Vec<String>> {
+        require_library_asset_v1(self, artifact_id)?;
+        let normalized = tags
+            .iter()
+            .map(|tag| normalize_asset_tag_v1(tag))
+            .collect::<Result<BTreeSet<_>>>()?;
+        let normalized = normalized.into_iter().collect::<Vec<_>>();
+
+        let transaction = self.connection.transaction()?;
+        transaction.execute(
+            "DELETE FROM artifact_tags WHERE artifact_id=?1",
+            [artifact_id],
+        )?;
+        let created_at = Utc::now().to_rfc3339();
+        for tag in &normalized {
+            transaction.execute(
+                "INSERT INTO artifact_tags(artifact_id,tag,created_at) VALUES (?1,?2,?3)",
+                params![artifact_id, tag, &created_at],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(normalized)
+    }
+
     pub fn list_asset_tags_v1(&self, artifact_id: &str) -> Result<Vec<String>> {
         require_library_asset_v1(self, artifact_id)?;
         let mut statement = self.connection.prepare(
@@ -655,6 +683,19 @@ mod tests {
         assert_eq!(
             store.list_asset_tags_v1(&artifact.artifact_id).unwrap(),
             vec!["faith".to_owned(), "warm".to_owned()]
+        );
+        assert_eq!(
+            store
+                .replace_asset_tags_v1(
+                    &artifact.artifact_id,
+                    &[" Hero ".to_owned(), "warm".to_owned(), "hero".to_owned()],
+                )
+                .unwrap(),
+            vec!["hero".to_owned(), "warm".to_owned()]
+        );
+        assert_eq!(
+            store.list_asset_tags_v1(&artifact.artifact_id).unwrap(),
+            vec!["hero".to_owned(), "warm".to_owned()]
         );
 
         let later = Utc.with_ymd_and_hms(2026, 9, 3, 12, 0, 0).unwrap();
