@@ -153,7 +153,7 @@ pub fn plan_creator_voice_orchestration_v1(
     content.validate_v1()?;
     runtime.validate_v1()?;
     let project = state_store.get_project(&content.project_id)?;
-    if project.studio_pack.as_deref().is_none_or(str::is_empty) {
+    if !matches!(project.studio_pack.as_deref(), Some(value) if !value.is_empty()) {
         return Err(Error::InvalidContract(
             "creator voice orchestration requires a Project bound to a Studio Pack".to_owned(),
         ));
@@ -193,12 +193,15 @@ pub fn plan_creator_voice_orchestration_v1(
             &input_hash,
         )?;
 
-        let mut job = find_matching_job_v1(&existing_jobs, &segment.id, &input_hash)
-            .unwrap_or_else(|| {
-                state_store
-                    .create_job(&project.id, CREATOR_TTS_STEP_V1, &segment.id, &input_hash)
-                    .expect("validated project and TTS input must create a logical job")
-            });
+        let mut job = match find_matching_job_v1(&existing_jobs, &segment.id, &input_hash) {
+            Some(job) => job,
+            None => state_store.create_job(
+                &project.id,
+                CREATOR_TTS_STEP_V1,
+                &segment.id,
+                &input_hash,
+            )?,
+        };
 
         let mut completed = verified_voice_job_complete_v1(state_store, artifact_store, &job)?;
         if job.status == StepStatus::Succeeded && !completed {
@@ -223,7 +226,7 @@ pub fn plan_creator_voice_orchestration_v1(
             job_id: job.job_id.clone(),
             operation: CREATOR_VOICE_OPERATION_V1.to_owned(),
             plugin_payload: serde_json::json!({
-                "segment_id": segment.id,
+                "segment_id": &segment.id,
                 "tts": &tts.production_input,
             }),
         };
