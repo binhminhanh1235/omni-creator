@@ -358,6 +358,45 @@ Success:
 - disabled/incompatible plugins produce deterministic setup diagnostics rather than corrupting portable projects
 - future install/update UX has a rollback-safe local contract to build on
 
+## Phase 15 - Creator Production Orchestration
+
+Connect the verified Phase 0-14 capabilities into one canonical creator workflow from Studio Pack + creator input to a DaVinci-ready Production Pack.
+
+This phase is selected ahead of marketplace/signing/remote-registry work because the current implementation already has the required capability primitives but does not yet orchestrate them into the MVP flow described by the product architecture.
+
+Implementation slices:
+
+- P0 — deterministic versioned creator workflow plan compiled from Project + resolved Studio Pack and materialized into the existing WorkflowStep dependency DAG
+- P1 — creator topic/script input plus LLMGateway content and SceneIntent orchestration with canonical artifacts/hashes
+- P2 — visual discovery/routing/review/fallback orchestration through existing stock/generated/stick provider boundaries
+- P3 — voice/TTS + ComputeProvider orchestration through existing Job/Attempt/GPU readiness contracts
+- P4 — ProductionPack assembly plus creator Start/Resume/Review/Export UX and end-to-end restart/read-only/portability hardening
+
+P0 architecture rules:
+
+- `CreatorWorkflowPlanV1` is a provider-neutral deterministic plan, not a second workflow engine
+- the plan compiles only semantic stages: content preparation, scene planning, visual preparation, voice preparation and Production Pack assembly
+- materialization uses the existing SQLite `steps` and `dependencies` tables through canonical `StateStore` APIs
+- the first stage is READY and dependent stages remain NOT_READY until the existing DAG transition logic releases them
+- re-materializing the same plan is idempotent
+- conflicting existing input hashes are rejected instead of silently rewriting canonical workflow state
+- the plan contains no provider endpoints, model IDs, credentials, secret values or machine-local paths
+- P0 performs no network/provider execution
+
+Success:
+
+- creating the creator workflow no longer requires inventing an orchestration layer outside canonical Project/WorkflowStep state
+- later slices can execute existing LLM, visual, voice, compute and export capabilities against stable semantic stages
+- the final phase removes the normal-flow requirement to hand-author internal ProductionPack JSON
+
+Explicit non-goals:
+
+- plugin marketplace / remote registry / billing
+- signed-package PKI
+- final rendering or generic transcoding
+- provider-specific portable orchestration state
+- a second scheduler or workflow database
+
 ## Later / optional
 
 - additional TTS providers
