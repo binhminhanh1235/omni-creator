@@ -6,9 +6,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    scan_plugin_roots, Error, PluginDiagnostic, PluginRegistry, Result, PLUGIN_API_VERSION,
-};
+use crate::{scan_plugin_roots, Error, PluginDiagnostic, PluginRegistry, Result};
 
 pub const PLUGIN_LIFECYCLE_SCHEMA_V1: &str = "omnicreator.plugin-lifecycle";
 pub const PLUGIN_LIFECYCLE_SCHEMA_VERSION_V1: u32 = 1;
@@ -225,7 +223,7 @@ mod tests {
     use tempfile::tempdir;
 
     use super::*;
-    use crate::{PLUGIN_MANIFEST_SCHEMA, PLUGIN_MANIFEST_SCHEMA_VERSION};
+    use crate::{PLUGIN_API_VERSION, PLUGIN_MANIFEST_SCHEMA, PLUGIN_MANIFEST_SCHEMA_VERSION};
 
     fn write_plugin(root: &Path, directory: &str, id: &str, api_version: u32, capability: &str) {
         let plugin_dir = root.join(directory);

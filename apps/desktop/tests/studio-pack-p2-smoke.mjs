@@ -39,7 +39,7 @@ for (const marker of appMarkers) {
 const backendMarkers = [
   "build_studio_pack_ux_view_v1",
   "build_studio_review_center_v1",
-  "scan_plugin_roots",
+  "scan_plugin_inventory_v1",
   "load_plugin_settings_ui",
   "PluginRuntimeReadinessV1::SetupRequired",
   ".omnicreator/studio-pack-catalog.json",
