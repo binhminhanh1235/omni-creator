@@ -11,6 +11,8 @@ const backend = fs.readFileSync(backendPath, "utf8");
 const appMarkers = [
   "Start / Resume",
   "start_creator_production",
+  "creatorStageDefinitions",
+  "creator-stage-strip",
   "Assemble Production Pack",
   "Export to Resolve",
   "assemble_production_pack",
@@ -36,6 +38,7 @@ for (const marker of appMarkers) {
 
 const backendMarkers = [
   "run_creator_content_scene_v1",
+  "steps: Vec<WorkflowStep>",
   "assemble_creator_production_pack_v1",
   "CreatorProductionPackOptionsV1",
   "materialize_creator_workflow_plan_v1",
