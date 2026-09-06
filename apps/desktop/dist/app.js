@@ -1096,14 +1096,18 @@ function renderReviewCenter(projects, readOnly) {
   const rows = items.length
     ? items
         .map(function (item) {
-          const action =
-            item.action && item.action.kind === "retry_job"
-              ? '<button class="btn review-retry" data-job-id="' +
-                escapeHtml(item.action.job_id) +
-                '"' +
-                (readOnly ? " disabled" : "") +
-                ">Prepare Retry</button>"
-              : "";
+          let action = "";
+          if (item.action && item.action.kind === "retry_job") {
+            action =
+              '<button class="btn review-retry" data-job-id="' +
+              escapeHtml(item.action.job_id) +
+              '"' +
+              (readOnly ? " disabled" : "") +
+              ">Prepare Retry</button>";
+          } else if (item.action && item.action.kind === "configure_llm_gateway") {
+            action =
+              '<button class="btn review-configure-llm">Configure LLMGateway</button>';
+          }
           return (
             '<article class="review-item ' +
             escapeHtml(String(item.severity || "").toLowerCase()) +
@@ -1144,6 +1148,17 @@ function renderReviewCenter(projects, readOnly) {
       await call("retry_review_job", { jobId: button.dataset.jobId });
       render(await call("list_projects"));
       showToast("Job returned to canonical READY state for retry.");
+    };
+  });
+
+  document.querySelectorAll(".review-configure-llm").forEach(function (button) {
+    button.onclick = function () {
+      const panel = document.getElementById("llmgateway-panel");
+      if (panel) {
+        panel.scrollIntoView({ behavior: "smooth", block: "start" });
+        const endpoint = document.getElementById("llmgateway-url");
+        if (endpoint) endpoint.focus();
+      }
     };
   });
 }
