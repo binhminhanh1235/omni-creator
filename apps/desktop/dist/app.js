@@ -11,7 +11,6 @@ const gpuWorkbenchState = {
 };
 const productionPackState = {
   selectedProjectId: null,
-  draftTextByProject: new Map(),
   viewByProject: new Map(),
 };
 const studioPackState = {
@@ -210,7 +209,11 @@ function projectCard(item, readOnly) {
     '">Studio Pack</button>' +
     '<button class="icon-btn production-pack-project" data-id="' +
     escapeHtml(project.id) +
-    '">Export to Resolve</button>' +
+    '">' +
+    (item.board && (item.board.column === "READY_TO_EDIT" || item.board.column === "DONE")
+      ? "Export to Resolve"
+      : "Production Status") +
+    "</button>" +
     '<button class="icon-btn rename-project" data-id="' +
     escapeHtml(project.id) +
     '" data-title="' +
@@ -271,27 +274,47 @@ function renderProjectKanban(projects, readOnly) {
   );
 }
 
-function defaultProductionPack(project) {
-  return {
-    schema: "omnicreator.production-pack",
-    version: 1,
-    project_id: project.id,
-    title: project.title,
-    frame_rate: { numerator: 24, denominator: 1 },
-    tracks: [],
-    subtitles: [],
-    markers: [],
-  };
-}
-
-function productionPackDraftText(project, view) {
-  if (productionPackState.draftTextByProject.has(project.id)) {
-    return productionPackState.draftTextByProject.get(project.id);
+function productionPackSummaryMarkup(view) {
+  const pack = view && view.last_pack;
+  if (!pack) {
+    return (
+      '<div class="notice subtle"><strong>Canonical assembly pending.</strong> ' +
+      "OmniCreator will build ProductionPack v1 from selected visual, narration and timing artifacts when every required creator stage is complete.</div>"
+    );
   }
-  const value = view && view.last_pack ? view.last_pack : defaultProductionPack(project);
-  const text = JSON.stringify(value, null, 2);
-  productionPackState.draftTextByProject.set(project.id, text);
-  return text;
+
+  const tracks = Array.isArray(pack.tracks) ? pack.tracks : [];
+  const clips = tracks.reduce(function (count, track) {
+    return count + (Array.isArray(track.clips) ? track.clips.length : 0);
+  }, 0);
+  const duration = tracks.reduce(function (maximum, track) {
+    return Math.max(
+      maximum,
+      ...(Array.isArray(track.clips)
+        ? track.clips.map(function (clip) {
+            return Number(clip.timeline_start_ms || 0) + Number(clip.duration_ms || 0);
+          })
+        : [0]),
+    );
+  }, 0);
+  const subtitles = Array.isArray(pack.subtitles) ? pack.subtitles.length : 0;
+  const markers = Array.isArray(pack.markers) ? pack.markers.length : 0;
+
+  return (
+    '<div class="production-pack-summary">' +
+    '<div class="info-row"><div class="info-label">CANONICAL TIMELINE</div><div class="info-value">' +
+    escapeHtml(tracks.length + " tracks · " + clips + " clips") +
+    "</div></div>" +
+    '<div class="info-row"><div class="info-label">DURATION</div><div class="info-value">' +
+    escapeHtml(formatDuration(duration / 1000)) +
+    "</div></div>" +
+    '<div class="info-row"><div class="info-label">SUBTITLES / MARKERS</div><div class="info-value">' +
+    escapeHtml(subtitles + " / " + markers) +
+    "</div></div>" +
+    '<details class="advanced-details"><summary>Canonical ProductionPack details</summary><pre class="production-pack-json-preview">' +
+    escapeHtml(JSON.stringify(pack, null, 2)) +
+    "</pre></details></div>"
+  );
 }
 
 function productionHistoryMarkup(view) {
@@ -356,27 +379,24 @@ function renderProductionPackPanel(project, readOnly, view) {
   if (!project) {
     panel.innerHTML =
       '<div class="production-pack-empty"><p class="eyebrow">DAVINCI PRODUCTION PACK</p>' +
-      '<h3>Export an editable handoff without turning OmniCreator into an editor.</h3>' +
-      '<p class="muted compact">Choose “Export to Resolve” on a project. Export state is derived from canonical Job / Attempt / Artifact history.</p></div>';
+      '<h3>Canonical assembly, then editable handoff.</h3>' +
+      '<p class="muted compact">Choose a project. OmniCreator assembles ProductionPack v1 from canonical creator artifacts, then reuses the verified Phase 9 Resolve exporter.</p></div>';
     return;
   }
 
   const history = view && Array.isArray(view.history) ? view.history : [];
   const latest = history.length ? history[0] : null;
-  const state = view ? view.state : "not_exported";
+  const state = view ? view.state : "not_assembled";
   const packageUri = latest ? latest.package_base_uri : "";
-  const cacheNote =
-    view && view.outcome && view.outcome.cache_hit
-      ? '<span class="production-cache-hit">VERIFIED CACHE HIT</span>'
-      : "";
-  const draftText = productionPackDraftText(project, view);
-  const actionLabel = latest ? "Regenerate Production Pack" : "Export Production Pack";
+  const hasPack = Boolean(view && view.last_pack);
+  const readyState =
+    state === "assembled" || state === "succeeded" || state === "cached";
 
   panel.innerHTML =
     '<div class="production-pack-head"><div><p class="eyebrow">DAVINCI PRODUCTION PACK</p><h3>' +
     escapeHtml(project.title) +
     '</h3></div><span class="review-state ' +
-    (state === "succeeded" || state === "cached" ? "ready" : "blocked") +
+    (readyState ? "ready" : "blocked") +
     '">' +
     escapeHtml(statusLabel(state)) +
     "</span></div>" +
@@ -385,72 +405,65 @@ function renderProductionPackPanel(project, readOnly, view) {
       ? '<div class="info-row"><div class="info-label">LOGICAL PACKAGE LOCATION</div><div class="info-value hash">' +
         escapeHtml(packageUri) +
         "</div></div>"
-      : '<div class="notice subtle">No committed production package yet. A successful export will expose a portable logical package location here.</div>') +
-    cacheNote +
+      : "") +
     productionDiagnosticMarkup(view) +
-    '<div class="field production-pack-editor"><label>CANONICAL PRODUCTIONPACK V1 JSON</label><textarea id="production-pack-json" rows="13"' +
-    (readOnly ? " readonly" : "") +
-    ">" +
-    escapeHtml(draftText) +
-    "</textarea></div>" +
-    '<div class="production-pack-actions"><button class="btn primary" id="run-production-export"' +
+    productionPackSummaryMarkup(view) +
+    '<div class="production-pack-actions">' +
+    '<button class="btn" id="assemble-production-pack"' +
     (readOnly ? " disabled" : "") +
     ">" +
-    actionLabel +
-    '</button><button class="btn" id="refresh-production-export">Refresh Status</button></div>' +
+    (hasPack ? "Refresh Canonical Assembly" : "Assemble Production Pack") +
+    "</button>" +
+    '<button class="btn primary" id="run-production-export"' +
+    (readOnly || !hasPack ? " disabled" : "") +
+    ">Export to Resolve</button>" +
+    '<button class="btn" id="refresh-production-export">Refresh Status</button></div>' +
     '<details class="advanced-details production-history"><summary>Canonical export history</summary>' +
     productionHistoryMarkup(view) +
     "</details></div>";
-
-  const editor = document.getElementById("production-pack-json");
-  if (editor) {
-    editor.oninput = function () {
-      productionPackState.draftTextByProject.set(project.id, editor.value);
-    };
-  }
 
   document.getElementById("refresh-production-export").onclick = function () {
     openProductionPack(project, readOnly);
   };
 
+  const assembleButton = document.getElementById("assemble-production-pack");
+  if (assembleButton) {
+    assembleButton.onclick = async function () {
+      assembleButton.disabled = true;
+      try {
+        const updated = await call("assemble_production_pack", {
+          projectId: project.id,
+        });
+        productionPackState.viewByProject.set(project.id, updated);
+        renderProductionPackPanel(project, readOnly, updated);
+        showToast("ProductionPack assembled from canonical selected artifacts.");
+      } finally {
+        const current = document.getElementById("assemble-production-pack");
+        if (current && !readOnly) current.disabled = false;
+      }
+    };
+  }
+
   const exportButton = document.getElementById("run-production-export");
   if (exportButton) {
     exportButton.onclick = async function () {
-      let parsed;
-      try {
-        parsed = JSON.parse(editor.value);
-      } catch (_error) {
-        showToast("ProductionPack must be valid JSON.");
-        return;
-      }
-      if (parsed.project_id !== project.id) {
-        showToast("ProductionPack project_id must match the selected project.");
-        return;
-      }
-
       exportButton.disabled = true;
       try {
         const updated = await call("export_production_pack", {
-          productionPack: parsed,
+          projectId: project.id,
         });
         productionPackState.viewByProject.set(project.id, updated);
-        if (!updated.diagnostic && updated.last_pack) {
-          productionPackState.draftTextByProject.set(
-            project.id,
-            JSON.stringify(updated.last_pack, null, 2),
-          );
-        }
         renderProductionPackPanel(project, readOnly, updated);
         showToast(
           updated.state === "cached"
-            ? "Production Pack verified from cache."
+            ? "Resolve package verified from canonical cache."
             : updated.diagnostic
-              ? "Production Pack needs attention before export can succeed."
-              : "Production Pack exported and committed.",
+              ? "Resolve export needs attention."
+              : "Resolve package exported and committed.",
         );
       } finally {
         const current = document.getElementById("run-production-export");
-        if (current && !readOnly) current.disabled = false;
+        if (current && !readOnly && hasPack) current.disabled = false;
       }
     };
   }
@@ -466,14 +479,15 @@ async function openProductionPack(project, readOnly) {
   const view = await call("production_export_status", { projectId: project.id });
   productionPackState.viewByProject.set(project.id, view);
   if (
-    view.last_pack &&
-    !productionPackState.draftTextByProject.has(project.id)
-  ) {
-    productionPackState.draftTextByProject.set(
-      project.id,
-      JSON.stringify(view.last_pack, null, 2),
-    );
-  }
+    vieasync function openProductionPack(project, readOnly) {
+  productionPackState.selectedProjectId = project.id;
+  renderProductionPackPanel(
+    project,
+    readOnly,
+    productionPackState.viewByProject.get(project.id) || null,
+  );
+  const view = await call("production_export_status", { projectId: project.id });
+  productionPackState.viewByProject.set(project.id, view);
   renderProductionPackPanel(project, readOnly, view);
 }
 
