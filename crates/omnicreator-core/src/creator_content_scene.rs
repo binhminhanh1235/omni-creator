@@ -9,8 +9,8 @@ use uuid::Uuid;
 use crate::{
     deterministic_input_hash, Artifact, ArtifactStore, AttemptOutputPromotion,
     AttemptPromotionRequest, CreatorContentOptions, Error, LlmGatewayClient, LogicalUri, Result,
-    SceneIntentGenerationOptions, SceneIntentV1, SegmentV1, StateStore, StepStatus, VoiceDirectionV1,
-    WorkflowStep, CREATOR_STEP_CONTENT_PREPARE_V1, CREATOR_STEP_SCENE_PLAN_V1,
+    SceneIntentGenerationOptions, SceneIntentV1, SegmentV1, StateStore, StepStatus,
+    VoiceDirectionV1, WorkflowStep, CREATOR_STEP_CONTENT_PREPARE_V1, CREATOR_STEP_SCENE_PLAN_V1,
     CREATOR_WORKFLOW_UNIT_PROJECT_V1, SCENE_INTENT_SCHEMA, SCENE_INTENT_SCHEMA_VERSION,
     SEGMENT_SCHEMA, SEGMENT_SCHEMA_VERSION,
 };
@@ -471,7 +471,8 @@ fn run_scene_stage_v1(
         for (index, segment) in content.segments.iter().enumerate() {
             let scene_id = format!("SC{:03}", index + 1);
             let scene = llm.create_scene_intent_v1(segment, &scene_id, options)?;
-            if scene.schema != SCENE_INTENT_SCHEMA || scene.schema_version != SCENE_INTENT_SCHEMA_VERSION
+            if scene.schema != SCENE_INTENT_SCHEMA
+                || scene.schema_version != SCENE_INTENT_SCHEMA_VERSION
             {
                 return Err(Error::InvalidContract(format!(
                     "scene {scene_id} returned unsupported SceneIntent schema/version"
@@ -714,10 +715,7 @@ fn get_or_create_job_v1(
     }
 }
 
-fn prepare_step_for_new_input_v1(
-    state_store: &mut StateStore,
-    step: &WorkflowStep,
-) -> Result<()> {
+fn prepare_step_for_new_input_v1(state_store: &mut StateStore, step: &WorkflowStep) -> Result<()> {
     let current = state_store.get_step(&step.step_id)?;
     if current.status == StepStatus::Succeeded {
         let impact = state_store.invalidate_from(&step.step_id, None)?;
@@ -886,11 +884,15 @@ fn read_json_artifact_v1<T: for<'de> Deserialize<'de>>(
 }
 
 fn content_target_uri_v1(job_id: &str) -> Result<LogicalUri> {
-    LogicalUri::parse(&format!("project://content/{job_id}.creator-content.v1.json"))
+    LogicalUri::parse(&format!(
+        "project://content/{job_id}.creator-content.v1.json"
+    ))
 }
 
 fn scene_target_uri_v1(job_id: &str) -> Result<LogicalUri> {
-    LogicalUri::parse(&format!("project://scenes/{job_id}.creator-scene-plan.v1.json"))
+    LogicalUri::parse(&format!(
+        "project://scenes/{job_id}.creator-scene-plan.v1.json"
+    ))
 }
 
 fn is_sha256_hex_v1(value: &str) -> bool {
@@ -1016,13 +1018,7 @@ mod tests {
 
         assert!(value.contains("TOPIC"));
         for forbidden in [
-            "provider",
-            "account",
-            "endpoint",
-            "api_key",
-            "model_id",
-            "/Users/",
-            "/home/",
+            "provider", "account", "endpoint", "api_key", "model_id", "/Users/", "/home/",
         ] {
             assert!(!value.contains(forbidden));
         }
@@ -1064,7 +1060,9 @@ mod tests {
         assert!(!outcome.scene_plan_cache_hit);
         assert_eq!(outcome.content.segments.len(), 2);
         assert_eq!(outcome.scene_plan.scenes.len(), 2);
-        assert!(artifacts.verify_artifact(&outcome.content_artifact).unwrap());
+        assert!(artifacts
+            .verify_artifact(&outcome.content_artifact)
+            .unwrap());
         assert!(artifacts
             .verify_artifact(&outcome.scene_plan_artifact)
             .unwrap());
@@ -1100,15 +1098,8 @@ mod tests {
         let input = CreatorInputV1::topic("Cache me");
         let options = CreatorContentSceneOptionsV1::default();
 
-        run_creator_content_scene_v1(
-            &mut state,
-            &artifacts,
-            &llm,
-            &project_id,
-            &input,
-            &options,
-        )
-        .unwrap();
+        run_creator_content_scene_v1(&mut state, &artifacts, &llm, &project_id, &input, &options)
+            .unwrap();
         let calls = (llm.script_calls.get(), llm.scene_calls.get());
         let jobs_before = state.list_project_jobs(&project_id).unwrap().len();
 
@@ -1125,7 +1116,10 @@ mod tests {
         assert!(second.content_cache_hit);
         assert!(second.scene_plan_cache_hit);
         assert_eq!((llm.script_calls.get(), llm.scene_calls.get()), calls);
-        assert_eq!(state.list_project_jobs(&project_id).unwrap().len(), jobs_before);
+        assert_eq!(
+            state.list_project_jobs(&project_id).unwrap().len(),
+            jobs_before
+        );
     }
 
     #[test]
@@ -1173,15 +1167,21 @@ mod tests {
             StepStatus::Succeeded
         );
         assert_eq!(
-            find_project_step_v1(&steps, "visual.prepare").unwrap().status,
+            find_project_step_v1(&steps, "visual.prepare")
+                .unwrap()
+                .status,
             StepStatus::Ready
         );
         assert_eq!(
-            find_project_step_v1(&steps, "voice.prepare").unwrap().status,
+            find_project_step_v1(&steps, "voice.prepare")
+                .unwrap()
+                .status,
             StepStatus::Ready
         );
         assert_eq!(
-            find_project_step_v1(&steps, "production.pack").unwrap().status,
+            find_project_step_v1(&steps, "production.pack")
+                .unwrap()
+                .status,
             StepStatus::NotReady
         );
     }
