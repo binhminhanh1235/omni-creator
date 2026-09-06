@@ -1235,6 +1235,104 @@ fn retry_review_job(
     studio_review_center_view_v1(&app, &state)
 }
 
+fn creator_plugin_runtime_root_v1(app: &AppHandle) -> Result<PathBuf, String> {
+    let cache_dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|error| format!("Cannot resolve app cache directory: {error}"))?;
+    let root = cache_dir.join("creator-plugin-runtime");
+    fs::create_dir_all(&root)
+        .map_err(|error| format!("Cannot create creator plugin runtime directory: {error}"))?;
+    Ok(root)
+}
+
+fn creator_input_v1(input_kind: &str, input_text: &str) -> Result<Option<CreatorInputV1>, String> {
+    let input_text = input_text.trim();
+    if input_text.is_empty() {
+        return Ok(None);
+    }
+    match input_kind.trim().to_ascii_uppercase().as_str() {
+        "TOPIC" => Ok(Some(CreatorInputV1::topic(input_text))),
+        "SCRIPT" => Ok(Some(CreatorInputV1::script(input_text))),
+        _ => Err("Creator input kind must be TOPIC or SCRIPT.".to_owned()),
+    }
+}
+
+fn creator_voice_runtime_v1(
+    app: &AppHandle,
+    pack: &omnicreator_core::EffectiveStudioPackV1,
+    provider: Option<&ComputeProviderSchedulingSnapshotV1>,
+) -> Result<CreatorVoiceRuntimeV1, String> {
+    let provider_id = provider
+        .map(|value| value.session.identity.provider_id.clone())
+        .unwrap_or(load_compute_provider_config(app)?.provider_id);
+    let model_group = provider
+        .and_then(|value| {
+            value
+                .session
+                .capabilities
+                .model_groups
+                .iter()
+                .find(|group| group.to_ascii_lowercase().contains("omnivoice"))
+                .cloned()
+                .or_else(|| value.session.capabilities.model_groups.first().cloned())
+        })
+        .unwrap_or_else(|| "omnivoice".to_owned());
+
+    let env_or = |name: &str, fallback: String| {
+        env::var(name)
+            .ok()
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty())
+            .unwrap_or(fallback)
+    };
+    let plugin_id = env_or("OMNICREATOR_VOICE_PLUGIN_ID", "omnivoice".to_owned());
+    let voice_id = env_or(
+        "OMNICREATOR_VOICE_ID",
+        pack.config
+            .presets
+            .get("voice")
+            .cloned()
+            .unwrap_or_else(|| "warm-narrator".to_owned()),
+    );
+    let voice_version = env_or("OMNICREATOR_VOICE_VERSION", "1".to_owned());
+    let model_id = env_or("OMNICREATOR_VOICE_MODEL_ID", model_group.clone());
+    let model_version = env_or("OMNICREATOR_VOICE_MODEL_VERSION", "1".to_owned());
+    let fingerprint = omnicreator_core::deterministic_input_hash(&[
+        b"desktop-creator-voice-runtime-v1",
+        provider_id.as_bytes(),
+        plugin_id.as_bytes(),
+        voice_id.as_bytes(),
+        voice_version.as_bytes(),
+        model_id.as_bytes(),
+        model_version.as_bytes(),
+    ]);
+
+    Ok(CreatorVoiceRuntimeV1 {
+        plugin_id,
+        provider_id,
+        voice: VoiceIdentityV1 {
+            voice_id,
+            voice_version,
+        },
+        model: VoiceModelIdentityV1 {
+            model_id,
+            model_version,
+        },
+        settings_fingerprint: fingerprint,
+        pronunciation_rules: Vec::new(),
+        locks: SegmentTtsLockStateV1 {
+            normalization_locked: true,
+            pronunciation_locked: true,
+        },
+        approval_required: false,
+        approval_complete: true,
+        production_lock_required: false,
+        gpu_execution_requested: true,
+        requirements: default_segment_tts_compute_requirements_v1(model_group, 12_000),
+    })
+}
+
 #[tauri::command]
 fn start_creator_production(
     app: AppHandle,
@@ -1243,34 +1341,158 @@ fn start_creator_production(
     input_kind: String,
     input_text: String,
 ) -> Result<AppSnapshot, String> {
-    let input_text = input_text.trim();
-    if input_text.is_empty() {
-        return Err("Creator topic or script must not be empty.".to_owned());
-    }
-    let input = match input_kind.trim().to_ascii_uppercase().as_str() {
-        "TOPIC" => CreatorInputV1::topic(input_text),
-        "SCRIPT" => CreatorInputV1::script(input_text),
-        _ => return Err("Creator input kind must be TOPIC or SCRIPT.".to_owned()),
-    };
-
+    let requested_input = creator_input_v1(&input_kind, &input_text)?;
     let data_root = active_data_root(&state)?;
+    let artifacts = ArtifactStore::new(&data_root).map_err(error_string)?;
+    let catalog = load_studio_pack_catalog_v1(&data_root)?;
+    let inventory = plugin_inventory_report_v1(&app)?;
+    let plugin_runtime = studio_pack_runtime_snapshot_v1(&app, &inventory.registry)?;
+    let runtime_root = creator_plugin_runtime_root_v1(&app)?;
+
     let mut store = writable_store(&state)?;
     let project = store.get_project(&project_id).map_err(error_string)?;
-    if project.studio_pack.as_deref().is_none() {
-        return Err("Bind a Studio Pack before starting creator production.".to_owned());
+    let pack_id = project
+        .studio_pack
+        .as_deref()
+        .ok_or_else(|| "Bind a Studio Pack before starting creator production.".to_owned())?;
+    let pack = catalog.resolve_v1(pack_id).map_err(error_string)?;
+
+    let mut creator =
+        load_latest_creator_content_scene_v1(&store, &artifacts, &project_id).map_err(error_string)?;
+    let should_run_content = match (&requested_input, &creator) {
+        (Some(input), Some(existing)) => existing.content.source != *input,
+        (Some(_), None) => true,
+        (None, Some(_)) => false,
+        (None, None) => {
+            return Err(
+                "Creator topic or script is required until Content + SceneIntent are prepared."
+                    .to_owned(),
+            )
+        }
+    };
+    if should_run_content {
+        let input = requested_input
+            .as_ref()
+            .expect("creator input is present when content must run");
+        let llm = LlmGatewayClient::new(load_llmgateway_config(&app)?).map_err(error_string)?;
+        creator = Some(
+            run_creator_content_scene_v1(
+                &mut store,
+                &artifacts,
+                &llm,
+                &project_id,
+                input,
+                &CreatorContentSceneOptionsV1::default(),
+            )
+            .map_err(error_string)?,
+        );
+    }
+    let creator = creator.ok_or_else(|| {
+        "Creator content state is unavailable after content orchestration.".to_owned()
+    })?;
+
+    let visual_step = store
+        .list_project_steps(&project_id)
+        .map_err(error_string)?
+        .into_iter()
+        .find(|step| {
+            step.step == CREATOR_STEP_VISUAL_PREPARE_V1
+                && step.unit == omnicreator_core::CREATOR_WORKFLOW_UNIT_PROJECT_V1
+        })
+        .ok_or_else(|| "Creator visual workflow step is missing.".to_owned())?;
+    if visual_step.status != omnicreator_core::StepStatus::Succeeded {
+        let visual_runtime = DesktopVisualRuntimeV1 {
+            registry: &inventory.registry,
+            runtime: &plugin_runtime,
+            runtime_root,
+        };
+        let visual_plan = plan_creator_visuals_v1(
+            &project,
+            &pack,
+            &creator.content,
+            &creator.scene_plan,
+            &creator.scene_plan_artifact.sha256,
+            &visual_runtime,
+            &CreatorVisualPlanningOptionsV1::default(),
+        )
+        .map_err(error_string)?;
+        let visual = execute_creator_visual_plan_v1(
+            &mut store,
+            &artifacts,
+            &visual_plan,
+            &creator.scene_plan,
+            &visual_runtime,
+        )
+        .map_err(error_string)?;
+        if !visual.completed {
+            drop(store);
+            return snapshot_from_active(&state);
+        }
     }
 
-    let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
-    let llm = LlmGatewayClient::new(load_llmgateway_config(&app)?).map_err(error_string)?;
-    run_creator_content_scene_v1(
+    let provider_snapshot = {
+        let mut guard = state.compute.lock().map_err(lock_error)?;
+        if let Some(runtime) = guard.as_mut() {
+            let _ = runtime.heartbeat(Utc::now());
+            let connection_state = runtime.state();
+            if let Some(session) = runtime.session().cloned() {
+                let _ = reconcile_remote_session_v1(
+                    &mut store,
+                    &artifacts,
+                    runtime.provider_mut(),
+                    &session.identity.provider_id,
+                    &session.identity.session_id,
+                    connection_state,
+                    compute_staging_dir(&app)?,
+                );
+                Some(ComputeProviderSchedulingSnapshotV1 {
+                    state: runtime.state(),
+                    session,
+                })
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    };
+    let providers = provider_snapshot
+        .clone()
+        .map(|provider| vec![provider])
+        .unwrap_or_default();
+    let voice_runtime = creator_voice_runtime_v1(&app, &pack, provider_snapshot.as_ref())?;
+    let voice_plan = plan_creator_voice_orchestration_v1(
         &mut store,
         &artifacts,
-        &llm,
-        &project_id,
-        &input,
-        &CreatorContentSceneOptionsV1::default(),
+        &creator.content,
+        &voice_runtime,
+        &providers,
     )
     .map_err(error_string)?;
+
+    if !voice_plan.all_complete() {
+        if voice_plan.burst.scheduled_job_count() > 0 {
+            let mut guard = state.compute.lock().map_err(lock_error)?;
+            if let Some(runtime) = guard.as_mut() {
+                if runtime.state() == ComputeProviderConnectionState::Ready {
+                    let _ =
+                        dispatch_creator_voice_burst_v1(&mut store, runtime.provider_mut(), &voice_plan)
+                            .map_err(error_string)?;
+                }
+            }
+        }
+        drop(store);
+        return snapshot_from_active(&state);
+    }
+
+    assemble_creator_production_pack_v1(
+        &mut store,
+        &artifacts,
+        &project_id,
+        &CreatorProductionPackOptionsV1::default(),
+    )
+    .map_err(error_string)?;
+
     drop(store);
     snapshot_from_active(&state)
 }
