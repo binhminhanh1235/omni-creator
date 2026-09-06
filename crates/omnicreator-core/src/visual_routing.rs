@@ -573,7 +573,7 @@ mod tests {
     }
 
     #[test]
-    fn Studio_Pack_preferred_generated_route_has_no_stock_metadata() {
+    fn studio_pack_preferred_generated_route_has_no_stock_metadata() {
         let routing = route_scene_generated_preference_v1(&scene()).unwrap();
 
         assert_eq!(routing.route, VisualRouteV1::GeneratedStill);
