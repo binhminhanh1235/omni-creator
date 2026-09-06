@@ -8,10 +8,10 @@ use std::{
 use chrono::{DateTime, Utc};
 use omnicreator_core::{
     build_studio_pack_ux_view_v1, build_studio_review_center_v1, dispatch_gpu_burst_v1,
-    initial_studio_pack_catalog_v1, inspect_local_plugin_update_v1,
-    install_local_plugin_folder_v1, load_plugin_settings_ui, preview_plugin_capability_impact_v1,
-    project_board_projection_v1, reconcile_remote_session_v1, scan_plugin_inventory_v1,
-    uninstall_user_plugin_v1, update_local_plugin_folder_v1, ArtifactStore, AssetLibrarySnapshotV1,
+    initial_studio_pack_catalog_v1, inspect_local_plugin_update_v1, install_local_plugin_folder_v1,
+    load_plugin_settings_ui, preview_plugin_capability_impact_v1, project_board_projection_v1,
+    reconcile_remote_session_v1, scan_plugin_inventory_v1, uninstall_user_plugin_v1,
+    update_local_plugin_folder_v1, ArtifactStore, AssetLibrarySnapshotV1,
     ComputeProviderConnectionState, ComputeProviderLivenessPolicyV1, ComputeProviderRuntime,
     ComputeProviderSchedulingSnapshotV1, ComputeRunningAssignmentV1, Error as CoreError,
     GpuBatchBudgetOverviewV1, GpuBatchPlanRequestV1, GpuBatchPlanV1, GpuBurstDispatchSummaryV1,
@@ -442,7 +442,6 @@ fn uninstall_plugin(
     uninstall_user_plugin_v1(plugin_id, &built_in_roots, &user_root).map_err(error_string)?;
     plugin_inventory(app)
 }
-
 
 #[tauri::command]
 fn inspect_plugin_update(
@@ -1361,7 +1360,6 @@ fn plugin_inventory_report_v1(app: &AppHandle) -> Result<PluginInventoryReportV1
         &lifecycle,
     ))
 }
-
 
 fn plugin_impact_context_v1(
     state: &State<'_, DesktopState>,

@@ -372,7 +372,6 @@ pub fn uninstall_user_plugin_v1(
     })
 }
 
-
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct PluginCapabilityDeltaV1 {
     pub added: Vec<String>,
@@ -467,14 +466,11 @@ pub fn update_local_plugin_folder_v1(
 
         let canonical_user_root = fs::canonicalize(user_plugin_root)?;
         let user_scan = scan_plugin_roots(std::slice::from_ref(&canonical_user_root));
-        let current = user_scan
-            .registry
-            .get(expected_plugin_id)
-            .ok_or_else(|| {
-                Error::InvalidContract(format!(
-                    "user-installed plugin '{expected_plugin_id}' was not found for update"
-                ))
-            })?;
+        let current = user_scan.registry.get(expected_plugin_id).ok_or_else(|| {
+            Error::InvalidContract(format!(
+                "user-installed plugin '{expected_plugin_id}' was not found for update"
+            ))
+        })?;
         let current_directory = fs::canonicalize(&current.directory)?;
         if current_directory.parent() != Some(canonical_user_root.as_path()) {
             return Err(Error::InvalidContract(format!(
@@ -608,12 +604,7 @@ pub fn preview_plugin_capability_impact_v1(
                 .iter()
                 .map(|target| {
                     target_has_enabled_provider_v1(
-                        registry,
-                        lifecycle,
-                        target,
-                        plugin_id,
-                        None,
-                        false,
+                        registry, lifecycle, target, plugin_id, None, false,
                     )
                 })
                 .collect::<Vec<_>>();
@@ -807,8 +798,14 @@ fn inspect_staged_plugin_update_v1(
     let candidate_types = normalized_strings_v1(&candidate.types);
     let installed_capabilities = normalized_strings_v1(&installed.manifest.capabilities);
     let candidate_capabilities = normalized_strings_v1(&candidate.capabilities);
-    let installed_set = installed_capabilities.iter().cloned().collect::<BTreeSet<_>>();
-    let candidate_set = candidate_capabilities.iter().cloned().collect::<BTreeSet<_>>();
+    let installed_set = installed_capabilities
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let candidate_set = candidate_capabilities
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>();
 
     Ok(PluginUpdatePreviewV1 {
         plugin_id: expected_plugin_id.to_owned(),
@@ -821,7 +818,10 @@ fn inspect_staged_plugin_update_v1(
         capability_delta: PluginCapabilityDeltaV1 {
             added: candidate_set.difference(&installed_set).cloned().collect(),
             removed: installed_set.difference(&candidate_set).cloned().collect(),
-            retained: installed_set.intersection(&candidate_set).cloned().collect(),
+            retained: installed_set
+                .intersection(&candidate_set)
+                .cloned()
+                .collect(),
         },
     })
 }
@@ -958,9 +958,7 @@ fn target_matches_contract_v1(
         .is_none_or(|required| required == plugin_id);
     id_match
         && types.iter().any(|value| value == &target.plugin_type)
-        && capabilities
-            .iter()
-            .any(|value| value == &target.capability)
+        && capabilities.iter().any(|value| value == &target.capability)
 }
 
 fn create_plugin_staging_session_v1(root: &Path, operation: &str) -> Result<PathBuf> {
@@ -1428,7 +1426,6 @@ mod tests {
             .is_some());
     }
 
-
     fn write_plugin_contract_v1(
         root: &Path,
         directory: &str,
@@ -1606,7 +1603,12 @@ mod tests {
         assert!(matches!(result, Err(Error::InvalidContract(_))));
         let current = scan_plugin_roots(std::slice::from_ref(&user_root));
         assert_eq!(
-            current.registry.get("local-visual").unwrap().manifest.version,
+            current
+                .registry
+                .get("local-visual")
+                .unwrap()
+                .manifest
+                .version,
             "1.0.0"
         );
     }
@@ -1837,10 +1839,7 @@ mod tests {
 
         assert_eq!(impact.lost_capabilities, vec!["generated_still"]);
         assert_eq!(impact.gained_capabilities, vec!["stock_image"]);
-        assert_eq!(
-            registry.get("visual").unwrap().manifest.version,
-            "1.0.0"
-        );
+        assert_eq!(registry.get("visual").unwrap().manifest.version, "1.0.0");
     }
 
     #[test]
