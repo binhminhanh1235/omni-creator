@@ -29,6 +29,7 @@ pub enum VisualRoutingReasonV1 {
     NoStockCandidates,
     StockBelowQualityThreshold,
     StockUnavailable,
+    StudioPackPreferredGenerated,
     ThumbnailBackgroundRequested,
 }
 
@@ -158,6 +159,22 @@ impl VisualRoutingDecisionV1 {
                 {
                     return Err(Error::InvalidContract(
                         "below-threshold stock fallback requires rejected candidate score metadata"
+                            .to_owned(),
+                    ));
+                }
+            }
+            (
+                VisualUseCaseV1::SceneVisual,
+                VisualRouteV1::GeneratedStill,
+                VisualRoutingReasonV1::StudioPackPreferredGenerated,
+            ) => {
+                if self.stock_candidate_id.is_some()
+                    || self.stock_score.is_some()
+                    || self.minimum_stock_score.is_some()
+                    || self.preview_first
+                {
+                    return Err(Error::InvalidContract(
+                        "Studio Pack preferred generation must not contain stock decision fields"
                             .to_owned(),
                     ));
                 }
@@ -326,6 +343,19 @@ pub fn route_scene_visual_v1(
             ),
         )
     }
+}
+
+pub fn route_scene_generated_preference_v1(
+    scene: &SceneIntentV1,
+) -> Result<VisualRoutingDecisionV1> {
+    scene.validate_v1()?;
+    decision(
+        scene,
+        VisualUseCaseV1::SceneVisual,
+        VisualRouteV1::GeneratedStill,
+        VisualRoutingReasonV1::StudioPackPreferredGenerated,
+        VisualRoutingStockFieldsV1::none(),
+    )
 }
 
 pub fn route_thumbnail_background_v1(scene: &SceneIntentV1) -> Result<VisualRoutingDecisionV1> {
@@ -540,6 +570,21 @@ mod tests {
         );
         assert_eq!(routing.minimum_stock_score, None);
         assert_eq!(routing.stock_candidate_id, None);
+    }
+
+    #[test]
+    fn studio_pack_preferred_generated_route_has_no_stock_metadata() {
+        let routing = route_scene_generated_preference_v1(&scene()).unwrap();
+
+        assert_eq!(routing.route, VisualRouteV1::GeneratedStill);
+        assert_eq!(
+            routing.reason,
+            VisualRoutingReasonV1::StudioPackPreferredGenerated
+        );
+        assert!(routing.stock_candidate_id.is_none());
+        assert!(routing.stock_score.is_none());
+        assert!(routing.minimum_stock_score.is_none());
+        assert!(!routing.preview_first);
     }
 
     #[test]

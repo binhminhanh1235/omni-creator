@@ -284,3 +284,18 @@ Each content/scene execution is represented by the existing Job and Attempt cont
 Missing LLMGateway configuration or credentials are represented as the retryable error code `LLMGATEWAY_SETUP_REQUIRED`. Review Center reconstructs a blocking setup item with a Configure LLMGateway action from canonical Job/Attempt state rather than persisting a separate UX flag.
 
 **Reason:** The creator pipeline needs end-to-end resumability and explainable failure states, while the architecture already owns those semantics in WorkflowStep / Job / Attempt / ArtifactStore. P1 therefore composes existing primitives instead of creating a second pipeline engine.
+
+
+## ADR-036: Studio Pack route order governs creator visual orchestration
+
+**Decision:** Phase 15 P2 treats the resolved Studio Pack visual route order as execution policy, not merely a list of allowed capabilities.
+
+If a route starts with `generated_still` or `stick_figure_visual`, creator orchestration routes directly to that capability and does not perform speculative stock discovery. This is represented by `VisualRoutingReasonV1::StudioPackPreferredGenerated` rather than pretending stock discovery returned no candidates.
+
+If a route starts with stock targets, discovery remains preview-first. Core ranks provider-neutral `VisualCandidate` values using the existing deterministic ranking policy, applies the resolved Studio Pack `quality_thresholds.visual`, then either exposes the existing compact `VisualReviewSet` or falls forward to the next generated/stick target.
+
+Assisted and Balanced modes require explicit stock selection. Autopilot may accept the deterministic recommended candidate. Assisted generation requires explicit approval. No full stock asset fetch or generated/stick execution occurs while the corresponding review gate is unresolved.
+
+Resolved scene execution uses per-scene canonical Job/Attempt records under the existing `visual.prepare` semantic stage. An executor may wrap the already-implemented stock provider plugins or generated/stick execution paths, but it must commit the final result through ArtifactStore. Core verifies the returned artifact belongs to the canonical job, is physically hash-valid, preserves the exact `visual_routing` decision, and for stock media preserves the reviewed provider/asset/selection identity.
+
+**Reason:** Existing phases already provide stock providers, deterministic ranking, Review UI contracts, generated-image execution, stick-figure generation and ArtifactStore promotion. P2 needs to compose those primitives without downloading unselected media, overriding Studio Pack policy, or introducing provider-specific durable Project state.
