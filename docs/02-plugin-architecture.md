@@ -310,6 +310,9 @@ Stick Figure    READY
 - P1 local install copies into a hidden machine-local staging directory, rejects symlinks/special filesystem entries, validates through the canonical scanner, then atomically renames into the managed user plugin root
 - P1 uninstall is restricted to managed user-installed plugin directories and uses a hidden tombstone/rollback boundary; built-in plugins are not removable
 - install inspection never executes the plugin entrypoint or arbitrary package scripts
+- P2 local updates apply only to user-installed plugins, require the same plugin ID, a valid strictly-newer SemVer version and frozen Plugin API v1 compatibility
+- P2 stages the candidate under the machine-local user plugin root, atomically swaps the installed directory, verifies post-activation discovery and restores the previous directory if activation verification fails
+- P2 capability-impact preview simulates enabled providers after disable/remove/update and projects affected/blocking Studio Packs and active projects without mutating portable Project or Studio Pack state
 - configuration + permission review
 - rollback-safe updates
 

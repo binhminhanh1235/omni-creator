@@ -8,16 +8,18 @@ use std::{
 use chrono::{DateTime, Utc};
 use omnicreator_core::{
     build_studio_pack_ux_view_v1, build_studio_review_center_v1, dispatch_gpu_burst_v1,
-    initial_studio_pack_catalog_v1, install_local_plugin_folder_v1, load_plugin_settings_ui,
+    initial_studio_pack_catalog_v1, inspect_local_plugin_update_v1,
+    install_local_plugin_folder_v1, load_plugin_settings_ui, preview_plugin_capability_impact_v1,
     project_board_projection_v1, reconcile_remote_session_v1, scan_plugin_inventory_v1,
-    uninstall_user_plugin_v1, ArtifactStore, AssetLibrarySnapshotV1,
+    uninstall_user_plugin_v1, update_local_plugin_folder_v1, ArtifactStore, AssetLibrarySnapshotV1,
     ComputeProviderConnectionState, ComputeProviderLivenessPolicyV1, ComputeProviderRuntime,
     ComputeProviderSchedulingSnapshotV1, ComputeRunningAssignmentV1, Error as CoreError,
     GpuBatchBudgetOverviewV1, GpuBatchPlanRequestV1, GpuBatchPlanV1, GpuBurstDispatchSummaryV1,
     GpuBurstPlanV1, GpuJobPreparationV1, GpuWorkbenchQueueSnapshotV1, HandoffManifest,
     HttpComputeProvider, HttpComputeProviderConfigV1, LlmGatewayClient, LlmGatewayConfig,
-    LlmGatewayModel, MachineBinding, PluginInventoryEntryV1, PluginInventoryReportV1,
-    PluginLifecycleStateV1, PluginRegistry, PluginRuntimeReadinessV1, PortableStudioPackCatalogV1,
+    LlmGatewayModel, MachineBinding, PluginCapabilityImpactV1, PluginInventoryEntryV1,
+    PluginInventoryReportV1, PluginLifecycleStateV1, PluginMutationKindV1, PluginRegistry,
+    PluginRuntimeReadinessV1, PluginUpdatePreviewV1, PortableStudioPackCatalogV1,
     ProductionExportHistoryEntryV1, ProductionPackV1, ProductionPackageExportOutcomeV1,
     ProductionPackageExporterV1, Project, ProjectBoardProjectionV1, ProjectDisplayStatus,
     RemoteComputeJobSpecV1, RemoteReconciliationSummaryV1, RuntimeWorkloadEstimateV1, StateStore,
@@ -439,6 +441,120 @@ fn uninstall_plugin(
     let user_root = plugin_user_root_v1(&app)?;
     uninstall_user_plugin_v1(plugin_id, &built_in_roots, &user_root).map_err(error_string)?;
     plugin_inventory(app)
+}
+
+
+#[tauri::command]
+fn inspect_plugin_update(
+    app: AppHandle,
+    plugin_id: String,
+    source_path: String,
+) -> Result<PluginUpdatePreviewV1, String> {
+    let plugin_id = plugin_id.trim();
+    let source_path = source_path.trim();
+    if plugin_id.is_empty() {
+        return Err("Plugin id must not be empty.".to_owned());
+    }
+    if source_path.is_empty() {
+        return Err("Plugin update source path must not be empty.".to_owned());
+    }
+
+    let built_in_roots = plugin_built_in_roots_v1(&app);
+    let user_root = plugin_user_root_v1(&app)?;
+    inspect_local_plugin_update_v1(
+        plugin_id,
+        Path::new(source_path),
+        &built_in_roots,
+        &user_root,
+    )
+    .map_err(error_string)
+}
+
+#[tauri::command]
+fn apply_plugin_update(
+    app: AppHandle,
+    plugin_id: String,
+    source_path: String,
+) -> Result<PluginInventoryDesktopViewV1, String> {
+    let plugin_id = plugin_id.trim();
+    let source_path = source_path.trim();
+    if plugin_id.is_empty() {
+        return Err("Plugin id must not be empty.".to_owned());
+    }
+    if source_path.is_empty() {
+        return Err("Plugin update source path must not be empty.".to_owned());
+    }
+
+    let built_in_roots = plugin_built_in_roots_v1(&app);
+    let user_root = plugin_user_root_v1(&app)?;
+    update_local_plugin_folder_v1(
+        plugin_id,
+        Path::new(source_path),
+        &built_in_roots,
+        &user_root,
+    )
+    .map_err(error_string)?;
+    plugin_inventory(app)
+}
+
+#[tauri::command]
+fn plugin_mutation_impact(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    plugin_id: String,
+    mutation: String,
+    source_path: Option<String>,
+) -> Result<PluginCapabilityImpactV1, String> {
+    let plugin_id = plugin_id.trim();
+    if plugin_id.is_empty() {
+        return Err("Plugin id must not be empty.".to_owned());
+    }
+
+    let mutation = match mutation.trim() {
+        "disable" => PluginMutationKindV1::Disable,
+        "remove" => PluginMutationKindV1::Remove,
+        "update" => PluginMutationKindV1::Update,
+        other => {
+            return Err(format!(
+                "Unsupported plugin mutation '{other}'. Expected disable, remove, or update."
+            ))
+        }
+    };
+
+    let built_in_roots = plugin_built_in_roots_v1(&app);
+    let user_root = plugin_user_root_v1(&app)?;
+    let lifecycle = load_plugin_lifecycle_v1(&app)?;
+    let report = plugin_inventory_report_v1(&app)?;
+    let update_preview = if mutation == PluginMutationKindV1::Update {
+        let source_path = source_path
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| "Update impact preview requires a local source path.".to_owned())?;
+        Some(
+            inspect_local_plugin_update_v1(
+                plugin_id,
+                Path::new(source_path),
+                &built_in_roots,
+                &user_root,
+            )
+            .map_err(error_string)?,
+        )
+    } else {
+        None
+    };
+
+    let (catalog, projects) = plugin_impact_context_v1(&state)?;
+    preview_plugin_capability_impact_v1(
+        &report.registry,
+        &lifecycle,
+        &catalog,
+        &projects,
+        plugin_id,
+        mutation,
+        update_preview.as_ref(),
+    )
+    .map_err(error_string)
 }
 
 #[tauri::command]
@@ -1246,6 +1362,38 @@ fn plugin_inventory_report_v1(app: &AppHandle) -> Result<PluginInventoryReportV1
     ))
 }
 
+
+fn plugin_impact_context_v1(
+    state: &State<'_, DesktopState>,
+) -> Result<(PortableStudioPackCatalogV1, Vec<Project>), String> {
+    let active = {
+        let guard = state.active.lock().map_err(lock_error)?;
+        guard.as_ref().map(|active| {
+            (
+                active.workspace().data_root().to_path_buf(),
+                active.workspace().sqlite_path(),
+                active.is_read_only(),
+            )
+        })
+    };
+
+    let Some((data_root, sqlite_path, read_only)) = active else {
+        return Ok((
+            initial_studio_pack_catalog_v1().map_err(error_string)?,
+            Vec::new(),
+        ));
+    };
+
+    let catalog = load_studio_pack_catalog_v1(&data_root)?;
+    let store = if read_only {
+        StateStore::open_read_only(sqlite_path).map_err(error_string)?
+    } else {
+        StateStore::open(sqlite_path).map_err(error_string)?
+    };
+    let projects = store.list_projects().map_err(error_string)?;
+    Ok((catalog, projects))
+}
+
 fn studio_pack_plugin_registry_v1(app: &AppHandle) -> Result<PluginRegistry, String> {
     Ok(plugin_inventory_report_v1(app)?.registry)
 }
@@ -2010,6 +2158,9 @@ fn main() {
             set_plugin_enabled,
             install_plugin_from_folder,
             uninstall_plugin,
+            inspect_plugin_update,
+            apply_plugin_update,
+            plugin_mutation_impact,
             studio_pack_catalog,
             asset_library,
             add_asset_tag,
