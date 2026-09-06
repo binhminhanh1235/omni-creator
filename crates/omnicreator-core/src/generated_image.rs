@@ -264,8 +264,7 @@ impl GeneratedImagePreparationV1 {
             );
         }
         let has_supported_visual_capability = plugin.manifest.capabilities.iter().any(|value| {
-            value == GENERATED_STILL_CAPABILITY_V1
-                || value == STICK_FIGURE_VISUAL_CAPABILITY_V1
+            value == GENERATED_STILL_CAPABILITY_V1 || value == STICK_FIGURE_VISUAL_CAPABILITY_V1
         });
         let has_visual_generate = plugin
             .manifest
@@ -1171,13 +1170,11 @@ mod tests {
             .registry
             .get("stick-figure-reference")
             .expect("Phase 11 stick figure plugin must be discoverable");
-        assert!(
-            !plugin
-                .manifest
-                .capabilities
-                .iter()
-                .any(|value| value == GENERATED_STILL_CAPABILITY_V1)
-        );
+        assert!(!plugin
+            .manifest
+            .capabilities
+            .iter()
+            .any(|value| value == GENERATED_STILL_CAPABILITY_V1));
 
         let request = GeneratedImageRequestV1::from_scene_v1(
             scene(),
