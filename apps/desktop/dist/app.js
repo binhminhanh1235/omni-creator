@@ -181,6 +181,43 @@ function statusLabel(status) {
   return String(status || "PREPARING").replaceAll("_", " ").toUpperCase();
 }
 
+const creatorStageDefinitions = [
+  { key: "content.prepare", label: "Content" },
+  { key: "scene.plan", label: "Scenes" },
+  { key: "visual.prepare", label: "Visuals" },
+  { key: "voice.prepare", label: "Voice" },
+  { key: "production.pack", label: "Production Pack" },
+];
+
+function creatorStageStrip(item) {
+  const steps = Array.isArray(item && item.steps) ? item.steps : [];
+  if (!steps.length) return "";
+  return (
+    '<div class="creator-stage-strip" aria-label="Creator workflow stages">' +
+    creatorStageDefinitions
+      .map(function (stage) {
+        const step = steps.find(function (candidate) {
+          return candidate.step === stage.key && candidate.unit === "project";
+        });
+        const status = step ? statusLabel(step.status) : "MISSING";
+        const statusClass = String(step ? step.status : "MISSING").toLowerCase();
+        return (
+          '<span class="creator-stage-pill ' +
+          escapeHtml(statusClass) +
+          '" title="' +
+          escapeHtml(stage.label + ": " + status) +
+          '"><b>' +
+          escapeHtml(stage.label) +
+          '</b><small>' +
+          escapeHtml(status) +
+          "</small></span>"
+        );
+      })
+      .join("") +
+    "</div>"
+  );
+}
+
 function projectCard(item, readOnly) {
   const project = item.project;
   const checked = gpuWorkbenchState.selectedProjectIds.has(project.id) ? " checked" : "";
@@ -196,6 +233,7 @@ function projectCard(item, readOnly) {
     '<div class="project-action-summary">' +
     escapeHtml(item.board && item.board.summary ? item.board.summary : "Review project state.") +
     "</div>" +
+    creatorStageStrip(item) +
     '<div class="project-meta"><span class="status">' +
     escapeHtml(statusLabel(item.status)) +
     "</span>" +
