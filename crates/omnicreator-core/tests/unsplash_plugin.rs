@@ -143,8 +143,5 @@ fn selected_unsplash_output_is_verified_and_promoted_by_core() {
         artifact.metadata["provenance"]["creator_name"],
         "Annie Example"
     );
-    assert_eq!(
-        artifact.metadata["provenance"]["download_tracked"],
-        true
-    );
+    assert_eq!(artifact.metadata["provenance"]["download_tracked"], true);
 }
