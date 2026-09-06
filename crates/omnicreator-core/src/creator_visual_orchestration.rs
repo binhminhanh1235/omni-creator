@@ -256,19 +256,10 @@ impl CreatorVisualPlanV1 {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct CreatorVisualPlanningOptionsV1 {
     pub ranking_policy: VisualRankingPolicy,
     pub review_options: VisualReviewOptions,
-}
-
-impl Default for CreatorVisualPlanningOptionsV1 {
-    fn default() -> Self {
-        Self {
-            ranking_policy: VisualRankingPolicy::default(),
-            review_options: VisualReviewOptions::default(),
-        }
-    }
 }
 
 impl CreatorVisualPlanningOptionsV1 {
