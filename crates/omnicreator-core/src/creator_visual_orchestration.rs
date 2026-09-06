@@ -738,6 +738,7 @@ pub fn execute_creator_visual_plan_v1(
             state_store,
             artifact_store,
             &job,
+            planned,
             &artifact,
         )?;
         scenes.push(CreatorVisualSceneExecutionV1 {
@@ -905,6 +906,7 @@ fn validate_visual_execution_artifact_v1(
     state_store: &StateStore,
     artifact_store: &ArtifactStore,
     job: &Job,
+    planned: &CreatorVisualScenePlanV1,
     artifact: &Artifact,
 ) -> Result<()> {
     let persisted = state_store.get_job(&job.job_id)?;
@@ -923,6 +925,33 @@ fn validate_visual_execution_artifact_v1(
         return Err(Error::InvalidArtifact(
             "creator visual executor returned an unverified artifact".to_owned(),
         ));
+    }
+
+    let expected_routing = serde_json::to_value(&planned.routing)?;
+    if artifact.metadata.get("visual_routing") != Some(&expected_routing) {
+        return Err(Error::InvalidArtifact(
+            "creator visual artifact must preserve the canonical visual_routing decision"
+                .to_owned(),
+        ));
+    }
+
+    if planned.action == CreatorVisualActionV1::FetchSelectedStock {
+        let candidate = planned.selected_candidate_v1().ok_or_else(|| {
+            Error::InvalidArtifact(
+                "selected stock artifact validation requires the selected candidate".to_owned(),
+            )
+        })?;
+        for (key, expected) in [
+            ("source_provider", candidate.source_provider.as_str()),
+            ("source_asset_id", candidate.source_asset_id.as_str()),
+            ("selection_ref", candidate.selection_ref.as_str()),
+        ] {
+            if artifact.metadata.get(key).and_then(serde_json::Value::as_str) != Some(expected) {
+                return Err(Error::InvalidArtifact(format!(
+                    "creator visual stock artifact {key} does not match the reviewed selection"
+                )));
+            }
+        }
     }
     Ok(())
 }
