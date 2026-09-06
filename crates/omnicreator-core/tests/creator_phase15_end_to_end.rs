@@ -4,13 +4,14 @@ use chrono::{TimeZone, Utc};
 use omnicreator_core::artifact_store::{AttemptOutputPromotion, AttemptPromotionRequest};
 use omnicreator_core::{
     assemble_creator_production_pack_v1, compile_creator_workflow_plan_v1,
-    default_segment_tts_compute_requirements_v1, execute_creator_visual_plan_v1,
-    initial_studio_pack_catalog_v1, materialize_creator_workflow_plan_v1, plan_creator_visuals_v1,
+    default_segment_tts_compute_requirements_v1, derive_creator_run_coordinator_v1,
+    execute_creator_visual_plan_v1, initial_studio_pack_catalog_v1, materialize_creator_workflow_plan_v1, plan_creator_visuals_v1,
     plan_creator_voice_orchestration_v1, run_creator_content_scene_v1, Artifact, ArtifactStore,
     ComputeDeviceV1, ComputeProviderCapabilitiesV1, ComputeProviderConnectionState,
     ComputeProviderSchedulingSnapshotV1, ComputeProviderSessionIdentityV1,
     ComputeProviderSessionV1, CreatorContentSceneOptionsV1, CreatorInputV1, CreatorLlmExecutorV1,
-    CreatorProductionPackOptionsV1, CreatorStockDiscoveryV1, CreatorVisualAssetExecutorV1,
+    CreatorProductionPackOptionsV1, CreatorRunActionV1, CreatorRunStageV1,
+    CreatorStockDiscoveryV1, CreatorVisualAssetExecutorV1,
     CreatorVisualDiscoveryExecutorV1, CreatorVisualGenerationRequestV1,
     CreatorVisualPlanningOptionsV1, CreatorVisualStockFetchRequestV1, CreatorVoiceRuntimeV1, Error,
     LogicalUri, PathResolver, ProductionPackageExporterV1, PronunciationRuleV1, Result,
@@ -316,6 +317,9 @@ fn phase15_offline_creator_input_reaches_verified_resolve_package() {
         .unwrap();
     let workflow = compile_creator_workflow_plan_v1(&project, &pack).unwrap();
     materialize_creator_workflow_plan_v1(&store, &workflow).unwrap();
+    let initial = derive_creator_run_coordinator_v1(&store, &artifacts, &project.id).unwrap();
+    assert_eq!(initial.stage, CreatorRunStageV1::ContentScene);
+    assert_eq!(initial.action, CreatorRunActionV1::StartOrResume);
 
     let creator = run_creator_content_scene_v1(
         &mut store,
@@ -328,6 +332,10 @@ fn phase15_offline_creator_input_reaches_verified_resolve_package() {
     .unwrap();
     assert_eq!(creator.content.segments.len(), 2);
     assert_eq!(creator.scene_plan.scenes.len(), 2);
+    let after_content =
+        derive_creator_run_coordinator_v1(&store, &artifacts, &project.id).unwrap();
+    assert_eq!(after_content.stage, CreatorRunStageV1::Visual);
+    assert_eq!(after_content.action, CreatorRunActionV1::StartOrResume);
 
     let discovery = OfflineDiscovery {
         calls: Cell::new(0),
@@ -362,6 +370,10 @@ fn phase15_offline_creator_input_reaches_verified_resolve_package() {
             .status,
         StepStatus::Succeeded
     );
+    let before_voice =
+        derive_creator_run_coordinator_v1(&store, &artifacts, &project.id).unwrap();
+    assert_eq!(before_voice.stage, CreatorRunStageV1::VoiceCompute);
+    assert_eq!(before_voice.action, CreatorRunActionV1::StartOrResume);
 
     let voice_plan = plan_creator_voice_orchestration_v1(
         &mut store,
@@ -373,6 +385,10 @@ fn phase15_offline_creator_input_reaches_verified_resolve_package() {
     .unwrap();
     assert_eq!(voice_plan.segments.len(), 2);
     assert_eq!(voice_plan.burst.scheduled_job_count(), 2);
+    let compute_ready =
+        derive_creator_run_coordinator_v1(&store, &artifacts, &project.id).unwrap();
+    assert_eq!(compute_ready.stage, CreatorRunStageV1::VoiceCompute);
+    assert_eq!(compute_ready.action, CreatorRunActionV1::RunCompute);
 
     for (index, segment) in voice_plan.segments.iter().enumerate() {
         commit_voice_bundle(
@@ -405,6 +421,13 @@ fn phase15_offline_creator_input_reaches_verified_resolve_package() {
             .status,
         StepStatus::Succeeded
     );
+    let assemble_ready =
+        derive_creator_run_coordinator_v1(&store, &artifacts, &project.id).unwrap();
+    assert_eq!(assemble_ready.stage, CreatorRunStageV1::ProductionPack);
+    assert_eq!(
+        assemble_ready.action,
+        CreatorRunActionV1::AssembleProductionPack
+    );
 
     let assembled = assemble_creator_production_pack_v1(
         &mut store,
@@ -425,6 +448,10 @@ fn phase15_offline_creator_input_reaches_verified_resolve_package() {
             .status,
         StepStatus::Succeeded
     );
+    let export_ready =
+        derive_creator_run_coordinator_v1(&store, &artifacts, &project.id).unwrap();
+    assert_eq!(export_ready.stage, CreatorRunStageV1::ReadyToEdit);
+    assert_eq!(export_ready.action, CreatorRunActionV1::Export);
 
     let exported = ProductionPackageExporterV1::default()
         .export_v1(&mut store, &artifacts, &assembled.production_pack)
@@ -438,6 +465,9 @@ fn phase15_offline_creator_input_reaches_verified_resolve_package() {
         store.derive_project_status(&project.id).unwrap(),
         omnicreator_core::ProjectDisplayStatus::Done
     );
+    let done = derive_creator_run_coordinator_v1(&store, &artifacts, &project.id).unwrap();
+    assert_eq!(done.stage, CreatorRunStageV1::Done);
+    assert_eq!(done.action, CreatorRunActionV1::Complete);
 
     let portable = serde_json::to_string(&assembled.production_pack).unwrap();
     assert!(!portable.contains(workspace.data_root().to_string_lossy().as_ref()));
