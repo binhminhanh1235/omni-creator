@@ -1,0 +1,35 @@
+schema: omnicreator.plugin-manifest
+schema_version: 1
+id: unsplash
+name: Unsplash Visuals
+version: 1.0.0
+api_version: 1
+
+types:
+  - visual
+
+entrypoint:
+  command: python3
+  args:
+    - plugin.py
+
+capabilities:
+  - stock_image
+  - preview_first_search
+  - selected_asset_download
+
+scene_types:
+  - literal
+  - emotional
+  - conceptual
+
+permissions:
+  network:
+    - api.unsplash.com
+    - images.unsplash.com
+    - unsplash.com
+  filesystem:
+    - job-workspace
+
+settings:
+  schema: settings.schema.json
