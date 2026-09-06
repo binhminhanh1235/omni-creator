@@ -7,8 +7,9 @@ use crate::{
     route_scene_visual_v1, CreatorContentV1, CreatorScenePlanV1, EffectiveStudioPackV1, Error,
     Project, RankedVisualCandidate, Result, SceneIntentV1, StockDiscoveryStatusV1,
     StudioAutomationLevelV1, StudioPackRouteTargetV1, VisualCandidate, VisualCandidateRankingInput,
-    VisualMediaType, VisualRankingPolicy, VisualReviewOptions, VisualReviewSet,
-    VisualRouteV1, VisualRoutingDecisionV1, VisualRoutingPolicyV1,
+    Artifact, ArtifactStore, Job, StateStore, StepStatus, VisualMediaType, VisualRankingPolicy,
+    VisualReviewOptions, VisualReviewSet, VisualRouteV1, VisualRoutingDecisionV1,
+    VisualRoutingPolicyV1, CREATOR_STEP_VISUAL_PREPARE_V1, CREATOR_WORKFLOW_UNIT_PROJECT_V1,
     STICK_FIGURE_VISUAL_CAPABILITY_V1,
 };
 
@@ -473,6 +474,365 @@ pub fn approve_creator_generated_visual_v1(
     }
     scene.action = CreatorVisualActionV1::Generate;
     scene.validate_v1()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct CreatorVisualSceneExecutionV1 {
+    pub scene_id: String,
+    pub action: CreatorVisualActionV1,
+    pub artifact: Option<Artifact>,
+    pub cache_hit: bool,
+    pub review_blocked: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct CreatorVisualExecutionOutcomeV1 {
+    pub scenes: Vec<CreatorVisualSceneExecutionV1>,
+    pub completed: bool,
+}
+
+pub trait CreatorVisualAssetExecutorV1 {
+    fn fetch_selected_stock_v1(
+        &self,
+        state_store: &mut StateStore,
+        artifact_store: &ArtifactStore,
+        job_id: &str,
+        scene: &SceneIntentV1,
+        candidate: &VisualCandidate,
+        target: &StudioPackRouteTargetV1,
+        routing: &VisualRoutingDecisionV1,
+    ) -> Result<Artifact>;
+
+    fn generate_visual_v1(
+        &self,
+        state_store: &mut StateStore,
+        artifact_store: &ArtifactStore,
+        job_id: &str,
+        scene: &SceneIntentV1,
+        target: &StudioPackRouteTargetV1,
+        routing: &VisualRoutingDecisionV1,
+    ) -> Result<Artifact>;
+}
+
+pub fn execute_creator_visual_plan_v1(
+    state_store: &mut StateStore,
+    artifact_store: &ArtifactStore,
+    plan: &CreatorVisualPlanV1,
+    scene_plan: &CreatorScenePlanV1,
+    executor: &impl CreatorVisualAssetExecutorV1,
+) -> Result<CreatorVisualExecutionOutcomeV1> {
+    plan.validate_v1()?;
+    if plan.project_id != scene_plan.project_id {
+        return Err(Error::InvalidContract(
+            "creator visual execution Project/scene-plan mismatch".to_owned(),
+        ));
+    }
+    let project = state_store.get_project(&plan.project_id)?;
+    if project.studio_pack.as_deref() != Some(plan.studio_pack_id.as_str()) {
+        return Err(Error::InvalidContract(
+            "creator visual execution Studio Pack binding changed".to_owned(),
+        ));
+    }
+
+    let visual_step = state_store
+        .list_project_steps(&plan.project_id)?
+        .into_iter()
+        .find(|step| {
+            step.step == CREATOR_STEP_VISUAL_PREPARE_V1
+                && step.unit == CREATOR_WORKFLOW_UNIT_PROJECT_V1
+        })
+        .ok_or_else(|| {
+            Error::InvalidContract(
+                "creator visual workflow step is missing; materialize Phase 15 P0 first".to_owned(),
+            )
+        })?;
+
+    let mut scenes = Vec::with_capacity(plan.scenes.len());
+    let mut all_complete = true;
+
+    for planned in &plan.scenes {
+        let scene = scene_plan
+            .scenes
+            .iter()
+            .find(|scene| scene.id == planned.scene_id)
+            .ok_or_else(|| {
+                Error::InvalidContract(format!(
+                    "creator visual plan references missing SceneIntent {}",
+                    planned.scene_id
+                ))
+            })?;
+        scene.validate_v1()?;
+
+        if matches!(
+            planned.action,
+            CreatorVisualActionV1::AwaitingStockSelection
+                | CreatorVisualActionV1::AwaitingGenerationApproval
+        ) {
+            all_complete = false;
+            scenes.push(CreatorVisualSceneExecutionV1 {
+                scene_id: planned.scene_id.clone(),
+                action: planned.action,
+                artifact: None,
+                cache_hit: false,
+                review_blocked: true,
+            });
+            continue;
+        }
+
+        let input_hash = creator_visual_execution_hash_v1(plan, planned, scene)?;
+        if let Some(artifact) = find_visual_cache_v1(
+            state_store,
+            artifact_store,
+            &plan.project_id,
+            &planned.scene_id,
+            &input_hash,
+        )? {
+            scenes.push(CreatorVisualSceneExecutionV1 {
+                scene_id: planned.scene_id.clone(),
+                action: planned.action,
+                artifact: Some(artifact),
+                cache_hit: true,
+                review_blocked: false,
+            });
+            continue;
+        }
+
+        prepare_visual_aggregate_step_v1(state_store, &visual_step.step_id)?;
+        let job = get_or_create_visual_job_v1(
+            state_store,
+            &plan.project_id,
+            &planned.scene_id,
+            &input_hash,
+        )?;
+        let target = planned.execution_target.as_ref().ok_or_else(|| {
+            Error::InvalidContract(format!(
+                "creator visual scene {} has no execution target",
+                planned.scene_id
+            ))
+        })?;
+
+        let artifact = match planned.action {
+            CreatorVisualActionV1::FetchSelectedStock => {
+                let candidate = planned.selected_candidate_v1().ok_or_else(|| {
+                    Error::InvalidContract(format!(
+                        "creator visual scene {} has no selected stock candidate",
+                        planned.scene_id
+                    ))
+                })?;
+                executor.fetch_selected_stock_v1(
+                    state_store,
+                    artifact_store,
+                    &job.job_id,
+                    scene,
+                    candidate,
+                    target,
+                    &planned.routing,
+                )?
+            }
+            CreatorVisualActionV1::Generate => executor.generate_visual_v1(
+                state_store,
+                artifact_store,
+                &job.job_id,
+                scene,
+                target,
+                &planned.routing,
+            )?,
+            CreatorVisualActionV1::AwaitingStockSelection
+            | CreatorVisualActionV1::AwaitingGenerationApproval => unreachable!(),
+        };
+        validate_visual_execution_artifact_v1(
+            state_store,
+            artifact_store,
+            &job,
+            &artifact,
+        )?;
+        scenes.push(CreatorVisualSceneExecutionV1 {
+            scene_id: planned.scene_id.clone(),
+            action: planned.action,
+            artifact: Some(artifact),
+            cache_hit: false,
+            review_blocked: false,
+        });
+    }
+
+    if all_complete && scenes.iter().all(|scene| scene.artifact.is_some()) {
+        let current = state_store.get_step(&visual_step.step_id)?;
+        if current.status != StepStatus::Succeeded {
+            if matches!(
+                current.status,
+                StepStatus::Stale
+                    | StepStatus::Retryable
+                    | StepStatus::Failed
+                    | StepStatus::Cancelled
+                    | StepStatus::Skipped
+            ) {
+                state_store.set_step_status(&visual_step.step_id, StepStatus::Ready)?;
+            }
+            state_store.set_step_status(&visual_step.step_id, StepStatus::Succeeded)?;
+        }
+        state_store.refresh_ready_steps(&plan.project_id)?;
+    }
+
+    Ok(CreatorVisualExecutionOutcomeV1 {
+        completed: all_complete && scenes.iter().all(|scene| scene.artifact.is_some()),
+        scenes,
+    })
+}
+
+fn creator_visual_execution_hash_v1(
+    plan: &CreatorVisualPlanV1,
+    planned: &CreatorVisualScenePlanV1,
+    scene: &SceneIntentV1,
+) -> Result<String> {
+    planned.validate_v1()?;
+    scene.validate_v1()?;
+    let planned_json = serde_json::to_vec(planned)?;
+    let scene_json = serde_json::to_vec(scene)?;
+    Ok(crate::deterministic_input_hash(&[
+        b"creator-visual-execution-v1",
+        plan.scene_plan_sha256.as_bytes(),
+        planned_json.as_slice(),
+        scene_json.as_slice(),
+    ]))
+}
+
+fn find_visual_cache_v1(
+    state_store: &StateStore,
+    artifact_store: &ArtifactStore,
+    project_id: &str,
+    scene_id: &str,
+    input_hash: &str,
+) -> Result<Option<Artifact>> {
+    for job in state_store.list_project_jobs(project_id)? {
+        if job.step != CREATOR_STEP_VISUAL_PREPARE_V1
+            || job.unit != scene_id
+            || job.input_hash != input_hash
+            || job.status != StepStatus::Succeeded
+        {
+            continue;
+        }
+        let Some(artifact_id) = job.selected_artifact.as_deref() else {
+            continue;
+        };
+        let artifact = state_store.get_artifact(artifact_id)?;
+        if artifact.project_id.as_deref() == Some(project_id)
+            && artifact.input_hash.as_deref() == Some(input_hash)
+            && artifact_store.verify_artifact(&artifact)?
+        {
+            return Ok(Some(artifact));
+        }
+    }
+    Ok(None)
+}
+
+fn get_or_create_visual_job_v1(
+    state_store: &mut StateStore,
+    project_id: &str,
+    scene_id: &str,
+    input_hash: &str,
+) -> Result<Job> {
+    let matching = state_store
+        .list_project_jobs(project_id)?
+        .into_iter()
+        .find(|job| {
+            job.step == CREATOR_STEP_VISUAL_PREPARE_V1
+                && job.unit == scene_id
+                && job.input_hash == input_hash
+        });
+
+    match matching {
+        Some(job) if matches!(job.status, StepStatus::Retryable | StepStatus::Failed) => {
+            state_store.prepare_job_retry(&job.job_id)
+        }
+        Some(job) if job.status == StepStatus::Ready => Ok(job),
+        Some(job) if job.status == StepStatus::Fatal => Err(Error::InvalidJobState(format!(
+            "creator visual job {} is FATAL for unchanged input",
+            job.job_id
+        ))),
+        Some(job) if matches!(job.status, StepStatus::Running | StepStatus::Queued) => {
+            Err(Error::InvalidJobState(format!(
+                "creator visual job {} is already active",
+                job.job_id
+            )))
+        }
+        _ => state_store.create_job(
+            project_id,
+            CREATOR_STEP_VISUAL_PREPARE_V1,
+            scene_id,
+            input_hash,
+        ),
+    }
+}
+
+fn prepare_visual_aggregate_step_v1(
+    state_store: &mut StateStore,
+    step_id: &str,
+) -> Result<()> {
+    let current = state_store.get_step(step_id)?;
+    match current.status {
+        StepStatus::Ready => Ok(()),
+        StepStatus::Succeeded => {
+            let impact = state_store.invalidate_from(step_id, None)?;
+            for affected in impact {
+                let latest = state_store.get_step(&affected.step_id)?;
+                if latest.status != StepStatus::Stale {
+                    continue;
+                }
+                let next = if affected.step_id == step_id {
+                    StepStatus::Ready
+                } else {
+                    StepStatus::NotReady
+                };
+                state_store.set_step_status(&affected.step_id, next)?;
+            }
+            Ok(())
+        }
+        StepStatus::Stale
+        | StepStatus::Retryable
+        | StepStatus::Failed
+        | StepStatus::Cancelled
+        | StepStatus::Skipped => {
+            state_store.set_step_status(step_id, StepStatus::Ready)?;
+            Ok(())
+        }
+        StepStatus::NotReady => Err(Error::InvalidTransition(
+            "creator visual step is still waiting on SceneIntent dependencies".to_owned(),
+        )),
+        StepStatus::Running | StepStatus::Queued => Err(Error::InvalidTransition(
+            "creator visual aggregate step is already active".to_owned(),
+        )),
+        StepStatus::Fatal => Err(Error::InvalidTransition(
+            "creator visual aggregate step is FATAL".to_owned(),
+        )),
+    }
+}
+
+fn validate_visual_execution_artifact_v1(
+    state_store: &StateStore,
+    artifact_store: &ArtifactStore,
+    job: &Job,
+    artifact: &Artifact,
+) -> Result<()> {
+    let persisted = state_store.get_job(&job.job_id)?;
+    if persisted.status != StepStatus::Succeeded
+        || persisted.selected_artifact.as_deref() != Some(artifact.artifact_id.as_str())
+        || artifact.project_id.as_deref() != Some(job.project_id.as_str())
+        || artifact.producer_job.as_deref() != Some(job.job_id.as_str())
+        || artifact.input_hash.as_deref() != Some(job.input_hash.as_str())
+    {
+        return Err(Error::InvalidArtifact(
+            "creator visual executor must commit the selected artifact through the canonical job"
+                .to_owned(),
+        ));
+    }
+    if !artifact_store.verify_artifact(artifact)? {
+        return Err(Error::InvalidArtifact(
+            "creator visual executor returned an unverified artifact".to_owned(),
+        ));
+    }
+    Ok(())
 }
 
 pub fn visual_route_key_v1(scene: &SceneIntentV1) -> Result<String> {
