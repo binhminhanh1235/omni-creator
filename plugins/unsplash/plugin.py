@@ -743,6 +743,13 @@ def execute_fetch_selected(
             "visual.fetch_selected payload must be an object.",
         )
 
+    if state.job_workspace is None:
+        raise PluginFailure(
+            "WORKSPACE_REQUIRED",
+            "visual.fetch_selected requires plugin.initialize with a job_workspace.",
+            retryable=False,
+        )
+
     selection_ref = require_non_empty_string(payload.get("selection_ref"), "selection_ref")
     asset_id = parse_selection_ref(selection_ref)
     quality_mode = payload.get("quality_mode", "standard")
