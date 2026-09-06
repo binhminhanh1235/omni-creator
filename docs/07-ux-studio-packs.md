@@ -564,3 +564,11 @@ P3 regression coverage requires:
 - read-only workspaces reconstruct board state but cannot mutate project state
 - browser local/session storage is not used as board truth
 - GPU Workbench and Production Pack regressions continue to pass
+
+## Phase 11 Christian Stick Explainer activation
+
+`Christian Stick Explainer` remains capability-driven. Phase 11 checks in `stick-figure-reference`, a real visual plugin advertising exact capability `stick_figure_visual` plus `visual_generate`.
+
+Therefore a normal checked-in PluginRegistry now evaluates the pack as available. If the plugin is removed or the exact capability is absent, the same unchanged Studio Pack definition returns to `UNAVAILABLE`; generic `generated_still` providers still do not satisfy this semantic route.
+
+The plugin is offline and credential-free, so there is no machine-local setup requirement beyond having the checked-in runtime available.
