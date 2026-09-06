@@ -72,9 +72,9 @@ impl CreatorWorkflowPlanV1 {
                 "creator workflow script_version must be positive".to_owned(),
             ));
         }
-        if self.source_hash.len() != 64 || self.plan_hash.len() != 64 {
+        if !is_sha256_hex_v1(&self.source_hash) || !is_sha256_hex_v1(&self.plan_hash) {
             return Err(Error::InvalidContract(
-                "creator workflow hashes must be SHA-256 hex strings".to_owned(),
+                "creator workflow hashes must be lowercase SHA-256 hex strings".to_owned(),
             ));
         }
         if self.steps.len() != CREATOR_WORKFLOW_STAGE_ORDER_V1.len() {
@@ -99,13 +99,13 @@ impl CreatorWorkflowPlanV1 {
                     step.step
                 )));
             }
-            if step.input_hash.len() != 64 {
+            if !is_sha256_hex_v1(&step.input_hash) {
                 return Err(Error::InvalidContract(format!(
-                    "creator workflow step {} must have a SHA-256 input hash",
+                    "creator workflow step {} must have a lowercase SHA-256 input hash",
                     step.step
                 )));
             }
-            if !seen.insert(step.step.as_str()) {
+            if seen.contains(step.step.as_str()) {
                 return Err(Error::InvalidContract(format!(
                     "duplicate creator workflow step {}",
                     step.step
@@ -127,6 +127,7 @@ impl CreatorWorkflowPlanV1 {
                     )));
                 }
             }
+            seen.insert(step.step.as_str());
         }
 
         let expected_hash = creator_workflow_plan_hash_v1(&self.source_hash, &self.steps);
@@ -325,6 +326,13 @@ pub fn materialize_creator_workflow_plan_v1(
     })
 }
 
+fn is_sha256_hex_v1(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
 fn creator_workflow_plan_hash_v1(
     source_hash: &str,
     steps: &[CreatorWorkflowStepPlanV1],
@@ -382,7 +390,7 @@ mod tests {
                 .iter()
                 .map(|step| step.step.as_str())
                 .collect::<Vec<_>>(),
-            CREATOR_WORKFLOW_STAGE_ORDER_V1
+            CREATOR_WORKFLOW_STAGE_ORDER_V1.to_vec()
         );
         assert_eq!(
             first.steps[4].depends_on,
