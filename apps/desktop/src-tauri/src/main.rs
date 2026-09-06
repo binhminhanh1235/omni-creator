@@ -23,7 +23,7 @@ use omnicreator_core::{
     CreatorProductionPackOptionsV1, CreatorRunCoordinatorV1, CreatorStockDiscoveryV1,
     CreatorVisualAssetExecutorV1, CreatorVisualDiscoveryExecutorV1,
     CreatorVisualGenerationRequestV1, CreatorVisualPlanningOptionsV1,
-    CreatorVisualStockFetchRequestV1, CreatorVoiceRuntimeV1, Error as CoreError,
+    CreatorVisualStockFetchRequestV1, CreatorVoiceRuntimeV1, DiscoveredPlugin, Error as CoreError,
     GeneratedImagePluginResultV1, GeneratedImageRequestV1, GeneratedImageResolutionV1,
     GeneratedImageStyleV1, GpuBatchBudgetOverviewV1,
     GpuBatchPlanRequestV1, GpuBatchPlanV1, GpuBurstDispatchSummaryV1, GpuBurstPlanV1,
