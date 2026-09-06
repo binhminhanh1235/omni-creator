@@ -1226,6 +1226,173 @@ impl CreatorVisualAssetExecutorV1 for DesktopVisualRuntimeV1<'_> {
     }
 }
 
+fn creator_visual_plan_for_desktop_v1(
+    app: &AppHandle,
+    store: &StateStore,
+    artifacts: &ArtifactStore,
+    project_id: &str,
+) -> Result<
+    (
+        CreatorContentSceneOutcomeV1,
+        CreatorVisualPlanV1,
+        PluginInventoryReportV1,
+        StudioPackRuntimeSnapshotV1,
+        PathBuf,
+    ),
+    String,
+> {
+    let project = store.get_project(project_id).map_err(error_string)?;
+    let pack_id = project
+        .studio_pack
+        .as_deref()
+        .ok_or_else(|| "Bind a Studio Pack before reviewing creator visuals.".to_owned())?;
+    let catalog = load_studio_pack_catalog_v1(artifacts.data_root())?;
+    let pack = catalog.resolve_v1(pack_id).map_err(error_string)?;
+    let creator = load_latest_creator_content_scene_v1(store, artifacts, project_id)
+        .map_err(error_string)?
+        .ok_or_else(|| {
+            "Content + SceneIntent must be prepared before visual review.".to_owned()
+        })?;
+    let inventory = plugin_inventory_report_v1(app)?;
+    let runtime = studio_pack_runtime_snapshot_v1(app, &inventory.registry)?;
+    let runtime_root = creator_plugin_runtime_root_v1(app)?;
+    let visual_runtime = DesktopVisualRuntimeV1 {
+        registry: &inventory.registry,
+        runtime: &runtime,
+        runtime_root: runtime_root.clone(),
+    };
+    let plan = plan_creator_visuals_v1(
+        &project,
+        &pack,
+        &creator.content,
+        &creator.scene_plan,
+        &creator.scene_plan_artifact.sha256,
+        &visual_runtime,
+        &CreatorVisualPlanningOptionsV1::default(),
+    )
+    .map_err(error_string)?;
+    Ok((creator, plan, inventory, runtime, runtime_root))
+}
+
+fn creator_visual_review_view_v1(
+    creator: &CreatorContentSceneOutcomeV1,
+    plan: &CreatorVisualPlanV1,
+) -> Result<CreatorVisualReviewDesktopViewV1, String> {
+    let mut scenes = Vec::new();
+    for planned in &plan.scenes {
+        if !matches!(
+            planned.action,
+            CreatorVisualActionV1::AwaitingStockSelection
+                | CreatorVisualActionV1::AwaitingGenerationApproval
+        ) {
+            continue;
+        }
+        let scene = creator
+            .scene_plan
+            .scenes
+            .iter()
+            .find(|scene| scene.id == planned.scene_id)
+            .ok_or_else(|| {
+                format!(
+                    "Visual review references missing SceneIntent {}.",
+                    planned.scene_id
+                )
+            })?;
+        scenes.push(CreatorVisualReviewSceneDesktopViewV1 {
+            scene_id: planned.scene_id.clone(),
+            narration: scene.narration.clone(),
+            purpose: scene.purpose.clone(),
+            action: planned.action,
+            review: planned.review.clone(),
+            generated_preset: planned
+                .execution_target
+                .as_ref()
+                .and_then(|target| target.preset.clone()),
+        });
+    }
+
+    Ok(CreatorVisualReviewDesktopViewV1 {
+        project_id: plan.project_id.clone(),
+        complete: scenes.is_empty(),
+        scenes,
+    })
+}
+
+#[tauri::command]
+fn creator_visual_review_status(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    project_id: String,
+) -> Result<CreatorVisualReviewDesktopViewV1, String> {
+    let data_root = active_data_root(&state)?;
+    let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
+    let store = readable_store(&state)?;
+    let (creator, plan, _, _, _) =
+        creator_visual_plan_for_desktop_v1(&app, &store, &artifacts, &project_id)?;
+    creator_visual_review_view_v1(&creator, &plan)
+}
+
+#[tauri::command]
+fn select_creator_visual_candidate(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    project_id: String,
+    scene_id: String,
+    candidate_id: String,
+) -> Result<AppSnapshot, String> {
+    let data_root = active_data_root(&state)?;
+    let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
+    let mut store = writable_store(&state)?;
+    let (creator, mut plan, inventory, runtime, runtime_root) =
+        creator_visual_plan_for_desktop_v1(&app, &store, &artifacts, &project_id)?;
+    select_creator_stock_candidate_v1(&mut plan, &scene_id, &candidate_id).map_err(error_string)?;
+    let visual_runtime = DesktopVisualRuntimeV1 {
+        registry: &inventory.registry,
+        runtime: &runtime,
+        runtime_root,
+    };
+    execute_creator_visual_plan_v1(
+        &mut store,
+        &artifacts,
+        &plan,
+        &creator.scene_plan,
+        &visual_runtime,
+    )
+    .map_err(error_string)?;
+    drop(store);
+    snapshot_from_active(&state)
+}
+
+#[tauri::command]
+fn approve_creator_generated_visual(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    project_id: String,
+    scene_id: String,
+) -> Result<AppSnapshot, String> {
+    let data_root = active_data_root(&state)?;
+    let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
+    let mut store = writable_store(&state)?;
+    let (creator, mut plan, inventory, runtime, runtime_root) =
+        creator_visual_plan_for_desktop_v1(&app, &store, &artifacts, &project_id)?;
+    approve_creator_generated_visual_v1(&mut plan, &scene_id).map_err(error_string)?;
+    let visual_runtime = DesktopVisualRuntimeV1 {
+        registry: &inventory.registry,
+        runtime: &runtime,
+        runtime_root,
+    };
+    execute_creator_visual_plan_v1(
+        &mut store,
+        &artifacts,
+        &plan,
+        &creator.scene_plan,
+        &visual_runtime,
+    )
+    .map_err(error_string)?;
+    drop(store);
+    snapshot_from_active(&state)
+}
+
 #[tauri::command]
 fn review_center(
     app: AppHandle,
@@ -2954,6 +3121,9 @@ fn main() {
             remove_asset_tag,
             review_center,
             retry_review_job,
+            creator_visual_review_status,
+            select_creator_visual_candidate,
+            approve_creator_generated_visual,
             start_creator_production,
             rename_project,
             delete_project,
