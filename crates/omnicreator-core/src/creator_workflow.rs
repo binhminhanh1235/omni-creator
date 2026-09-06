@@ -3,8 +3,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    deterministic_input_hash, EffectiveStudioPackV1, Error, Project, Result, StateStore, StepStatus,
-    WorkflowStep,
+    deterministic_input_hash, EffectiveStudioPackV1, Error, Project, Result, StateStore,
+    StepStatus, WorkflowStep,
 };
 
 pub const CREATOR_WORKFLOW_PLAN_SCHEMA_V1: &str = "omnicreator.creator-workflow-plan";
@@ -308,7 +308,10 @@ pub fn materialize_creator_workflow_plan_v1(
             })?;
         for dependency in &planned.depends_on {
             let upstream = existing
-                .get(&(dependency.clone(), CREATOR_WORKFLOW_UNIT_PROJECT_V1.to_owned()))
+                .get(&(
+                    dependency.clone(),
+                    CREATOR_WORKFLOW_UNIT_PROJECT_V1.to_owned(),
+                ))
                 .ok_or_else(|| {
                     Error::InvalidContract(format!(
                         "materialized creator workflow is missing dependency {}",
@@ -333,10 +336,7 @@ fn is_sha256_hex_v1(value: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
-fn creator_workflow_plan_hash_v1(
-    source_hash: &str,
-    steps: &[CreatorWorkflowStepPlanV1],
-) -> String {
+fn creator_workflow_plan_hash_v1(source_hash: &str, steps: &[CreatorWorkflowStepPlanV1]) -> String {
     let step_fingerprint = steps
         .iter()
         .map(|step| {
@@ -364,7 +364,12 @@ mod tests {
     use super::*;
     use crate::initial_studio_pack_catalog_v1;
 
-    fn fixture() -> (tempfile::TempDir, StateStore, Project, EffectiveStudioPackV1) {
+    fn fixture() -> (
+        tempfile::TempDir,
+        StateStore,
+        Project,
+        EffectiveStudioPackV1,
+    ) {
         let temp = tempdir().unwrap();
         let store = StateStore::open(temp.path().join("state.db")).unwrap();
         let pack = initial_studio_pack_catalog_v1()
@@ -410,7 +415,10 @@ mod tests {
             "provider_id",
             "model_id",
         ] {
-            assert!(!json.contains(forbidden), "found forbidden token {forbidden}");
+            assert!(
+                !json.contains(forbidden),
+                "found forbidden token {forbidden}"
+            );
         }
     }
 
