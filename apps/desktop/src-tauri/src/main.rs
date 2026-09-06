@@ -16,8 +16,8 @@ use omnicreator_core::{
     load_plugin_settings_ui, materialize_creator_workflow_plan_v1, plan_creator_visuals_v1,
     plan_creator_voice_orchestration_v1, preview_plugin_capability_impact_v1,
     project_board_projection_v1, reconcile_remote_session_v1, run_creator_content_scene_v1,
-    scan_plugin_inventory_v1, uninstall_user_plugin_v1, update_local_plugin_folder_v1,
-    Artifact, ArtifactStore, AssetLibrarySnapshotV1, ComputeProviderConnectionState,
+    scan_plugin_inventory_v1, uninstall_user_plugin_v1, update_local_plugin_folder_v1, Artifact,
+    ArtifactStore, AssetLibrarySnapshotV1, ComputeProviderConnectionState,
     ComputeProviderLivenessPolicyV1, ComputeProviderRuntime, ComputeProviderSchedulingSnapshotV1,
     ComputeRunningAssignmentV1, CreatorContentSceneOptionsV1, CreatorInputV1,
     CreatorProductionPackOptionsV1, CreatorRunCoordinatorV1, CreatorStockDiscoveryV1,
@@ -25,25 +25,24 @@ use omnicreator_core::{
     CreatorVisualGenerationRequestV1, CreatorVisualPlanningOptionsV1,
     CreatorVisualStockFetchRequestV1, CreatorVoiceRuntimeV1, DiscoveredPlugin, Error as CoreError,
     GeneratedImagePluginResultV1, GeneratedImageRequestV1, GeneratedImageResolutionV1,
-    GeneratedImageStyleV1, GpuBatchBudgetOverviewV1,
-    GpuBatchPlanRequestV1, GpuBatchPlanV1, GpuBurstDispatchSummaryV1, GpuBurstPlanV1,
-    GpuJobPreparationV1, GpuWorkbenchQueueSnapshotV1, HandoffManifest, HttpComputeProvider,
-    HttpComputeProviderConfigV1, LlmGatewayClient, LlmGatewayConfig, LlmGatewayModel,
-    MachineBinding, PluginCapabilityImpactV1, PluginInventoryEntryV1, PluginInventoryReportV1,
-    PluginJobWorkspace, PluginLifecycleStateV1, PluginMutationKindV1, PluginProcess,
-    PluginProcessOptions, PluginRegistry, PluginResponse, PluginRuntimeReadinessV1,
-    PluginUpdatePreviewV1, PortableStudioPackCatalogV1, ProductionExportHistoryEntryV1,
-    ProductionPackV1, ProductionPackageExportOutcomeV1, ProductionPackageExporterV1, Project,
-    ProjectBoardProjectionV1, ProjectDisplayStatus, RemoteComputeJobSpecV1,
-    RemoteReconciliationSummaryV1, Result as CoreResult, RuntimeWorkloadEstimateV1,
-    SegmentTtsLockStateV1, SelectedVisualOutput, StateStore, StockDiscoveryStatusV1,
-    StudioAutomationLevelV1,
-    StudioJobReviewSnapshotV1, StudioPackAvailabilityStatusV1, StudioPackOverridesV1,
-    StudioPackRouteTargetV1, StudioPackRuntimeSnapshotV1, StudioPackUxViewV1, StudioPackV1,
-    StudioReviewCenterV1, VisualCandidate, VisualCandidateRankingInput, VisualCandidateSignals,
-    VoiceIdentityV1, VoiceModelIdentityV1, WorkflowStep, Workspace, WorkspaceSession,
-    CREATOR_STEP_VISUAL_PREPARE_V1, STICK_FIGURE_VISUAL_CAPABILITY_V1,
-    STUDIO_PACK_SCHEMA_V1, STUDIO_PACK_VERSION_V1,
+    GeneratedImageStyleV1, GpuBatchBudgetOverviewV1, GpuBatchPlanRequestV1, GpuBatchPlanV1,
+    GpuBurstDispatchSummaryV1, GpuBurstPlanV1, GpuJobPreparationV1, GpuWorkbenchQueueSnapshotV1,
+    HandoffManifest, HttpComputeProvider, HttpComputeProviderConfigV1, LlmGatewayClient,
+    LlmGatewayConfig, LlmGatewayModel, MachineBinding, PluginCapabilityImpactV1,
+    PluginInventoryEntryV1, PluginInventoryReportV1, PluginJobWorkspace, PluginLifecycleStateV1,
+    PluginMutationKindV1, PluginProcess, PluginProcessOptions, PluginRegistry, PluginResponse,
+    PluginRuntimeReadinessV1, PluginUpdatePreviewV1, PortableStudioPackCatalogV1,
+    ProductionExportHistoryEntryV1, ProductionPackV1, ProductionPackageExportOutcomeV1,
+    ProductionPackageExporterV1, Project, ProjectBoardProjectionV1, ProjectDisplayStatus,
+    RemoteComputeJobSpecV1, RemoteReconciliationSummaryV1, Result as CoreResult,
+    RuntimeWorkloadEstimateV1, SegmentTtsLockStateV1, SelectedVisualOutput, StateStore,
+    StockDiscoveryStatusV1, StudioAutomationLevelV1, StudioJobReviewSnapshotV1,
+    StudioPackAvailabilityStatusV1, StudioPackOverridesV1, StudioPackRouteTargetV1,
+    StudioPackRuntimeSnapshotV1, StudioPackUxViewV1, StudioPackV1, StudioReviewCenterV1,
+    VisualCandidate, VisualCandidateRankingInput, VisualCandidateSignals, VoiceIdentityV1,
+    VoiceModelIdentityV1, WorkflowStep, Workspace, WorkspaceSession,
+    CREATOR_STEP_VISUAL_PREPARE_V1, STICK_FIGURE_VISUAL_CAPABILITY_V1, STUDIO_PACK_SCHEMA_V1,
+    STUDIO_PACK_VERSION_V1,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
@@ -804,7 +803,6 @@ fn remove_asset_tag(
         .map_err(error_string)
 }
 
-
 struct DesktopVisualRuntimeV1<'a> {
     registry: &'a PluginRegistry,
     runtime: &'a StudioPackRuntimeSnapshotV1,
@@ -826,9 +824,7 @@ impl DesktopVisualRuntimeV1<'_> {
 
         if let Some(plugin_id) = preferred_provider.or(target.plugin_id.as_deref()) {
             let plugin = self.registry.get(plugin_id).ok_or_else(|| {
-                CoreError::InvalidContract(format!(
-                    "visual plugin {plugin_id} is not installed"
-                ))
+                CoreError::InvalidContract(format!("visual plugin {plugin_id} is not installed"))
             })?;
             if !ready(&plugin.manifest.id) {
                 return Err(CoreError::InvalidContract(format!(
@@ -959,7 +955,9 @@ impl CreatorVisualDiscoveryExecutorV1 for DesktopVisualRuntimeV1<'_> {
             let initialized = process.initialize(serde_json::json!({}));
             if initialized
                 .ok()
-                .and_then(|call| Self::process_result_v1(plugin, call.response, "plugin.initialize").ok())
+                .and_then(|call| {
+                    Self::process_result_v1(plugin, call.response, "plugin.initialize").ok()
+                })
                 .is_none()
             {
                 let _ = process.shutdown();
@@ -981,10 +979,9 @@ impl CreatorVisualDiscoveryExecutorV1 for DesktopVisualRuntimeV1<'_> {
                     "media_type": media_type,
                 }),
             );
-            let result = match call
-                .ok()
-                .and_then(|call| Self::process_result_v1(plugin, call.response, "visual.resolve").ok())
-            {
+            let result = match call.ok().and_then(|call| {
+                Self::process_result_v1(plugin, call.response, "visual.resolve").ok()
+            }) {
                 Some(result) => result,
                 None => {
                     let _ = process.shutdown();
@@ -1041,8 +1038,10 @@ impl CreatorVisualAssetExecutorV1 for DesktopVisualRuntimeV1<'_> {
         let initialize = process.initialize(workspace.initialization_context(plugin)?)?;
         Self::process_result_v1(plugin, initialize.response, "plugin.initialize")?;
 
-        let started =
-            state_store.start_attempt(request.job_id, Some(&format!("plugin:{}", plugin.manifest.id)))?;
+        let started = state_store.start_attempt(
+            request.job_id,
+            Some(&format!("plugin:{}", plugin.manifest.id)),
+        )?;
         let result = (|| {
             let call = process.execute(
                 "visual.fetch_selected",
@@ -1051,8 +1050,7 @@ impl CreatorVisualAssetExecutorV1 for DesktopVisualRuntimeV1<'_> {
                     "quality_mode": "standard",
                 }),
             )?;
-            let value =
-                Self::process_result_v1(plugin, call.response, "visual.fetch_selected")?;
+            let value = Self::process_result_v1(plugin, call.response, "visual.fetch_selected")?;
             let selected: SelectedVisualOutput = serde_json::from_value(value)?;
             selected.validate()?;
             if selected.source_provider != request.candidate.source_provider
@@ -1064,20 +1062,14 @@ impl CreatorVisualAssetExecutorV1 for DesktopVisualRuntimeV1<'_> {
                 ));
             }
             let verified = workspace.verify_output_file(&selected.relative_output)?;
-            let mut promotion =
-                selected.promotion(Self::target_uri_v1(
-                    &request.scene.id,
-                    request.job_id,
-                    &selected.relative_output,
-                )?)?;
-            let metadata = promotion
-                .metadata
-                .as_object_mut()
-                .ok_or_else(|| {
-                    CoreError::InvalidArtifact(
-                        "selected visual metadata must be an object".to_owned(),
-                    )
-                })?;
+            let mut promotion = selected.promotion(Self::target_uri_v1(
+                &request.scene.id,
+                request.job_id,
+                &selected.relative_output,
+            )?)?;
+            let metadata = promotion.metadata.as_object_mut().ok_or_else(|| {
+                CoreError::InvalidArtifact("selected visual metadata must be an object".to_owned())
+            })?;
             metadata.insert(
                 "route_target".to_owned(),
                 serde_json::to_value(request.target)?,
@@ -1139,11 +1131,9 @@ impl CreatorVisualAssetExecutorV1 for DesktopVisualRuntimeV1<'_> {
                 .unwrap_or_else(|| "default".to_owned()),
             description: None,
         };
-        let seed = request
-            .scene
-            .id
-            .bytes()
-            .fold(0_u64, |value, byte| value.wrapping_mul(131).wrapping_add(u64::from(byte)));
+        let seed = request.scene.id.bytes().fold(0_u64, |value, byte| {
+            value.wrapping_mul(131).wrapping_add(u64::from(byte))
+        });
         let generated = GeneratedImageRequestV1::from_scene_v1(
             request.scene.clone(),
             style,
@@ -1357,8 +1347,8 @@ fn start_creator_production(
         .ok_or_else(|| "Bind a Studio Pack before starting creator production.".to_owned())?;
     let pack = catalog.resolve_v1(pack_id).map_err(error_string)?;
 
-    let mut creator =
-        load_latest_creator_content_scene_v1(&store, &artifacts, &project_id).map_err(error_string)?;
+    let mut creator = load_latest_creator_content_scene_v1(&store, &artifacts, &project_id)
+        .map_err(error_string)?;
     let should_run_content = match (&requested_input, &creator) {
         (Some(input), Some(existing)) => existing.content.source != *input,
         (Some(_), None) => true,
@@ -1475,9 +1465,12 @@ fn start_creator_production(
             let mut guard = state.compute.lock().map_err(lock_error)?;
             if let Some(runtime) = guard.as_mut() {
                 if runtime.state() == ComputeProviderConnectionState::Ready {
-                    let _ =
-                        dispatch_creator_voice_burst_v1(&mut store, runtime.provider_mut(), &voice_plan)
-                            .map_err(error_string)?;
+                    let _ = dispatch_creator_voice_burst_v1(
+                        &mut store,
+                        runtime.provider_mut(),
+                        &voice_plan,
+                    )
+                    .map_err(error_string)?;
                 }
             }
         }
@@ -2008,10 +2001,9 @@ fn snapshot_from_active(state: &State<'_, DesktopState>) -> Result<AppSnapshot, 
                 .list_project_steps(&project.id)
                 .map_err(error_string)?;
             let board = project_board_projection_v1(status, &jobs, &steps);
-            let run = project
-                .studio_pack
-                .as_ref()
-                .and_then(|_| derive_creator_run_coordinator_v1(&store, &artifacts, &project.id).ok());
+            let run = project.studio_pack.as_ref().and_then(|_| {
+                derive_creator_run_coordinator_v1(&store, &artifacts, &project.id).ok()
+            });
             Ok(ProjectView {
                 project,
                 status,
