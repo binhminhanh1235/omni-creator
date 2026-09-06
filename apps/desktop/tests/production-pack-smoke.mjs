@@ -9,6 +9,8 @@ const app = fs.readFileSync(appPath, "utf8");
 const backend = fs.readFileSync(backendPath, "utf8");
 
 const appMarkers = [
+  "Start / Resume",
+  "start_creator_production",
   "Assemble Production Pack",
   "Export to Resolve",
   "assemble_production_pack",
@@ -33,6 +35,7 @@ for (const marker of appMarkers) {
 }
 
 const backendMarkers = [
+  "run_creator_content_scene_v1",
   "assemble_creator_production_pack_v1",
   "CreatorProductionPackOptionsV1",
   "materialize_creator_workflow_plan_v1",
