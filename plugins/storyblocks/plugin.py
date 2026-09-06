@@ -124,7 +124,6 @@ class StoryblocksClient:
             "project_id": project_id,
             "user_id": self._user_id,
             "keywords": keywords,
-            "content_type": "footage,motion-backgrounds",
             "page": 1,
             "results_per_page": results_per_page,
             "sort_by": sort_by,
