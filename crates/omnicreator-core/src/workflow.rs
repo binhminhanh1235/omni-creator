@@ -635,6 +635,19 @@ impl StateStore {
                 ],
             )?;
         }
+        if let Some(selected_artifact) = artifacts
+            .iter()
+            .find(|artifact| artifact.artifact_id == selected_artifact_id)
+        {
+            crate::asset_library::record_selected_artifact_usage_v1(
+                &transaction,
+                selected_artifact,
+                &job.project_id,
+                "attempt_output",
+                attempt_id,
+            )?;
+        }
+
         transaction.execute(
             "UPDATE attempts SET status='SUCCEEDED',finished_at=?1,runtime_seconds=?2,error_code=NULL \
              WHERE id=?3 AND job_id=?4",

@@ -9,16 +9,17 @@ use chrono::{DateTime, Utc};
 use omnicreator_core::{
     build_studio_pack_ux_view_v1, build_studio_review_center_v1, dispatch_gpu_burst_v1,
     initial_studio_pack_catalog_v1, load_plugin_settings_ui, project_board_projection_v1,
-    reconcile_remote_session_v1, scan_plugin_roots, ArtifactStore, ComputeProviderConnectionState,
-    ComputeProviderLivenessPolicyV1, ComputeProviderRuntime, ComputeProviderSchedulingSnapshotV1,
-    ComputeRunningAssignmentV1, Error as CoreError, GpuBatchBudgetOverviewV1,
-    GpuBatchPlanRequestV1, GpuBatchPlanV1, GpuBurstDispatchSummaryV1, GpuBurstPlanV1,
-    GpuJobPreparationV1, GpuWorkbenchQueueSnapshotV1, HandoffManifest, HttpComputeProvider,
-    HttpComputeProviderConfigV1, LlmGatewayClient, LlmGatewayConfig, LlmGatewayModel,
-    MachineBinding, PluginRegistry, PluginRuntimeReadinessV1, PortableStudioPackCatalogV1,
-    ProductionExportHistoryEntryV1, ProductionPackV1, ProductionPackageExportOutcomeV1,
-    ProductionPackageExporterV1, Project, ProjectBoardProjectionV1, ProjectDisplayStatus,
-    RemoteComputeJobSpecV1, RemoteReconciliationSummaryV1, RuntimeWorkloadEstimateV1, StateStore,
+    reconcile_remote_session_v1, scan_plugin_roots, ArtifactStore, AssetLibrarySnapshotV1,
+    ComputeProviderConnectionState, ComputeProviderLivenessPolicyV1, ComputeProviderRuntime,
+    ComputeProviderSchedulingSnapshotV1, ComputeRunningAssignmentV1, Error as CoreError,
+    GpuBatchBudgetOverviewV1, GpuBatchPlanRequestV1, GpuBatchPlanV1, GpuBurstDispatchSummaryV1,
+    GpuBurstPlanV1, GpuJobPreparationV1, GpuWorkbenchQueueSnapshotV1, HandoffManifest,
+    HttpComputeProvider, HttpComputeProviderConfigV1, LlmGatewayClient, LlmGatewayConfig,
+    LlmGatewayModel, MachineBinding, PluginRegistry, PluginRuntimeReadinessV1,
+    PortableStudioPackCatalogV1, ProductionExportHistoryEntryV1, ProductionPackV1,
+    ProductionPackageExportOutcomeV1, ProductionPackageExporterV1, Project,
+    ProjectBoardProjectionV1, ProjectDisplayStatus, RemoteComputeJobSpecV1,
+    RemoteReconciliationSummaryV1, RuntimeWorkloadEstimateV1, StateStore,
     StudioJobReviewSnapshotV1, StudioPackAvailabilityStatusV1, StudioPackOverridesV1,
     StudioPackRuntimeSnapshotV1, StudioPackUxViewV1, StudioPackV1, StudioReviewCenterV1, Workspace,
     WorkspaceSession, STUDIO_PACK_SCHEMA_V1, STUDIO_PACK_VERSION_V1,
@@ -496,6 +497,43 @@ fn update_project_studio_pack(
         .update_project_studio_pack(&project_id, Some(&selected_id))
         .map_err(error_string)?;
     snapshot_from_active(&state)
+}
+
+#[tauri::command]
+fn asset_library(state: State<'_, DesktopState>) -> Result<AssetLibrarySnapshotV1, String> {
+    readable_store(&state)?
+        .asset_library_snapshot_v1(Utc::now())
+        .map_err(error_string)
+}
+
+#[tauri::command]
+fn add_asset_tag(
+    state: State<'_, DesktopState>,
+    artifact_id: String,
+    tag: String,
+) -> Result<AssetLibrarySnapshotV1, String> {
+    let store = writable_store(&state)?;
+    store
+        .add_asset_tag_v1(&artifact_id, &tag)
+        .map_err(error_string)?;
+    store
+        .asset_library_snapshot_v1(Utc::now())
+        .map_err(error_string)
+}
+
+#[tauri::command]
+fn remove_asset_tag(
+    state: State<'_, DesktopState>,
+    artifact_id: String,
+    tag: String,
+) -> Result<AssetLibrarySnapshotV1, String> {
+    let store = writable_store(&state)?;
+    store
+        .remove_asset_tag_v1(&artifact_id, &tag)
+        .map_err(error_string)?;
+    store
+        .asset_library_snapshot_v1(Utc::now())
+        .map_err(error_string)
 }
 
 #[tauri::command]
@@ -1827,6 +1865,9 @@ fn main() {
             create_project_from_studio_pack,
             update_project_studio_pack,
             studio_pack_catalog,
+            asset_library,
+            add_asset_tag,
+            remove_asset_tag,
             review_center,
             retry_review_job,
             rename_project,

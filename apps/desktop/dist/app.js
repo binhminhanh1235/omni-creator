@@ -23,6 +23,12 @@ const studioPackState = {
   editingPackItemId: null,
   draftTitle: "",
 };
+const assetLibraryState = {
+  snapshot: null,
+  query: "",
+  scope: "all",
+};
+
 
 function escapeHtml(value) {
   return String(value == null ? "" : value)
@@ -1661,6 +1667,222 @@ async function prepareGpuWorkbench(readOnly) {
   renderGpuWorkbench(review, readOnly);
 }
 
+function formatAssetLibraryTime(value) {
+  if (!value) return "Never";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
+}
+
+function assetLibraryEntryMatches(entry) {
+  const query = assetLibraryState.query.trim().toLowerCase();
+  const scope = assetLibraryState.scope;
+  if (scope === "duplicates" && !(entry.duplicate_asset_ids || []).length) return false;
+  if (scope === "reused" && !(entry.source_reuse_asset_ids || []).length) return false;
+  if (scope === "recent" && !entry.used_recently) return false;
+  if (!query) return true;
+
+  const asset = entry.asset || {};
+  const searchable = [
+    asset.asset_id,
+    asset.asset_type,
+    asset.uri,
+    asset.source_provider,
+    ...(entry.tags || []),
+    entry.source_identity && entry.source_identity.provider,
+    entry.source_identity && entry.source_identity.source_asset_id,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return searchable.includes(query);
+}
+
+function renderAssetLibrary(snapshot, readOnly) {
+  const panel = document.getElementById("asset-library-panel");
+  if (!panel) return;
+
+  assetLibraryState.snapshot = snapshot;
+  const entries = (snapshot.entries || []).filter(assetLibraryEntryMatches);
+  const cards = entries.length
+    ? entries
+        .map(function (entry) {
+          const asset = entry.asset || {};
+          const tags = (entry.tags || [])
+            .map(function (tag) {
+              return (
+                '<span class="asset-tag">' +
+                escapeHtml(tag) +
+                (readOnly
+                  ? ""
+                  : '<button class="asset-tag-remove" data-id="' +
+                    escapeHtml(asset.asset_id) +
+                    '" data-tag="' +
+                    escapeHtml(tag) +
+                    '" aria-label="Remove tag">×</button>') +
+                "</span>"
+              );
+            })
+            .join("");
+          const duplicateCount = (entry.duplicate_asset_ids || []).length;
+          const reuseCount = (entry.source_reuse_asset_ids || []).length;
+          const source = entry.source_identity
+            ? entry.source_identity.provider + ":" + entry.source_identity.source_asset_id
+            : asset.source_provider || "local/generated";
+          const dimensions =
+            asset.width && asset.height ? asset.width + "×" + asset.height : null;
+          const duration =
+            typeof asset.duration === "number" ? asset.duration.toFixed(1) + "s" : null;
+          const mediaFacts = [dimensions, duration].filter(Boolean).join(" · ");
+          return (
+            '<article class="asset-library-card" data-asset-id="' +
+            escapeHtml(asset.asset_id) +
+            '">' +
+            '<div class="asset-library-card-head"><div><span class="asset-type">' +
+            escapeHtml(asset.asset_type || "ASSET") +
+            '</span><strong>' +
+            escapeHtml(asset.asset_id) +
+            '</strong></div><div class="asset-library-badges">' +
+            (entry.used_recently ? '<span class="asset-badge recent">USED RECENTLY</span>' : "") +
+            (duplicateCount
+              ? '<span class="asset-badge warning">' +
+                escapeHtml(duplicateCount) +
+                " EXACT DUPLICATE" +
+                (duplicateCount === 1 ? "" : "S") +
+                "</span>"
+              : "") +
+            (reuseCount
+              ? '<span class="asset-badge">' +
+                escapeHtml(reuseCount) +
+                " SOURCE REUSE" +
+                (reuseCount === 1 ? "" : "S") +
+                "</span>"
+              : "") +
+            "</div></div>" +
+            '<div class="asset-library-meta">' +
+            '<span><b>SOURCE</b> ' +
+            escapeHtml(source) +
+            "</span>" +
+            (mediaFacts ? "<span><b>MEDIA</b> " + escapeHtml(mediaFacts) + "</span>" : "") +
+            '<span><b>USES</b> ' +
+            escapeHtml(entry.usage_count || 0) +
+            "</span>" +
+            '<span><b>LAST USED</b> ' +
+            escapeHtml(formatAssetLibraryTime(entry.last_used_at)) +
+            "</span>" +
+            "</div>" +
+            '<div class="asset-library-uri">' +
+            escapeHtml(asset.uri || "") +
+            "</div>" +
+            '<div class="asset-library-hash">SHA-256 ' +
+            escapeHtml((asset.sha256 || "").slice(0, 20)) +
+            (asset.sha256 && asset.sha256.length > 20 ? "…" : "") +
+            "</div>" +
+            '<div class="asset-tags-row">' +
+            (tags || '<span class="muted">No tags yet</span>') +
+            "</div>" +
+            (readOnly
+              ? ""
+              : '<div class="asset-tag-editor"><input class="asset-tag-input" maxlength="64" placeholder="Add tag" />' +
+                '<button class="btn asset-tag-add" data-id="' +
+                escapeHtml(asset.asset_id) +
+                '">Add tag</button></div>') +
+            "</article>"
+          );
+        })
+        .join("")
+    : '<div class="asset-library-empty">No assets match this view.</div>';
+
+  panel.innerHTML =
+    '<div class="asset-library-head"><div><p class="eyebrow">ASSET LIBRARY</p><h3>Reuse intelligence</h3>' +
+    '<p class="muted">Exact hashes, source identity, tags and usage history from canonical artifacts.</p></div>' +
+    '<div class="asset-library-summary"><span><b>' +
+    escapeHtml(snapshot.total_assets || 0) +
+    '</b> assets</span><span><b>' +
+    escapeHtml(snapshot.duplicate_groups || 0) +
+    '</b> duplicate groups</span><span><b>' +
+    escapeHtml(snapshot.source_reuse_groups || 0) +
+    "</b> source reuse groups</span></div></div>" +
+    '<div class="asset-library-controls"><input id="asset-library-search" type="search" placeholder="Filter by tag, source, type or asset id" value="' +
+    escapeHtml(assetLibraryState.query) +
+    '" /><select id="asset-library-scope">' +
+    '<option value="all"' +
+    (assetLibraryState.scope === "all" ? " selected" : "") +
+    ">All assets</option>" +
+    '<option value="recent"' +
+    (assetLibraryState.scope === "recent" ? " selected" : "") +
+    ">Used recently</option>" +
+    '<option value="duplicates"' +
+    (assetLibraryState.scope === "duplicates" ? " selected" : "") +
+    ">Exact duplicates</option>" +
+    '<option value="reused"' +
+    (assetLibraryState.scope === "reused" ? " selected" : "") +
+    ">Source reused</option>" +
+    "</select></div>" +
+    '<div class="asset-library-list">' +
+    cards +
+    "</div>";
+
+  const search = document.getElementById("asset-library-search");
+  if (search) {
+    search.oninput = function () {
+      assetLibraryState.query = search.value;
+      renderAssetLibrary(snapshot, readOnly);
+      const next = document.getElementById("asset-library-search");
+      if (next) {
+        next.focus();
+        next.setSelectionRange(next.value.length, next.value.length);
+      }
+    };
+  }
+  const scope = document.getElementById("asset-library-scope");
+  if (scope) {
+    scope.onchange = function () {
+      assetLibraryState.scope = scope.value;
+      renderAssetLibrary(snapshot, readOnly);
+    };
+  }
+
+  if (readOnly) return;
+
+  document.querySelectorAll(".asset-tag-add").forEach(function (button) {
+    button.onclick = async function () {
+      const editor = button.closest(".asset-tag-editor");
+      const input = editor && editor.querySelector(".asset-tag-input");
+      const tag = input ? input.value.trim() : "";
+      if (!tag) return;
+      const next = await call("add_asset_tag", {
+        artifactId: button.dataset.id,
+        tag: tag,
+      });
+      renderAssetLibrary(next, false);
+    };
+  });
+
+  document.querySelectorAll(".asset-tag-remove").forEach(function (button) {
+    button.onclick = async function () {
+      const next = await call("remove_asset_tag", {
+        artifactId: button.dataset.id,
+        tag: button.dataset.tag,
+      });
+      renderAssetLibrary(next, false);
+    };
+  });
+}
+
+async function loadAssetLibrary(readOnly) {
+  const panel = document.getElementById("asset-library-panel");
+  if (!panel) return;
+  panel.innerHTML =
+    '<div class="asset-library-loading"><p class="eyebrow">ASSET LIBRARY</p><p class="muted">Indexing canonical artifact metadata…</p></div>';
+  try {
+    const snapshot = await call("asset_library");
+    renderAssetLibrary(snapshot, readOnly);
+  } catch (_error) {
+    panel.innerHTML =
+      '<div class="asset-library-empty">Asset Library is unavailable for this workspace.</div>';
+  }
+}
+
 function renderWorkspace(snapshot) {
   const workspace = snapshot.workspace;
   const projects = snapshot.projects;
@@ -1691,6 +1913,7 @@ function renderWorkspace(snapshot) {
     '<div id="studio-pack-creator" class="studio-pack-creator"></div>' +
     board +
     '<div id="review-center" class="review-center"></div>' +
+    '<div id="asset-library-panel" class="asset-library-panel"></div>' +
     '<div id="production-pack-panel" class="production-pack-panel"></div>' +
     '<div class="batch-toolbar"><div><strong id="gpu-selected-count">' +
     escapeHtml(gpuWorkbenchState.selectedProjectIds.size) +
@@ -1805,6 +2028,7 @@ function renderWorkspace(snapshot) {
   loadComputeProviderStatus(workspace.read_only);
   loadLlmGatewayPanel();
   loadStudioPackWorkspace(projects, workspace.read_only);
+  loadAssetLibrary(workspace.read_only);
 }
 
 function renderHandoff(snapshot) {

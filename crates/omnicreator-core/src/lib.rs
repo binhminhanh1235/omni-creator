@@ -1,4 +1,5 @@
 pub mod artifact_store;
+pub mod asset_library;
 pub mod binding;
 pub mod compute_http;
 pub mod compute_provider;
@@ -48,6 +49,7 @@ pub mod workflow;
 pub mod workspace;
 
 pub use artifact_store::ArtifactStore;
+pub use asset_library::*;
 pub use binding::MachineBinding;
 pub use compute_http::*;
 pub use compute_provider::*;

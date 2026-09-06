@@ -232,6 +232,16 @@ Later, if the asset library grows:
 
 Do not add embeddings prematurely.
 
+Phase 12 implementation notes:
+
+- canonical `artifacts` + ArtifactStore remain the media source of truth
+- SQLite migration adds tag/usage relations and an exact SHA-256 lookup index
+- source reuse is derived from existing portable provenance (`source_provider` + `source_asset_id`) rather than a second source database
+- usage history is idempotent and produces deterministic last-used / used-recently facts
+- desktop Asset Library shows metadata, tags, usage and exact/source reuse summaries in writer and read-only modes
+- tag mutations require the existing writable workspace guard
+- semantic embeddings, vector storage and visual-similarity models remain deferred
+
 ## Later / optional
 
 - additional stock providers
