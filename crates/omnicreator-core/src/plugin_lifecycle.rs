@@ -225,9 +225,7 @@ mod tests {
     use tempfile::tempdir;
 
     use super::*;
-    use crate::{
-        PLUGIN_MANIFEST_SCHEMA, PLUGIN_MANIFEST_SCHEMA_VERSION,
-    };
+    use crate::{PLUGIN_MANIFEST_SCHEMA, PLUGIN_MANIFEST_SCHEMA_VERSION};
 
     fn write_plugin(root: &Path, directory: &str, id: &str, api_version: u32, capability: &str) {
         let plugin_dir = root.join(directory);
@@ -259,7 +257,9 @@ mod tests {
         let machine_config = temp.path().join("machine-config/plugin-lifecycle.json");
         let mut state = PluginLifecycleStateV1::default();
         state.set_enabled_v1("pexels", false).unwrap();
-        state.set_enabled_v1("generated-image-reference", false).unwrap();
+        state
+            .set_enabled_v1("generated-image-reference", false)
+            .unwrap();
         state.save_v1(&machine_config).unwrap();
 
         let loaded = PluginLifecycleStateV1::load_v1(&machine_config).unwrap();
@@ -279,7 +279,13 @@ mod tests {
         let user = temp.path().join("user");
         fs::create_dir_all(&built_in).unwrap();
         fs::create_dir_all(&user).unwrap();
-        write_plugin(&built_in, "pexels", "pexels", PLUGIN_API_VERSION, "stock_video");
+        write_plugin(
+            &built_in,
+            "pexels",
+            "pexels",
+            PLUGIN_API_VERSION,
+            "stock_video",
+        );
         write_plugin(
             &user,
             "custom-visual",
@@ -326,14 +332,23 @@ mod tests {
         let user = temp.path().join("user");
         fs::create_dir_all(&built_in).unwrap();
         fs::create_dir_all(&user).unwrap();
-        write_plugin(&built_in, "one", "same-id", PLUGIN_API_VERSION, "stock_video");
-        write_plugin(&user, "two", "same-id", PLUGIN_API_VERSION, "generated_still");
-
-        let report = scan_plugin_inventory_v1(
-            &[built_in],
-            &[user],
-            &PluginLifecycleStateV1::default(),
+        write_plugin(
+            &built_in,
+            "one",
+            "same-id",
+            PLUGIN_API_VERSION,
+            "stock_video",
         );
+        write_plugin(
+            &user,
+            "two",
+            "same-id",
+            PLUGIN_API_VERSION,
+            "generated_still",
+        );
+
+        let report =
+            scan_plugin_inventory_v1(&[built_in], &[user], &PluginLifecycleStateV1::default());
 
         assert!(report.registry.get("same-id").is_none());
         assert!(report.inventory.is_empty());
@@ -357,11 +372,7 @@ mod tests {
             "future_capability",
         );
 
-        let report = scan_plugin_inventory_v1(
-            &[],
-            &[user],
-            &PluginLifecycleStateV1::default(),
-        );
+        let report = scan_plugin_inventory_v1(&[], &[user], &PluginLifecycleStateV1::default());
 
         assert!(report.inventory.is_empty());
         assert!(report.registry.is_empty());

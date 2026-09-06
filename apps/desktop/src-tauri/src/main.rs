@@ -16,10 +16,10 @@ use omnicreator_core::{
     GpuBurstPlanV1, GpuJobPreparationV1, GpuWorkbenchQueueSnapshotV1, HandoffManifest,
     HttpComputeProvider, HttpComputeProviderConfigV1, LlmGatewayClient, LlmGatewayConfig,
     LlmGatewayModel, MachineBinding, PluginInventoryEntryV1, PluginInventoryReportV1,
-    PluginLifecycleStateV1, PluginRegistry, PluginRuntimeReadinessV1, PortableStudioPackCatalogV1, ProductionExportHistoryEntryV1, ProductionPackV1,
-    ProductionPackageExportOutcomeV1, ProductionPackageExporterV1, Project,
-    ProjectBoardProjectionV1, ProjectDisplayStatus, RemoteComputeJobSpecV1,
-    RemoteReconciliationSummaryV1, RuntimeWorkloadEstimateV1, StateStore,
+    PluginLifecycleStateV1, PluginRegistry, PluginRuntimeReadinessV1, PortableStudioPackCatalogV1,
+    ProductionExportHistoryEntryV1, ProductionPackV1, ProductionPackageExportOutcomeV1,
+    ProductionPackageExporterV1, Project, ProjectBoardProjectionV1, ProjectDisplayStatus,
+    RemoteComputeJobSpecV1, RemoteReconciliationSummaryV1, RuntimeWorkloadEstimateV1, StateStore,
     StudioJobReviewSnapshotV1, StudioPackAvailabilityStatusV1, StudioPackOverridesV1,
     StudioPackRuntimeSnapshotV1, StudioPackUxViewV1, StudioPackV1, StudioReviewCenterV1, Workspace,
     WorkspaceSession, STUDIO_PACK_SCHEMA_V1, STUDIO_PACK_VERSION_V1,
@@ -393,7 +393,9 @@ fn set_plugin_enabled(
 
     let current = plugin_inventory_report_v1(&app)?;
     if current.registry.get(plugin_id).is_none() {
-        return Err(format!("Plugin {plugin_id} is not installed on this machine."));
+        return Err(format!(
+            "Plugin {plugin_id} is not installed on this machine."
+        ));
     }
 
     let path = plugin_lifecycle_path_v1(&app)?;
