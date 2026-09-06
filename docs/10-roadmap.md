@@ -278,6 +278,15 @@ P0 Pixabay implementation notes:
 - API key values remain outside portable settings and cache keys/files
 - source provider/asset ID, creator, source page, attribution and Content License label flow through portable provenance
 
+P1 Unsplash implementation notes:
+
+- checked-in `unsplash` plugin is image-only and reuses the existing `VisualCandidate` / selected Asset boundary
+- previews use the hotlinked `photo.urls.*` values returned by Unsplash
+- candidate and selected provenance carry photographer + Unsplash attribution links with `utm_source=omnicreator&utm_medium=referral`
+- selected use must successfully call the provider's `photo.links.download_location` tracking endpoint before photo bytes are accepted
+- the tracking URL and full CDN URL are transport details and are not persisted into canonical selected-output metadata
+- the access key stays machine-local through `UNSPLASH_ACCESS_KEY`; no provider-specific core state is added
+
 Success:
 
 - a SceneIntent can search multiple stock sources without changing core workflow
