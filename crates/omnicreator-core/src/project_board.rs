@@ -121,6 +121,7 @@ fn plural(count: usize) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{StateStore, Workspace};
 
     fn job(id: &str, status: StepStatus) -> Job {
         Job {
@@ -216,6 +217,81 @@ mod tests {
 
         assert_eq!(projection.summary, "2 preparation steps remaining.");
         assert_eq!(projection.actionable_count, 2);
+    }
+
+    #[test]
+    fn board_reconstructs_after_data_root_move_in_read_only_mode() {
+        let parent = tempfile::tempdir().unwrap();
+        let source = parent.path().join("source");
+        let moved = parent.path().join("moved");
+        let workspace = Workspace::create(&source).unwrap();
+        let mut store = StateStore::open(workspace.sqlite_path()).unwrap();
+        let project = store
+            .create_project_with_studio_pack("Portable Board", Some("christian-cinematic"))
+            .unwrap();
+        let job = store
+            .create_job(&project.id, "visual", "SC01", "input-hash")
+            .unwrap();
+        let attempt = store.start_attempt(&job.job_id, Some("worker-a")).unwrap();
+        store
+            .finish_attempt_failure(&attempt.attempt_id, "NETWORK_TIMEOUT")
+            .unwrap();
+
+        let before_status = store.derive_project_status(&project.id).unwrap();
+        let before = project_board_projection_v1(
+            before_status,
+            &store.list_project_jobs(&project.id).unwrap(),
+            &store.list_project_steps(&project.id).unwrap(),
+        );
+        assert_eq!(before.column, ProjectBoardColumnV1::NeedsReview);
+        drop(store);
+        drop(workspace);
+
+        std::fs::rename(&source, &moved).unwrap();
+        let reopened = Workspace::open(&moved).unwrap();
+        let read_only = StateStore::open_read_only(reopened.sqlite_path()).unwrap();
+        let loaded = read_only.get_project(&project.id).unwrap();
+        let after_status = read_only.derive_project_status(&project.id).unwrap();
+        let after = project_board_projection_v1(
+            after_status,
+            &read_only.list_project_jobs(&project.id).unwrap(),
+            &read_only.list_project_steps(&project.id).unwrap(),
+        );
+
+        assert_eq!(loaded.studio_pack.as_deref(), Some("christian-cinematic"));
+        assert_eq!(after, before);
+        assert!(read_only.update_project_title(&project.id, "Forbidden").is_err());
+    }
+
+    #[test]
+    fn interrupted_running_job_reconciles_into_review_column() {
+        let temp = tempfile::tempdir().unwrap();
+        let workspace = Workspace::create(temp.path().join("data")).unwrap();
+        let mut store = StateStore::open(workspace.sqlite_path()).unwrap();
+        let project = store.create_project("Resume Board").unwrap();
+        let job = store
+            .create_job(&project.id, "voice", "S01", "input-hash")
+            .unwrap();
+        store.start_attempt(&job.job_id, Some("remote-gpu")).unwrap();
+
+        let running = project_board_projection_v1(
+            store.derive_project_status(&project.id).unwrap(),
+            &store.list_project_jobs(&project.id).unwrap(),
+            &[],
+        );
+        assert_eq!(running.column, ProjectBoardColumnV1::GpuRunning);
+
+        drop(store);
+        let mut reopened = StateStore::open(workspace.sqlite_path()).unwrap();
+        reopened.reconcile_interrupted_jobs().unwrap();
+        let resumed = project_board_projection_v1(
+            reopened.derive_project_status(&project.id).unwrap(),
+            &reopened.list_project_jobs(&project.id).unwrap(),
+            &[],
+        );
+
+        assert_eq!(resumed.column, ProjectBoardColumnV1::NeedsReview);
+        assert_eq!(resumed.summary, "1 retryable GPU job.");
     }
 
     #[test]
