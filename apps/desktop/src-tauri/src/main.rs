@@ -8,8 +8,9 @@ use std::{
 use chrono::{DateTime, Utc};
 use omnicreator_core::{
     build_studio_pack_ux_view_v1, build_studio_review_center_v1, dispatch_gpu_burst_v1,
-    initial_studio_pack_catalog_v1, load_plugin_settings_ui, project_board_projection_v1,
-    reconcile_remote_session_v1, scan_plugin_inventory_v1, ArtifactStore, AssetLibrarySnapshotV1,
+    initial_studio_pack_catalog_v1, install_local_plugin_folder_v1, load_plugin_settings_ui,
+    project_board_projection_v1, reconcile_remote_session_v1, scan_plugin_inventory_v1,
+    uninstall_user_plugin_v1, ArtifactStore, AssetLibrarySnapshotV1,
     ComputeProviderConnectionState, ComputeProviderLivenessPolicyV1, ComputeProviderRuntime,
     ComputeProviderSchedulingSnapshotV1, ComputeRunningAssignmentV1, Error as CoreError,
     GpuBatchBudgetOverviewV1, GpuBatchPlanRequestV1, GpuBatchPlanV1, GpuBurstDispatchSummaryV1,
@@ -404,6 +405,39 @@ fn set_plugin_enabled(
         .set_enabled_v1(plugin_id, enabled)
         .map_err(error_string)?;
     lifecycle.save_v1(path).map_err(error_string)?;
+    plugin_inventory(app)
+}
+
+#[tauri::command]
+fn install_plugin_from_folder(
+    app: AppHandle,
+    source_path: String,
+) -> Result<PluginInventoryDesktopViewV1, String> {
+    let source_path = source_path.trim();
+    if source_path.is_empty() {
+        return Err("Plugin source path must not be empty.".to_owned());
+    }
+
+    let built_in_roots = plugin_built_in_roots_v1(&app);
+    let user_root = plugin_user_root_v1(&app)?;
+    install_local_plugin_folder_v1(Path::new(source_path), &built_in_roots, &user_root)
+        .map_err(error_string)?;
+    plugin_inventory(app)
+}
+
+#[tauri::command]
+fn uninstall_plugin(
+    app: AppHandle,
+    plugin_id: String,
+) -> Result<PluginInventoryDesktopViewV1, String> {
+    let plugin_id = plugin_id.trim();
+    if plugin_id.is_empty() {
+        return Err("Plugin id must not be empty.".to_owned());
+    }
+
+    let built_in_roots = plugin_built_in_roots_v1(&app);
+    let user_root = plugin_user_root_v1(&app)?;
+    uninstall_user_plugin_v1(plugin_id, &built_in_roots, &user_root).map_err(error_string)?;
     plugin_inventory(app)
 }
 
@@ -1974,6 +2008,8 @@ fn main() {
             update_project_studio_pack,
             plugin_inventory,
             set_plugin_enabled,
+            install_plugin_from_folder,
+            uninstall_plugin,
             studio_pack_catalog,
             asset_library,
             add_asset_tag,

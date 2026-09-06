@@ -2,6 +2,7 @@ use std::{
     collections::BTreeSet,
     fs,
     path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
 };
 
 use serde::{Deserialize, Serialize};
@@ -10,6 +11,8 @@ use crate::{scan_plugin_roots, Error, PluginDiagnostic, PluginRegistry, Result};
 
 pub const PLUGIN_LIFECYCLE_SCHEMA_V1: &str = "omnicreator.plugin-lifecycle";
 pub const PLUGIN_LIFECYCLE_SCHEMA_VERSION_V1: u32 = 1;
+
+static PLUGIN_STAGING_SEQUENCE_V1: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -205,6 +208,254 @@ pub fn scan_plugin_inventory_v1(
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PluginInstallOutcomeV1 {
+    pub plugin_id: String,
+    pub version: String,
+    pub install_directory: PathBuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PluginUninstallOutcomeV1 {
+    pub plugin_id: String,
+    pub removed_directory: PathBuf,
+}
+
+pub fn install_local_plugin_folder_v1(
+    source_directory: impl AsRef<Path>,
+    built_in_roots: &[PathBuf],
+    user_plugin_root: impl AsRef<Path>,
+) -> Result<PluginInstallOutcomeV1> {
+    let source_directory = source_directory.as_ref();
+    let source_metadata = fs::symlink_metadata(source_directory)?;
+    if source_metadata.file_type().is_symlink() || !source_metadata.is_dir() {
+        return Err(Error::InvalidContract(format!(
+            "local plugin source must be a real directory, not a symlink or file: {}",
+            source_directory.display()
+        )));
+    }
+
+    fs::create_dir_all(user_plugin_root.as_ref())?;
+    let user_plugin_root = fs::canonicalize(user_plugin_root.as_ref())?;
+    let source_directory = fs::canonicalize(source_directory)?;
+    if source_directory.starts_with(&user_plugin_root) {
+        return Err(Error::InvalidContract(format!(
+            "local plugin source must be outside the managed user plugin root: {}",
+            user_plugin_root.display()
+        )));
+    }
+
+    let staging_root = user_plugin_root.join(".install-staging");
+    fs::create_dir_all(&staging_root)?;
+    let session = create_plugin_staging_session_v1(&staging_root, "install")?;
+    let staged_directory = session.join("candidate");
+
+    let result = (|| {
+        copy_plugin_directory_v1(&source_directory, &staged_directory)?;
+
+        let staged_scan = scan_plugin_roots(std::slice::from_ref(&session));
+        if !staged_scan.diagnostics.is_empty() || staged_scan.registry.len() != 1 {
+            return Err(Error::InvalidContract(format!(
+                "local plugin package failed canonical manifest validation: {}",
+                plugin_diagnostics_summary_v1(&staged_scan.diagnostics)
+            )));
+        }
+
+        let staged_plugin = staged_scan
+            .registry
+            .plugins()
+            .next()
+            .expect("one staged plugin was just counted");
+        let plugin_id = staged_plugin.manifest.id.clone();
+        let version = staged_plugin.manifest.version.clone();
+
+        let mut combined_roots = built_in_roots.to_vec();
+        combined_roots.push(user_plugin_root.clone());
+        combined_roots.push(session.clone());
+        let combined_scan = scan_plugin_roots(&combined_roots);
+        let combined_plugin = combined_scan.registry.get(&plugin_id).ok_or_else(|| {
+            Error::InvalidContract(format!(
+                "plugin id '{plugin_id}' is already installed or collides with an existing plugin"
+            ))
+        })?;
+
+        let combined_directory = fs::canonicalize(&combined_plugin.directory)?;
+        let staged_directory_canonical = fs::canonicalize(&staged_directory)?;
+        if combined_directory != staged_directory_canonical {
+            return Err(Error::InvalidContract(format!(
+                "plugin id '{plugin_id}' is already installed on this machine"
+            )));
+        }
+
+        let install_directory = user_plugin_root.join(plugin_install_directory_name_v1(&plugin_id));
+        if install_directory.exists() {
+            return Err(Error::InvalidContract(format!(
+                "plugin id '{plugin_id}' already has a managed installation directory"
+            )));
+        }
+
+        fs::rename(&staged_directory, &install_directory)?;
+        Ok(PluginInstallOutcomeV1 {
+            plugin_id,
+            version,
+            install_directory,
+        })
+    })();
+
+    let _ = fs::remove_dir_all(&session);
+    let _ = fs::remove_dir(&staging_root);
+    result
+}
+
+pub fn uninstall_user_plugin_v1(
+    plugin_id: &str,
+    built_in_roots: &[PathBuf],
+    user_plugin_root: impl AsRef<Path>,
+) -> Result<PluginUninstallOutcomeV1> {
+    let plugin_id = plugin_id.trim();
+    if plugin_id.is_empty() {
+        return Err(Error::InvalidContract(
+            "plugin id must not be empty for uninstall".to_owned(),
+        ));
+    }
+
+    let user_plugin_root = user_plugin_root.as_ref();
+    let user_scan = scan_plugin_roots(&[user_plugin_root.to_path_buf()]);
+    let Some(user_plugin) = user_scan.registry.get(plugin_id) else {
+        let built_in_scan = scan_plugin_roots(built_in_roots);
+        if built_in_scan.registry.get(plugin_id).is_some() {
+            return Err(Error::InvalidContract(format!(
+                "built-in plugin '{plugin_id}' cannot be uninstalled"
+            )));
+        }
+        return Err(Error::InvalidContract(format!(
+            "user-installed plugin '{plugin_id}' was not found"
+        )));
+    };
+
+    let user_plugin_root = fs::canonicalize(user_plugin_root)?;
+    let plugin_directory = fs::canonicalize(&user_plugin.directory)?;
+    if plugin_directory.parent() != Some(user_plugin_root.as_path()) {
+        return Err(Error::InvalidContract(format!(
+            "refusing to uninstall plugin '{plugin_id}' outside the managed user plugin root"
+        )));
+    }
+
+    let staging_root = user_plugin_root.join(".uninstall-staging");
+    fs::create_dir_all(&staging_root)?;
+    let session = create_plugin_staging_session_v1(&staging_root, "uninstall")?;
+    let tombstone = session.join("plugin");
+    fs::rename(&plugin_directory, &tombstone)?;
+
+    if let Err(remove_error) = fs::remove_dir_all(&tombstone) {
+        let rollback = fs::rename(&tombstone, &plugin_directory);
+        let rollback_note = match rollback {
+            Ok(()) => "installation restored".to_owned(),
+            Err(error) => format!("rollback also failed: {error}"),
+        };
+        let _ = fs::remove_dir_all(&session);
+        let _ = fs::remove_dir(&staging_root);
+        return Err(Error::InvalidContract(format!(
+            "failed to remove user plugin '{plugin_id}': {remove_error}; {rollback_note}"
+        )));
+    }
+
+    let _ = fs::remove_dir_all(&session);
+    let _ = fs::remove_dir(&staging_root);
+    Ok(PluginUninstallOutcomeV1 {
+        plugin_id: plugin_id.to_owned(),
+        removed_directory: plugin_directory,
+    })
+}
+
+fn create_plugin_staging_session_v1(root: &Path, operation: &str) -> Result<PathBuf> {
+    loop {
+        let sequence = PLUGIN_STAGING_SEQUENCE_V1.fetch_add(1, Ordering::Relaxed);
+        let session = root.join(format!("{operation}-{}-{sequence}", std::process::id()));
+        match fs::create_dir(&session) {
+            Ok(()) => return Ok(session),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error.into()),
+        }
+    }
+}
+
+fn plugin_install_directory_name_v1(plugin_id: &str) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut encoded = String::with_capacity(7 + plugin_id.len() * 2);
+    encoded.push_str("plugin-");
+    for byte in plugin_id.as_bytes() {
+        encoded.push(HEX[(byte >> 4) as usize] as char);
+        encoded.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    encoded
+}
+
+fn copy_plugin_directory_v1(source: &Path, destination: &Path) -> Result<()> {
+    let metadata = fs::symlink_metadata(source)?;
+    if metadata.file_type().is_symlink() {
+        return Err(Error::InvalidContract(format!(
+            "plugin package contains a symlink and cannot be installed safely: {}",
+            source.display()
+        )));
+    }
+    if !metadata.is_dir() {
+        return Err(Error::InvalidContract(format!(
+            "plugin package entry is not a directory: {}",
+            source.display()
+        )));
+    }
+
+    fs::create_dir(destination)?;
+    let mut entries = fs::read_dir(source)?.collect::<std::io::Result<Vec<_>>>()?;
+    entries.sort_by_key(|entry| entry.file_name());
+
+    for entry in entries {
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+        let file_type = entry.file_type()?;
+        if file_type.is_symlink() {
+            return Err(Error::InvalidContract(format!(
+                "plugin package contains a symlink and cannot be installed safely: {}",
+                source_path.display()
+            )));
+        }
+        if file_type.is_dir() {
+            copy_plugin_directory_v1(&source_path, &destination_path)?;
+            continue;
+        }
+        if file_type.is_file() {
+            let source_metadata = fs::metadata(&source_path)?;
+            fs::copy(&source_path, &destination_path)?;
+            fs::set_permissions(&destination_path, source_metadata.permissions())?;
+            continue;
+        }
+        return Err(Error::InvalidContract(format!(
+            "plugin package contains an unsupported filesystem entry: {}",
+            source_path.display()
+        )));
+    }
+    Ok(())
+}
+
+fn plugin_diagnostics_summary_v1(diagnostics: &[PluginDiagnostic]) -> String {
+    if diagnostics.is_empty() {
+        return "expected exactly one valid plugin manifest".to_owned();
+    }
+    diagnostics
+        .iter()
+        .map(|diagnostic| {
+            format!(
+                "{} at {}: {}",
+                diagnostic.code.as_str(),
+                diagnostic.path.display(),
+                diagnostic.message
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
 fn normalized_roots_v1(roots: &[PathBuf]) -> Vec<PathBuf> {
     let mut normalized = roots
         .iter()
@@ -379,6 +630,207 @@ mod tests {
             report.diagnostics[0].code.as_str(),
             "PLUGIN_API_INCOMPATIBLE"
         );
+    }
+
+    #[test]
+    fn valid_local_plugin_folder_installs_without_executing_entrypoint() {
+        let temp = tempdir().unwrap();
+        let source_root = temp.path().join("source");
+        let user_root = temp.path().join("machine-plugins");
+        fs::create_dir_all(&source_root).unwrap();
+        write_plugin(
+            &source_root,
+            "package",
+            "local-safe",
+            PLUGIN_API_VERSION,
+            "generated_still",
+        );
+        let source = source_root.join("package");
+        let marker = temp.path().join("entrypoint-ran");
+        fs::write(
+            source.join("plugin-bin"),
+            format!("#!/bin/sh\ntouch {}\n", marker.display()),
+        )
+        .unwrap();
+        fs::create_dir_all(source.join("resources")).unwrap();
+        fs::write(source.join("resources/model.txt"), b"portable resource").unwrap();
+
+        let outcome = install_local_plugin_folder_v1(&source, &[], &user_root).unwrap();
+
+        assert_eq!(outcome.plugin_id, "local-safe");
+        assert_eq!(outcome.version, "1.2.3");
+        assert!(outcome.install_directory.starts_with(&user_root));
+        assert!(outcome.install_directory.join("plugin.json").is_file());
+        assert!(outcome
+            .install_directory
+            .join("resources/model.txt")
+            .is_file());
+        assert!(!marker.exists());
+        assert!(!user_root.join(".install-staging").exists());
+
+        let scan = scan_plugin_roots(&[user_root]);
+        assert!(scan.diagnostics.is_empty());
+        assert!(scan.registry.get("local-safe").is_some());
+    }
+
+    #[test]
+    fn invalid_or_incompatible_package_never_activates() {
+        let temp = tempdir().unwrap();
+        let source_root = temp.path().join("source");
+        let user_root = temp.path().join("machine-plugins");
+        fs::create_dir_all(&source_root).unwrap();
+        write_plugin(
+            &source_root,
+            "future",
+            "future-local",
+            PLUGIN_API_VERSION + 1,
+            "future_capability",
+        );
+
+        let result = install_local_plugin_folder_v1(source_root.join("future"), &[], &user_root);
+
+        assert!(matches!(result, Err(Error::InvalidContract(_))));
+        assert!(scan_plugin_roots(std::slice::from_ref(&user_root))
+            .registry
+            .is_empty());
+        assert!(!user_root.join(".install-staging").exists());
+    }
+
+    #[test]
+    fn existing_plugin_id_is_not_overwritten() {
+        let temp = tempdir().unwrap();
+        let built_in = temp.path().join("built-in");
+        let source_root = temp.path().join("source");
+        let user_root = temp.path().join("machine-plugins");
+        fs::create_dir_all(&built_in).unwrap();
+        fs::create_dir_all(&source_root).unwrap();
+        write_plugin(
+            &built_in,
+            "shipped",
+            "same-id",
+            PLUGIN_API_VERSION,
+            "stock_video",
+        );
+        write_plugin(
+            &source_root,
+            "candidate",
+            "same-id",
+            PLUGIN_API_VERSION,
+            "generated_still",
+        );
+
+        let result = install_local_plugin_folder_v1(
+            source_root.join("candidate"),
+            std::slice::from_ref(&built_in),
+            &user_root,
+        );
+
+        assert!(matches!(result, Err(Error::InvalidContract(_))));
+        assert!(scan_plugin_roots(std::slice::from_ref(&user_root))
+            .registry
+            .is_empty());
+        assert!(scan_plugin_roots(&[built_in])
+            .registry
+            .get("same-id")
+            .is_some());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_in_local_package_is_rejected_and_staging_is_cleaned() {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempdir().unwrap();
+        let source_root = temp.path().join("source");
+        let user_root = temp.path().join("machine-plugins");
+        fs::create_dir_all(&source_root).unwrap();
+        write_plugin(
+            &source_root,
+            "candidate",
+            "symlinked",
+            PLUGIN_API_VERSION,
+            "generated_still",
+        );
+        let outside = temp.path().join("outside.txt");
+        fs::write(&outside, b"outside").unwrap();
+        symlink(
+            &outside,
+            source_root.join("candidate").join("linked-secret.txt"),
+        )
+        .unwrap();
+
+        let result = install_local_plugin_folder_v1(source_root.join("candidate"), &[], &user_root);
+
+        assert!(matches!(result, Err(Error::InvalidContract(_))));
+        assert!(outside.exists());
+        assert!(scan_plugin_roots(std::slice::from_ref(&user_root))
+            .registry
+            .is_empty());
+        assert!(!user_root.join(".install-staging").exists());
+    }
+
+    #[test]
+    fn uninstall_removes_only_user_installation_and_leaves_portable_state_untouched() {
+        let temp = tempdir().unwrap();
+        let source_root = temp.path().join("source");
+        let user_root = temp.path().join("machine-plugins");
+        let portable_root = temp.path().join("data-root");
+        fs::create_dir_all(&source_root).unwrap();
+        fs::create_dir_all(portable_root.join("projects")).unwrap();
+        let project_state = portable_root.join("projects/project.json");
+        fs::write(&project_state, br#"{"id":"project-1"}"#).unwrap();
+        write_plugin(
+            &source_root,
+            "candidate",
+            "remove-me",
+            PLUGIN_API_VERSION,
+            "generated_still",
+        );
+
+        let installed =
+            install_local_plugin_folder_v1(source_root.join("candidate"), &[], &user_root).unwrap();
+        assert!(installed.install_directory.exists());
+
+        let removed = uninstall_user_plugin_v1("remove-me", &[], &user_root).unwrap();
+
+        assert_eq!(removed.plugin_id, "remove-me");
+        assert!(!removed.removed_directory.exists());
+        assert_eq!(
+            fs::read_to_string(project_state).unwrap(),
+            r#"{"id":"project-1"}"#
+        );
+        assert!(scan_plugin_roots(std::slice::from_ref(&user_root))
+            .registry
+            .is_empty());
+        assert!(!user_root.join(".uninstall-staging").exists());
+    }
+
+    #[test]
+    fn built_in_plugin_cannot_be_uninstalled() {
+        let temp = tempdir().unwrap();
+        let built_in = temp.path().join("built-in");
+        let user_root = temp.path().join("machine-plugins");
+        fs::create_dir_all(&built_in).unwrap();
+        fs::create_dir_all(&user_root).unwrap();
+        write_plugin(
+            &built_in,
+            "shipped",
+            "shipped-plugin",
+            PLUGIN_API_VERSION,
+            "stock_video",
+        );
+
+        let result = uninstall_user_plugin_v1(
+            "shipped-plugin",
+            std::slice::from_ref(&built_in),
+            &user_root,
+        );
+
+        assert!(matches!(result, Err(Error::InvalidContract(_))));
+        assert!(scan_plugin_roots(&[built_in])
+            .registry
+            .get("shipped-plugin")
+            .is_some());
     }
 
     #[test]
