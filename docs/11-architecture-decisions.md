@@ -256,3 +256,18 @@ A disabled plugin remains discoverable in inventory so its identity, version and
 Built-in plugins are trusted as application-shipped code. Locally installed packages are classified as local/unverified until a future signed-package phase defines stronger trust. Package inspection validates manifests without executing arbitrary install scripts.
 
 **Reason:** Plugin installation differs per machine even when creators share or move the same Data Root. Persisting machine installation truth in portable state would create false availability, leak absolute paths and duplicate registry ownership. Keeping lifecycle metadata machine-local preserves ADR-024 portability while still allowing safe install/update UX to evolve.
+
+
+## ADR-034: Creator orchestration compiles into the canonical DAG
+
+**Decision:** Phase 15 introduces a versioned, provider-neutral `CreatorWorkflowPlanV1` that is compiled from the canonical `Project` plus the resolved `EffectiveStudioPackV1`, then materialized through the existing `WorkflowStep` dependency graph.
+
+P0 semantic stages are intentionally coarse and stable: content preparation, scene planning, visual preparation, voice preparation and Production Pack assembly. Per-scene, per-segment and provider execution jobs remain later execution details owned by existing Job/Attempt, Plugin API and ComputeProvider contracts.
+
+The creator workflow plan is deterministic and hash-addressed. Re-materializing the same plan reuses existing canonical steps. If a matching semantic step already exists with a different input hash, P0 rejects the conflict rather than mutating it implicitly; later input changes must use the existing invalidation/replan semantics.
+
+The plan contains no provider endpoints, model IDs, credentials, secret values, absolute paths, runtime health or machine-local installation state.
+
+**Reason:** Phases 0-14 produced the individual creator capabilities but the desktop still exposes them as separate islands and Production Pack export still accepts hand-authored internal JSON. Connecting those capabilities through the already-proven DAG closes a creator-workflow gap without introducing a shadow scheduler or new durable state model.
+
+Marketplace, package signing and remote registries remain optional ecosystem concerns and do not address this MVP orchestration gap.
