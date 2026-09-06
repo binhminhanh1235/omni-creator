@@ -220,6 +220,7 @@ pub enum StudioReviewKindV1 {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum StudioReviewActionV1 {
     RetryJob { job_id: String },
+    ConfigureLlmGateway,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -351,28 +352,43 @@ fn append_job_review_items_v1(
 ) {
     for snapshot in jobs {
         let job = &snapshot.job;
-        let (severity, action) = match job.status {
-            StepStatus::Retryable | StepStatus::Failed => (
-                StudioReviewSeverityV1::ActionRequired,
-                Some(StudioReviewActionV1::RetryJob {
-                    job_id: job.job_id.clone(),
-                }),
-            ),
-            StepStatus::Fatal => (StudioReviewSeverityV1::Blocking, None),
-            _ => continue,
-        };
-        let last_error = snapshot
+        let last_error_code = snapshot
             .attempts
             .iter()
             .rev()
-            .find_map(|attempt| attempt.error_code.as_deref())
+            .find_map(|attempt| attempt.error_code.as_deref());
+        let setup_required = last_error_code == Some("LLMGATEWAY_SETUP_REQUIRED");
+        let (kind, severity, action) = if setup_required {
+            (
+                StudioReviewKindV1::SetupRequirement,
+                StudioReviewSeverityV1::Blocking,
+                Some(StudioReviewActionV1::ConfigureLlmGateway),
+            )
+        } else {
+            match job.status {
+                StepStatus::Retryable | StepStatus::Failed => (
+                    StudioReviewKindV1::FailedOrRetryableJob,
+                    StudioReviewSeverityV1::ActionRequired,
+                    Some(StudioReviewActionV1::RetryJob {
+                        job_id: job.job_id.clone(),
+                    }),
+                ),
+                StepStatus::Fatal => (
+                    StudioReviewKindV1::FailedOrRetryableJob,
+                    StudioReviewSeverityV1::Blocking,
+                    None,
+                ),
+                _ => continue,
+            }
+        };
+        let last_error = last_error_code
             .map(|error| format!(" Last error: {error}."))
             .unwrap_or_default();
         items.push(StudioReviewItemV1 {
             id: format!("job:{}:{}", project.id, job.job_id),
             project_id: project.id.clone(),
             project_title: project.title.clone(),
-            kind: StudioReviewKindV1::FailedOrRetryableJob,
+            kind,
             severity,
             reason: format!(
                 "{} / {} is {}.{}",
