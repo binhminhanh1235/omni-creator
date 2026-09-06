@@ -608,6 +608,48 @@ mod tests {
     }
 
     #[test]
+    fn llmgateway_setup_failure_becomes_blocking_configuration_action() {
+        let job = Job {
+            job_id: "job-llm-setup".to_owned(),
+            project_id: "prj-1".to_owned(),
+            step: "content.prepare".to_owned(),
+            unit: "project".to_owned(),
+            status: StepStatus::Retryable,
+            input_hash: "hash".to_owned(),
+            selected_attempt: None,
+            selected_artifact: None,
+        };
+        let attempt = Attempt {
+            attempt_id: "attempt-llm-setup".to_owned(),
+            job_id: job.job_id.clone(),
+            worker: Some("creator-content-v1".to_owned()),
+            started_at: Utc::now(),
+            finished_at: Some(Utc::now()),
+            runtime_seconds: Some(0.1),
+            status: StepStatus::Retryable,
+            error_code: Some("LLMGATEWAY_SETUP_REQUIRED".to_owned()),
+        };
+
+        let review = build_studio_review_center_v1(&[(
+            project(),
+            vec![StudioJobReviewSnapshotV1 {
+                job,
+                attempts: vec![attempt],
+            }],
+            Vec::new(),
+            None,
+        )]);
+
+        assert_eq!(review.blocking_count, 1);
+        assert_eq!(review.actionable_count, 1);
+        assert_eq!(review.items[0].kind, StudioReviewKindV1::SetupRequirement);
+        assert_eq!(
+            review.items[0].action,
+            Some(StudioReviewActionV1::ConfigureLlmGateway)
+        );
+    }
+
+    #[test]
     fn resolved_job_disappears_without_review_state_storage() {
         let job = Job {
             job_id: "job-1".to_owned(),
