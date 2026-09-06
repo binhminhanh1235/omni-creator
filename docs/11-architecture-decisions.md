@@ -238,4 +238,8 @@ A generic machine-local `provider-cache` permission may be granted when an upstr
 
 For Unsplash specifically, API-policy behavior is adapter-owned: previews use returned hotlinked `photo.urls.*` URLs, attribution links carry OmniCreator UTM parameters, and selected use must complete the returned `photo.links.download_location` tracking request before the selected photo bytes can enter the job workspace. Tracking/download transport URLs do not become portable project state.
 
+For the commercial P2 provider, Storyblocks is selected after license compatibility review. The current Shutterstock Platform License model is deferred because its restriction on standalone raw-asset access conflicts with OmniCreator's existing selected-media ArtifactStore -> FCPXML/DaVinci boundary. Storyblocks fits the current single-authorized-creator workflow provided raw files remain local to the licensed creator/project and are not exposed as a stock library.
+
+Storyblocks transaction requirements remain adapter-owned. Core may pass its existing canonical `project_id` as additive operation context; the Storyblocks end-user identifier, HMAC keys and test/production entitlement remain machine-local. Test mode can search/preview but cannot return a promotable selected output. Production selected download happens only after user/core selection and only into the granted job workspace.
+
 **Reason:** Stock APIs differ mainly in transport policy, attribution, caching, rate limits and licensing. Keeping those differences inside adapters lets additional providers participate in the existing relevance, cliche and reuse scoring without fragmenting SceneIntent, workflow state or ArtifactStore ownership.
