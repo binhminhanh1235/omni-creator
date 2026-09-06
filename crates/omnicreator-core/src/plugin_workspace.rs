@@ -201,9 +201,7 @@ pub fn review_plugin_permissions(
     workspace: &PluginJobWorkspace,
 ) -> Result<PluginPermissionReview> {
     let workspace_root = path_utf8(workspace.root())?;
-    let provider_cache_root = path_utf8(
-        &workspace.provider_cache_dir(&manifest.id)?
-    )?;
+    let provider_cache_root = path_utf8(&workspace.provider_cache_dir(&manifest.id)?)?;
     let mut warnings = Vec::new();
     let mut filesystem = Vec::new();
     let mut seen_filesystem = BTreeSet::new();
@@ -433,7 +431,12 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let workspace = PluginJobWorkspace::create(temp.path(), "job_permissions").unwrap();
         let manifest = manifest(
-            vec!["job-workspace", "provider-cache", "host-home", "job-workspace"],
+            vec![
+                "job-workspace",
+                "provider-cache",
+                "host-home",
+                "job-workspace",
+            ],
             vec!["api.pexels.com", "api.pexels.com"],
         );
 
@@ -445,10 +448,7 @@ mod tests {
             PluginPermissionEnforcement::WorkspaceBound
         );
         assert!(review.filesystem[1].allowed);
-        assert_eq!(
-            review.filesystem[1].permission,
-            PROVIDER_CACHE_PERMISSION
-        );
+        assert_eq!(review.filesystem[1].permission, PROVIDER_CACHE_PERMISSION);
         assert!(review.filesystem[1]
             .root
             .as_ref()
