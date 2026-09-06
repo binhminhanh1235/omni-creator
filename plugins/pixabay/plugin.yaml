@@ -1,0 +1,36 @@
+schema: omnicreator.plugin-manifest
+schema_version: 1
+id: pixabay
+name: Pixabay Visuals
+version: 1.0.0
+api_version: 1
+
+types:
+  - visual
+
+entrypoint:
+  command: python3
+  args:
+    - plugin.py
+
+capabilities:
+  - stock_video
+  - stock_image
+  - preview_first_search
+  - selected_asset_download
+
+scene_types:
+  - literal
+  - emotional
+  - conceptual
+
+permissions:
+  network:
+    - pixabay.com
+    - cdn.pixabay.com
+  filesystem:
+    - job-workspace
+    - provider-cache
+
+settings:
+  schema: settings.schema.json
