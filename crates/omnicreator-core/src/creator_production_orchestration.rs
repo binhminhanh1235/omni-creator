@@ -7,12 +7,11 @@ use crate::{
     artifact_store::{AttemptOutputPromotion, AttemptPromotionRequest},
     deterministic_input_hash, Artifact, ArtifactStore, CreatorContentV1, CreatorScenePlanV1, Error,
     Job, LogicalUri, ProductionPackV1, Result, StateStore, StepStatus, SubtitleCueV1,
-    TimelineClipV1, TimelineFrameRateV1, TimelineMarkerKindV1, TimelineMarkerV1, TimelineTrackRoleV1,
-    TimelineTrackV1, WorkflowStep, CREATOR_CONTENT_ARTIFACT_TYPE_V1,
+    TimelineClipV1, TimelineFrameRateV1, TimelineMarkerKindV1, TimelineMarkerV1,
+    TimelineTrackRoleV1, TimelineTrackV1, WorkflowStep, CREATOR_CONTENT_ARTIFACT_TYPE_V1,
     CREATOR_SCENE_PLAN_ARTIFACT_TYPE_V1, CREATOR_STEP_CONTENT_PREPARE_V1,
-    CREATOR_STEP_PRODUCTION_PACK_V1, CREATOR_STEP_SCENE_PLAN_V1,
-    CREATOR_STEP_VISUAL_PREPARE_V1, CREATOR_STEP_VOICE_PREPARE_V1, CREATOR_TTS_STEP_V1,
-    CREATOR_WORKFLOW_UNIT_PROJECT_V1,
+    CREATOR_STEP_PRODUCTION_PACK_V1, CREATOR_STEP_SCENE_PLAN_V1, CREATOR_STEP_VISUAL_PREPARE_V1,
+    CREATOR_STEP_VOICE_PREPARE_V1, CREATOR_TTS_STEP_V1, CREATOR_WORKFLOW_UNIT_PROJECT_V1,
 };
 
 pub const CREATOR_PRODUCTION_PACK_ARTIFACT_TYPE_V1: &str = "production_pack";
@@ -132,14 +131,15 @@ pub fn assemble_creator_production_pack_v1(
             )));
         }
 
-        let visual =
-            selected_verified_job_artifact_v1(state_store, artifact_store, project_id, CREATOR_STEP_VISUAL_PREPARE_V1, &scene.id)?;
-        let voice = selected_voice_segment_v1(
+        let visual = selected_verified_job_artifact_v1(
             state_store,
             artifact_store,
             project_id,
-            &segment.id,
+            CREATOR_STEP_VISUAL_PREPARE_V1,
+            &scene.id,
         )?;
+        let voice =
+            selected_voice_segment_v1(state_store, artifact_store, project_id, &segment.id)?;
         let duration_ms = voice.timing.duration_ms;
 
         visual_clips.push(TimelineClipV1 {
@@ -224,12 +224,9 @@ pub fn assemble_creator_production_pack_v1(
         &pack_json,
     ]);
 
-    if let Some((artifact, cached_pack)) = find_verified_assembly_cache_v1(
-        state_store,
-        artifact_store,
-        project_id,
-        &input_hash,
-    )? {
+    if let Some((artifact, cached_pack)) =
+        find_verified_assembly_cache_v1(state_store, artifact_store, project_id, &input_hash)?
+    {
         if cached_pack != production_pack {
             return Err(Error::InvalidArtifact(
                 "cached creator ProductionPack does not match deterministic assembly".to_owned(),
@@ -290,8 +287,7 @@ pub fn assemble_creator_production_pack_v1(
             )
         })?,
         Err(error) => {
-            let _ = state_store
-                .finish_attempt_failure(&attempt.attempt_id, "LOCAL_EXPORT_ERROR");
+            let _ = state_store.finish_attempt_failure(&attempt.attempt_id, "LOCAL_EXPORT_ERROR");
             let failed = state_store.get_attempt(&attempt.attempt_id)?;
             if state_store.get_step(&production_step.step_id)?.status == StepStatus::Running {
                 state_store.set_step_status(&production_step.step_id, failed.status)?;
@@ -363,11 +359,7 @@ pub fn load_latest_creator_production_pack_v1(
             },
         ));
     }
-    candidates.sort_by(|left, right| {
-        left.0
-            .cmp(&right.0)
-            .then_with(|| left.1.cmp(&right.1))
-    });
+    candidates.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
     Ok(candidates.pop().map(|(_, _, outcome)| outcome))
 }
 
@@ -433,16 +425,15 @@ fn selected_verified_job_artifact_v1(
         }
         candidates.push((artifact.created_at, artifact.artifact_id.clone(), artifact));
     }
-    candidates.sort_by(|left, right| {
-        left.0
-            .cmp(&right.0)
-            .then_with(|| left.1.cmp(&right.1))
-    });
-    candidates.pop().map(|(_, _, artifact)| artifact).ok_or_else(|| {
-        Error::InvalidArtifact(format!(
-            "no selected verified artifact exists for {step_key}/{unit}"
-        ))
-    })
+    candidates.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
+    candidates
+        .pop()
+        .map(|(_, _, artifact)| artifact)
+        .ok_or_else(|| {
+            Error::InvalidArtifact(format!(
+                "no selected verified artifact exists for {step_key}/{unit}"
+            ))
+        })
 }
 
 fn selected_voice_segment_v1(
@@ -501,16 +492,15 @@ fn selected_voice_segment_v1(
             },
         ));
     }
-    candidates.sort_by(|left, right| {
-        left.0
-            .cmp(&right.0)
-            .then_with(|| left.1.cmp(&right.1))
-    });
-    candidates.pop().map(|(_, _, selected)| selected).ok_or_else(|| {
-        Error::InvalidArtifact(format!(
-            "no selected verified voice+timing bundle exists for segment {segment_id}"
-        ))
-    })
+    candidates.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
+    candidates
+        .pop()
+        .map(|(_, _, selected)| selected)
+        .ok_or_else(|| {
+            Error::InvalidArtifact(format!(
+                "no selected verified voice+timing bundle exists for segment {segment_id}"
+            ))
+        })
 }
 
 fn find_verified_assembly_cache_v1(
@@ -655,10 +645,7 @@ fn write_staging_pack_v1(
         .join("cache")
         .join("creator-orchestration");
     fs::create_dir_all(&directory)?;
-    let path = directory.join(format!(
-        "production-pack-{}.json",
-        Uuid::new_v4().simple()
-    ));
+    let path = directory.join(format!("production-pack-{}.json", Uuid::new_v4().simple()));
     fs::write(&path, serde_json::to_vec_pretty(production_pack)?)?;
     Ok(path)
 }
