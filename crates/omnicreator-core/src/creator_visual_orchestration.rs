@@ -4,13 +4,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     build_visual_review, rank_visual_candidates, route_scene_generated_preference_v1,
-    route_scene_visual_v1, CreatorContentV1, CreatorScenePlanV1, EffectiveStudioPackV1, Error,
-    Project, RankedVisualCandidate, Result, SceneIntentV1, StockDiscoveryStatusV1,
-    StudioAutomationLevelV1, StudioPackRouteTargetV1, VisualCandidate, VisualCandidateRankingInput,
-    Artifact, ArtifactStore, Job, StateStore, StepStatus, VisualMediaType, VisualRankingPolicy,
-    VisualReviewOptions, VisualReviewSet, VisualRouteV1, VisualRoutingDecisionV1,
-    VisualRoutingPolicyV1, CREATOR_STEP_VISUAL_PREPARE_V1, CREATOR_WORKFLOW_UNIT_PROJECT_V1,
-    STICK_FIGURE_VISUAL_CAPABILITY_V1,
+    route_scene_visual_v1, Artifact, ArtifactStore, CreatorContentV1, CreatorScenePlanV1,
+    EffectiveStudioPackV1, Error, Job, Project, RankedVisualCandidate, Result, SceneIntentV1,
+    StateStore, StepStatus, StockDiscoveryStatusV1, StudioAutomationLevelV1,
+    StudioPackRouteTargetV1, VisualCandidate, VisualCandidateRankingInput, VisualMediaType,
+    VisualRankingPolicy, VisualReviewOptions, VisualReviewSet, VisualRouteV1,
+    VisualRoutingDecisionV1, VisualRoutingPolicyV1, CREATOR_STEP_VISUAL_PREPARE_V1,
+    CREATOR_WORKFLOW_UNIT_PROJECT_V1, STICK_FIGURE_VISUAL_CAPABILITY_V1,
 };
 
 pub const CREATOR_VISUAL_PLAN_SCHEMA_V1: &str = "omnicreator.creator-visual-plan";
@@ -126,7 +126,10 @@ impl CreatorVisualScenePlanV1 {
             ));
         }
         if self.execution_target.as_ref().is_some_and(|target| {
-            !self.route_targets.iter().any(|route_target| route_target == target)
+            !self
+                .route_targets
+                .iter()
+                .any(|route_target| route_target == target)
         }) {
             return Err(Error::InvalidContract(
                 "creator visual execution target must come from the Studio Pack route".to_owned(),
@@ -174,8 +177,7 @@ impl CreatorVisualScenePlanV1 {
                     ));
                 }
             }
-            CreatorVisualActionV1::AwaitingGenerationApproval
-            | CreatorVisualActionV1::Generate => {
+            CreatorVisualActionV1::AwaitingGenerationApproval | CreatorVisualActionV1::Generate => {
                 if self.routing.route != VisualRouteV1::GeneratedStill
                     || self.review.is_some()
                     || self.selected_candidate_id.is_some()
@@ -328,9 +330,7 @@ pub fn plan_creator_visuals_v1(
                 target.capability
             )));
         }
-        let generation_index = route_targets
-            .iter()
-            .position(is_generation_target_v1);
+        let generation_index = route_targets.iter().position(is_generation_target_v1);
         let stock_prefix_end = generation_index.unwrap_or(route_targets.len());
         let stock_targets = route_targets[..stock_prefix_end]
             .iter()
@@ -361,21 +361,16 @@ pub fn plan_creator_visuals_v1(
                     discovery.discover_stock_v1(scene, &stock_targets)?
                 };
                 discovered.validate_v1(scene)?;
-                let ranked_stock =
-                    rank_visual_candidates(
-                        scene,
-                        discovered.ranking_inputs,
-                        &options.ranking_policy,
-                    )?;
+                let ranked_stock = rank_visual_candidates(
+                    scene,
+                    discovered.ranking_inputs,
+                    &options.ranking_policy,
+                )?;
                 for ranked in &ranked_stock {
                     stock_target_for_candidate_v1(&stock_targets, &ranked.candidate)?;
                 }
-                let routing = route_scene_visual_v1(
-                    scene,
-                    discovered.status,
-                    &ranked_stock,
-                    routing_policy,
-                )?;
+                let routing =
+                    route_scene_visual_v1(scene, discovered.status, &ranked_stock, routing_policy)?;
 
                 match routing.route {
                     VisualRouteV1::StockReview => {
@@ -388,11 +383,13 @@ pub fn plan_creator_visuals_v1(
                         }
                         if studio_pack.config.automation_level == StudioAutomationLevelV1::Autopilot
                         {
-                            let selected = review.recommended_candidate_id.clone().ok_or_else(|| {
-                                Error::InvalidContract(
-                                    "Autopilot stock review has no recommended candidate".to_owned(),
-                                )
-                            })?;
+                            let selected =
+                                review.recommended_candidate_id.clone().ok_or_else(|| {
+                                    Error::InvalidContract(
+                                        "Autopilot stock review has no recommended candidate"
+                                            .to_owned(),
+                                    )
+                                })?;
                             let candidate = ranked_stock
                                 .iter()
                                 .find(|ranked| ranked.candidate.candidate_id == selected)
@@ -424,27 +421,16 @@ pub fn plan_creator_visuals_v1(
                         }
                     }
                     VisualRouteV1::GeneratedStill => {
-                        let target = generation_target_after_stock_v1(
-                            &route_targets,
-                            stock_prefix_end,
-                        )?;
+                        let target =
+                            generation_target_after_stock_v1(&route_targets, stock_prefix_end)?;
                         let action = match studio_pack.config.automation_level {
                             StudioAutomationLevelV1::Assisted => {
                                 CreatorVisualActionV1::AwaitingGenerationApproval
                             }
                             StudioAutomationLevelV1::Balanced
-                            | StudioAutomationLevelV1::Autopilot => {
-                                CreatorVisualActionV1::Generate
-                            }
+                            | StudioAutomationLevelV1::Autopilot => CreatorVisualActionV1::Generate,
                         };
-                        (
-                            routing,
-                            ranked_stock,
-                            None,
-                            None,
-                            Some(target),
-                            action,
-                        )
+                        (routing, ranked_stock, None, None, Some(target), action)
                     }
                 }
             };
@@ -859,10 +845,7 @@ fn get_or_create_visual_job_v1(
     }
 }
 
-fn prepare_visual_aggregate_step_v1(
-    state_store: &mut StateStore,
-    step_id: &str,
-) -> Result<()> {
+fn prepare_visual_aggregate_step_v1(state_store: &mut StateStore, step_id: &str) -> Result<()> {
     let current = state_store.get_step(step_id)?;
     match current.status {
         StepStatus::Ready => Ok(()),
@@ -946,7 +929,12 @@ fn validate_visual_execution_artifact_v1(
             ("source_asset_id", candidate.source_asset_id.as_str()),
             ("selection_ref", candidate.selection_ref.as_str()),
         ] {
-            if artifact.metadata.get(key).and_then(serde_json::Value::as_str) != Some(expected) {
+            if artifact
+                .metadata
+                .get(key)
+                .and_then(serde_json::Value::as_str)
+                != Some(expected)
+            {
                 return Err(Error::InvalidArtifact(format!(
                     "creator visual stock artifact {key} does not match the reviewed selection"
                 )));
@@ -1067,8 +1055,8 @@ mod tests {
         artifact_store::{AttemptOutputPromotion, AttemptPromotionRequest},
         compile_creator_workflow_plan_v1, initial_studio_pack_catalog_v1,
         materialize_creator_workflow_plan_v1, CreatorInputV1, LogicalUri, SegmentV1,
-        VisualCandidatePreview,
-        VisualCandidateSignals, VisualPreviewKind, VoiceDirectionV1, CREATOR_CONTENT_SCHEMA_V1,
+        VisualCandidatePreview, VisualCandidateSignals, VisualPreviewKind, VoiceDirectionV1,
+        CREATOR_CONTENT_SCHEMA_V1,
         CREATOR_CONTENT_VERSION_V1, CREATOR_SCENE_PLAN_SCHEMA_V1,
         CREATOR_SCENE_PLAN_VERSION_V1, SCENE_INTENT_SCHEMA, SCENE_INTENT_SCHEMA_VERSION,
         SEGMENT_SCHEMA, SEGMENT_SCHEMA_VERSION, Workspace,
@@ -1130,8 +1118,8 @@ mod tests {
             schema: CREATOR_SCENE_PLAN_SCHEMA_V1.to_owned(),
             schema_version: CREATOR_SCENE_PLAN_VERSION_V1,
             project_id: "prj-visual".to_owned(),
-            content_sha256:
-                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_owned(),
+            content_sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                .to_owned(),
             scenes: vec![SceneIntentV1 {
                 schema: SCENE_INTENT_SCHEMA.to_owned(),
                 schema_version: SCENE_INTENT_SCHEMA_VERSION,
@@ -1274,11 +1262,7 @@ mod tests {
         assert_eq!(discovery.calls.get(), 0);
         assert_eq!(plan.scenes[0].action, CreatorVisualActionV1::Generate);
         assert_eq!(
-            plan.scenes[0]
-                .execution_target
-                .as_ref()
-                .unwrap()
-                .capability,
+            plan.scenes[0].execution_target.as_ref().unwrap().capability,
             GENERATED_STILL_CAPABILITY_ROUTE_V1
         );
         assert_eq!(
@@ -1312,11 +1296,7 @@ mod tests {
 
         assert_eq!(discovery.calls.get(), 0);
         assert_eq!(
-            plan.scenes[0]
-                .execution_target
-                .as_ref()
-                .unwrap()
-                .capability,
+            plan.scenes[0].execution_target.as_ref().unwrap().capability,
             STICK_FIGURE_VISUAL_CAPABILITY_V1
         );
     }
@@ -1346,11 +1326,7 @@ mod tests {
 
         assert_eq!(plan.scenes[0].routing.route, VisualRouteV1::GeneratedStill);
         assert_eq!(
-            plan.scenes[0]
-                .execution_target
-                .as_ref()
-                .unwrap()
-                .capability,
+            plan.scenes[0].execution_target.as_ref().unwrap().capability,
             GENERATED_STILL_CAPABILITY_ROUTE_V1
         );
     }
@@ -1401,10 +1377,16 @@ mod tests {
             metadata: serde_json::Value,
         ) -> Result<Artifact> {
             let attempt = state_store.start_attempt(job_id, Some("fixture-visual-executor"))?;
-            let staging_dir = artifact_store.data_root().join("cache").join("visual-fixture");
+            let staging_dir = artifact_store
+                .data_root()
+                .join("cache")
+                .join("visual-fixture");
             fs::create_dir_all(&staging_dir)?;
             let source = staging_dir.join(format!("{job_id}.bin"));
-            fs::write(&source, format!("visual fixture for {}", scene.id).as_bytes())?;
+            fs::write(
+                &source,
+                format!("visual fixture for {}", scene.id).as_bytes(),
+            )?;
             let target_uri =
                 LogicalUri::parse(&format!("project://visual/{}/{}.bin", scene.id, job_id))?;
             let artifacts = artifact_store.promote_attempt_outputs(
@@ -1531,29 +1513,14 @@ mod tests {
         let artifacts = ArtifactStore::new(workspace.data_root()).unwrap();
 
         (
-            temp,
-            workspace,
-            state,
-            artifacts,
-            project,
-            pack,
-            content,
-            scene_plan,
+            temp, workspace, state, artifacts, project, pack, content, scene_plan,
         )
     }
 
     #[test]
     fn review_blocked_scene_does_not_fetch_full_stock_asset() {
-        let (
-            _temp,
-            _workspace,
-            mut state,
-            artifacts,
-            project,
-            pack,
-            content,
-            scene_plan,
-        ) = execution_fixture("christian-cinematic");
+        let (_temp, _workspace, mut state, artifacts, project, pack, content, scene_plan) =
+            execution_fixture("christian-cinematic");
         let discovery = FixtureDiscovery {
             calls: Cell::new(0),
             inputs: vec![ranked_input(0.98)],
@@ -1586,16 +1553,8 @@ mod tests {
 
     #[test]
     fn explicit_stock_selection_fetches_promotes_and_then_hits_verified_cache() {
-        let (
-            _temp,
-            _workspace,
-            mut state,
-            artifacts,
-            project,
-            pack,
-            content,
-            scene_plan,
-        ) = execution_fixture("christian-cinematic");
+        let (_temp, _workspace, mut state, artifacts, project, pack, content, scene_plan) =
+            execution_fixture("christian-cinematic");
         let discovery = FixtureDiscovery {
             calls: Cell::new(0),
             inputs: vec![ranked_input(0.98)],
@@ -1642,16 +1601,8 @@ mod tests {
 
     #[test]
     fn generated_route_dispatches_existing_generated_capability_without_stock_fetch() {
-        let (
-            _temp,
-            _workspace,
-            mut state,
-            artifacts,
-            project,
-            pack,
-            content,
-            mut scene_plan,
-        ) = execution_fixture("christian-cinematic");
+        let (_temp, _workspace, mut state, artifacts, project, pack, content, mut scene_plan) =
+            execution_fixture("christian-cinematic");
         scene_plan.scenes[0].scene_type = "conceptual".to_owned();
         let discovery = FixtureDiscovery {
             calls: Cell::new(0),
@@ -1692,16 +1643,8 @@ mod tests {
 
     #[test]
     fn stick_route_dispatches_stick_capability_through_same_execution_boundary() {
-        let (
-            _temp,
-            _workspace,
-            mut state,
-            artifacts,
-            project,
-            pack,
-            content,
-            mut scene_plan,
-        ) = execution_fixture("christian-stick-explainer");
+        let (_temp, _workspace, mut state, artifacts, project, pack, content, mut scene_plan) =
+            execution_fixture("christian-stick-explainer");
         scene_plan.scenes[0].scene_type = "conceptual".to_owned();
         let discovery = FixtureDiscovery {
             calls: Cell::new(0),
