@@ -526,20 +526,6 @@ impl StateStore {
                 parse_step_status(&raw, 0)
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
-        if !job_statuses.is_empty() {
-            let status = derive_display_status(&job_statuses);
-            if status == ProjectDisplayStatus::ReadyForEdit {
-                let exported: i64 = self.connection.query_row(
-                    "SELECT EXISTS(SELECT 1 FROM jobs WHERE project_id=?1 AND step_key='export.production-pack' AND status='SUCCEEDED')",
-                    [project_id],
-                    |row| row.get(0),
-                )?;
-                if exported != 0 {
-                    return Ok(ProjectDisplayStatus::Done);
-                }
-            }
-            return Ok(status);
-        }
 
         let mut statement = self
             .connection
@@ -550,10 +536,71 @@ impl StateStore {
                 parse_step_status(&raw, 0)
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
-        if step_statuses.is_empty() {
+
+        if job_statuses.is_empty() && step_statuses.is_empty() {
             return Ok(ProjectDisplayStatus::Draft);
         }
-        Ok(derive_display_status(&step_statuses))
+
+        // Legacy/non-creator projects may only have Jobs. Preserve their existing status semantics.
+        if step_statuses.is_empty() {
+            let status = derive_display_status(&job_statuses);
+            if status == ProjectDisplayStatus::ReadyForEdit
+                && self.has_successful_production_export_v1(project_id)?
+            {
+                return Ok(ProjectDisplayStatus::Done);
+            }
+            return Ok(status);
+        }
+
+        let all_statuses = job_statuses
+            .iter()
+            .chain(step_statuses.iter())
+            .copied()
+            .collect::<Vec<_>>();
+
+        if all_statuses
+            .iter()
+            .any(|status| matches!(status, StepStatus::Failed | StepStatus::Fatal))
+        {
+            return Ok(ProjectDisplayStatus::NeedsReview);
+        }
+        if all_statuses.contains(&StepStatus::Running) {
+            return Ok(ProjectDisplayStatus::GpuRunning);
+        }
+        if all_statuses.contains(&StepStatus::Retryable) {
+            return Ok(ProjectDisplayStatus::GpuPartial);
+        }
+        if job_statuses
+            .iter()
+            .any(|status| matches!(status, StepStatus::Ready | StepStatus::Queued))
+        {
+            return Ok(ProjectDisplayStatus::GpuReady);
+        }
+
+        let semantic_complete = step_statuses
+            .iter()
+            .all(|status| matches!(status, StepStatus::Succeeded | StepStatus::Skipped));
+        let jobs_complete = job_statuses
+            .iter()
+            .all(|status| matches!(status, StepStatus::Succeeded | StepStatus::Skipped));
+
+        if semantic_complete && jobs_complete {
+            if self.has_successful_production_export_v1(project_id)? {
+                return Ok(ProjectDisplayStatus::Done);
+            }
+            return Ok(ProjectDisplayStatus::ReadyForEdit);
+        }
+
+        Ok(ProjectDisplayStatus::Preparing)
+    }
+
+    fn has_successful_production_export_v1(&self, project_id: &str) -> Result<bool> {
+        let exported: i64 = self.connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM jobs WHERE project_id=?1 AND step_key='export.production-pack' AND status='SUCCEEDED')",
+            [project_id],
+            |row| row.get(0),
+        )?;
+        Ok(exported != 0)
     }
 }
 
