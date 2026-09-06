@@ -376,7 +376,10 @@ fn p3_voice_settings_change_invalidates_only_voice_and_downstream_work() {
         assert_eq!(segment.step.status, StepStatus::Ready);
     }
 
-    let steps = fixture.store.list_project_steps(&fixture.project_id).unwrap();
+    let steps = fixture
+        .store
+        .list_project_steps(&fixture.project_id)
+        .unwrap();
     assert_eq!(
         steps
             .iter()
