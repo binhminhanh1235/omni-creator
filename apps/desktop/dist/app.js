@@ -17,6 +17,8 @@ const creatorRunState = {
   selectedProjectId: null,
   draftByProject: new Map(),
   kindByProject: new Map(),
+  reviewByProject: new Map(),
+  reviewLoadingProjects: new Set(),
 };
 const studioPackState = {
   catalog: null,
@@ -218,6 +220,39 @@ function creatorStageStrip(item) {
   );
 }
 
+function creatorRunActionLabel(item) {
+  const action = item && item.run && item.run.action;
+  switch (action) {
+    case "REVIEW":
+      return "Review";
+    case "RUN_COMPUTE":
+      return "Run GPU";
+    case "WAIT_FOR_COMPUTE":
+      return "Sync / Resume";
+    case "ASSEMBLE_PRODUCTION_PACK":
+      return "Assemble";
+    case "EXPORT":
+      return "Review / Export";
+    case "COMPLETE":
+      return "";
+    default:
+      return "Start / Resume";
+  }
+}
+
+function creatorPrimaryActionMarkup(item) {
+  if (!item || !item.run || item.run.action === "COMPLETE") return "";
+  return (
+    '<button class="icon-btn project-creator-action" data-id="' +
+    escapeHtml(item.project.id) +
+    '" data-action="' +
+    escapeHtml(item.run.action || "START_OR_RESUME") +
+    '">' +
+    escapeHtml(creatorRunActionLabel(item)) +
+    "</button>"
+  );
+}
+
 function projectCard(item, readOnly) {
   const project = item.project;
   const checked = gpuWorkbenchState.selectedProjectIds.has(project.id) ? " checked" : "";
@@ -242,16 +277,7 @@ function projectCard(item, readOnly) {
       : '<span class="studio-pack-project-tag missing">NO STUDIO PACK</span>') +
     "</div></div>" +
     '<div class="project-actions">' +
-    (item.board && item.board.column === "PREPARING"
-      ? '<button class="icon-btn project-start-resume" data-id="' +
-        escapeHtml(project.id) +
-        '">Start / Resume</button>'
-      : "") +
-    (item.board && item.board.column === "NEEDS_REVIEW"
-      ? '<button class="icon-btn project-review-center" data-id="' +
-        escapeHtml(project.id) +
-        '">Review Issues</button>'
-      : "") +
+    creatorPrimaryActionMarkup(item) +
     '<button class="icon-btn studio-pack-project" data-id="' +
     escapeHtml(project.id) +
     '">Studio Pack</button>' +
@@ -322,24 +348,151 @@ function renderProjectKanban(projects, readOnly) {
   );
 }
 
-function renderCreatorRunPanel(project, readOnly) {
+function creatorVisualReviewMarkup(view, readOnly) {
+  if (!view || !Array.isArray(view.scenes) || !view.scenes.length) return "";
+  return (
+    '<div class="creator-visual-review"><div class="creator-review-head"><strong>VISUAL REVIEW</strong>' +
+    '<span>' +
+    escapeHtml(view.scenes.length + " scene(s) need a decision") +
+    "</span></div>" +
+    view.scenes
+      .map(function (scene) {
+        if (scene.action === "AWAITING_GENERATION_APPROVAL") {
+          return (
+            '<article class="creator-review-scene"><div><strong>' +
+            escapeHtml(scene.scene_id) +
+            "</strong><p>" +
+            escapeHtml(scene.narration) +
+            '</p><small>' +
+            escapeHtml(scene.purpose) +
+            "</small></div>" +
+            '<div class="creator-review-decision"><span class="asset-badge">' +
+            escapeHtml(scene.generated_preset || "generated visual") +
+            '</span><button class="btn creator-approve-generated" data-scene-id="' +
+            escapeHtml(scene.scene_id) +
+            '"' +
+            (readOnly ? " disabled" : "") +
+            ">Approve generation</button></div></article>"
+          );
+        }
+
+        const review = scene.review || {};
+        const candidates = Array.isArray(review.candidates) ? review.candidates : [];
+        return (
+          '<article class="creator-review-scene"><div><strong>' +
+          escapeHtml(scene.scene_id) +
+          "</strong><p>" +
+          escapeHtml(scene.narration) +
+          '</p><small>' +
+          escapeHtml(scene.purpose) +
+          "</small></div>" +
+          '<div class="creator-review-candidates">' +
+          candidates
+            .map(function (candidate) {
+              const preview = candidate.preview || {};
+              const recommended =
+                review.recommended_candidate_id === candidate.candidate_id;
+              return (
+                '<div class="creator-review-candidate">' +
+                (preview.url
+                  ? '<img loading="lazy" referrerpolicy="no-referrer" src="' +
+                    escapeHtml(preview.url) +
+                    '" alt="Visual candidate preview" />'
+                  : "") +
+                '<div class="creator-review-candidate-copy"><strong>' +
+                escapeHtml(
+                  (candidate.title || candidate.candidate_id) +
+                    (recommended ? " · RECOMMENDED" : ""),
+                ) +
+                "</strong><span>" +
+                escapeHtml(
+                  (candidate.creator_name || "Unknown creator") +
+                    " · " +
+                    (candidate.score_percent || 0) +
+                    "% fit",
+                ) +
+                "</span><small>" +
+                escapeHtml(candidate.rationale || "") +
+                "</small></div>" +
+                '<button class="btn creator-select-visual" data-scene-id="' +
+                escapeHtml(scene.scene_id) +
+                '" data-candidate-id="' +
+                escapeHtml(candidate.candidate_id) +
+                '"' +
+                (readOnly ? " disabled" : "") +
+                ">Use this</button></div>"
+              );
+            })
+            .join("") +
+          "</div></article>"
+        );
+      })
+      .join("") +
+    "</div>"
+  );
+}
+
+async function loadCreatorVisualReview(item, readOnly) {
+  if (
+    !item ||
+    !item.project ||
+    creatorRunState.reviewLoadingProjects.has(item.project.id)
+  ) {
+    return;
+  }
+  creatorRunState.reviewLoadingProjects.add(item.project.id);
+  try {
+    const review = await call("creator_visual_review_status", {
+      projectId: item.project.id,
+    });
+    creatorRunState.reviewByProject.set(item.project.id, review);
+    if (creatorRunState.selectedProjectId === item.project.id) {
+      renderCreatorRunPanel(item, readOnly);
+    }
+  } catch (_error) {
+    creatorRunState.reviewByProject.delete(item.project.id);
+  } finally {
+    creatorRunState.reviewLoadingProjects.delete(item.project.id);
+  }
+}
+
+function renderCreatorRunPanel(item, readOnly) {
   const panel = document.getElementById("creator-run-panel");
   if (!panel) return;
 
-  if (!project) {
+  if (!item || !item.project) {
     panel.innerHTML = "";
     panel.hidden = true;
     return;
   }
 
-  panel.hidden = false;
+  const project = item.project;
+  const run = item.run || {
+    stage: "CONTENT_SCENE",
+    action: "START_OR_RESUME",
+    message: "Start or resume creator production.",
+  };
+  const contentStep = (item.steps || []).find(function (step) {
+    return step.step === "content.prepare" && step.unit === "project";
+  });
+  const inputRequired = !contentStep || contentStep.status !== "SUCCEEDED";
   const kind = creatorRunState.kindByProject.get(project.id) || "TOPIC";
   const draft = creatorRunState.draftByProject.get(project.id) || "";
+  const visualReview = creatorRunState.reviewByProject.get(project.id) || null;
+
+  panel.hidden = false;
   panel.innerHTML =
     '<div class="creator-run-head"><div><p class="eyebrow">CREATOR RUN</p><h3>' +
     escapeHtml(project.title) +
     '</h3></div><button class="icon-btn" id="close-creator-run">Close</button></div>' +
-    '<p class="muted compact">Start or resume canonical content + SceneIntent preparation. Completed artifacts are cache-reused; retry history remains in Job/Attempt state.</p>' +
+    '<div class="creator-run-status"><span class="review-state">' +
+    escapeHtml(statusLabel(run.stage)) +
+    "</span><strong>" +
+    escapeHtml(creatorRunActionLabel(item)) +
+    "</strong><p>" +
+    escapeHtml(run.message || "Continue canonical creator production.") +
+    "</p></div>" +
+    '<p class="muted compact">One canonical workflow drives Content, SceneIntent, Visuals, Voice/Compute and ProductionPack. Resume reuses verified artifacts and Job/Attempt history.</p>' +
     '<div class="field compact-field"><label>INPUT TYPE</label><select id="creator-input-kind">' +
     '<option value="TOPIC"' +
     (kind === "TOPIC" ? " selected" : "") +
@@ -347,21 +500,42 @@ function renderCreatorRunPanel(project, readOnly) {
     '<option value="SCRIPT"' +
     (kind === "SCRIPT" ? " selected" : "") +
     ">Script</option></select></div>" +
-    '<div class="field"><label>TOPIC OR SCRIPT</label><textarea id="creator-input-text" rows="6" placeholder="Enter a topic or paste a script..."' +
+    '<div class="field"><label>' +
+    (inputRequired ? "TOPIC OR SCRIPT · REQUIRED" : "TOPIC OR SCRIPT · OPTIONAL ON RESUME") +
+    '</label><textarea id="creator-input-text" rows="5" placeholder="' +
+    escapeHtml(
+      inputRequired
+        ? "Enter a topic or paste a script..."
+        : "Leave empty to resume. Enter new text only to intentionally invalidate downstream work.",
+    ) +
+    '"' +
     (readOnly ? " readonly" : "") +
     ">" +
     escapeHtml(draft) +
     "</textarea></div>" +
+    (run.stage === "VISUAL"
+      ? visualReview
+        ? creatorVisualReviewMarkup(visualReview, readOnly)
+        : '<div class="notice subtle">Loading deterministic visual review from canonical SceneIntent + Studio Pack…</div>'
+      : "") +
     '<div class="actions"><button class="btn primary" id="run-creator-production"' +
-    (readOnly ? " disabled" : "") +
-    ">Start / Resume</button>" +
+    (readOnly || run.action === "COMPLETE" || run.action === "EXPORT" ? " disabled" : "") +
+    ">" +
+    escapeHtml(creatorRunActionLabel(item) || "Complete") +
+    "</button>" +
     '<button class="btn" id="creator-open-review">Review blockers</button></div>';
 
   document.getElementById("close-creator-run").onclick = function () {
     creatorRunState.selectedProjectId = null;
     renderCreatorRunPanel(null, readOnly);
   };
+
   document.getElementById("creator-open-review").onclick = function () {
+    if (run.stage === "VISUAL") {
+      creatorRunState.reviewByProject.delete(project.id);
+      loadCreatorVisualReview(item, readOnly);
+      return;
+    }
     const review = document.getElementById("review-center");
     if (review) review.scrollIntoView({ behavior: "smooth", block: "start" });
   };
@@ -375,29 +549,76 @@ function renderCreatorRunPanel(project, readOnly) {
     creatorRunState.draftByProject.set(project.id, textInput.value);
   };
 
+  document.querySelectorAll(".creator-select-visual").forEach(function (button) {
+    button.onclick = async function () {
+      button.disabled = true;
+      try {
+        creatorRunState.reviewByProject.delete(project.id);
+        render(
+          await call("select_creator_visual_candidate", {
+            projectId: project.id,
+            sceneId: button.dataset.sceneId,
+            candidateId: button.dataset.candidateId,
+          }),
+        );
+        showToast("Visual selection committed to the canonical scene job.");
+      } catch (_error) {
+        creatorRunState.reviewByProject.delete(project.id);
+        loadCreatorVisualReview(item, readOnly);
+      }
+    };
+  });
+
+  document.querySelectorAll(".creator-approve-generated").forEach(function (button) {
+    button.onclick = async function () {
+      button.disabled = true;
+      try {
+        creatorRunState.reviewByProject.delete(project.id);
+        render(
+          await call("approve_creator_generated_visual", {
+            projectId: project.id,
+            sceneId: button.dataset.sceneId,
+          }),
+        );
+        showToast("Generated visual approval committed and executed.");
+      } catch (_error) {
+        creatorRunState.reviewByProject.delete(project.id);
+        loadCreatorVisualReview(item, readOnly);
+      }
+    };
+  });
+
   const runButton = document.getElementById("run-creator-production");
   runButton.onclick = async function () {
     const inputText = textInput.value.trim();
-    if (!inputText) {
-      showToast("Enter a creator topic or script first.");
+    if (inputRequired && !inputText) {
+      showToast("Enter a creator topic or script to start this project.");
       return;
     }
     creatorRunState.kindByProject.set(project.id, kindInput.value);
     creatorRunState.draftByProject.set(project.id, textInput.value);
+    creatorRunState.reviewByProject.delete(project.id);
     runButton.disabled = true;
     try {
-      render(
-        await call("start_creator_production", {
-          projectId: project.id,
-          inputKind: kindInput.value,
-          inputText: inputText,
-        }),
-      );
-      showToast("Creator content and SceneIntent state advanced canonically.");
+      const snapshot = await call("start_creator_production", {
+        projectId: project.id,
+        inputKind: kindInput.value,
+        inputText: inputText,
+      });
+      render(snapshot);
+      showToast("Creator workflow advanced from canonical state.");
     } catch (_error) {
       render(await call("list_projects"));
     }
   };
+
+  if (
+    run.stage === "VISUAL" &&
+    !visualReview &&
+    !creatorRunState.reviewLoadingProjects.has(project.id)
+  ) {
+    loadCreatorVisualReview(item, readOnly);
+  }
 }
 
 function productionPackSummaryMarkup(view) {
@@ -2523,23 +2744,20 @@ function renderWorkspace(snapshot) {
     prepareGpuWorkbench(workspace.read_only);
   };
 
-  document.querySelectorAll(".project-start-resume").forEach(function (button) {
+  document.querySelectorAll(".project-creator-action").forEach(function (button) {
     button.onclick = function () {
       const item = projects.find(function (candidate) {
         return candidate.project.id === button.dataset.id;
       });
       if (!item) return;
+      if (button.dataset.action === "EXPORT") {
+        openProductionPack(item.project, workspace.read_only);
+        return;
+      }
       creatorRunState.selectedProjectId = item.project.id;
-      renderCreatorRunPanel(item.project, workspace.read_only);
+      renderCreatorRunPanel(item, workspace.read_only);
       const panel = document.getElementById("creator-run-panel");
       if (panel) panel.scrollIntoView({ behavior: "smooth", block: "start" });
-    };
-  });
-
-  document.querySelectorAll(".project-review-center").forEach(function (button) {
-    button.onclick = function () {
-      const review = document.getElementById("review-center");
-      if (review) review.scrollIntoView({ behavior: "smooth", block: "start" });
     };
   });
 
@@ -2602,10 +2820,7 @@ function renderWorkspace(snapshot) {
   const selectedCreatorItem = projects.find(function (item) {
     return item.project.id === creatorRunState.selectedProjectId;
   });
-  renderCreatorRunPanel(
-    selectedCreatorItem ? selectedCreatorItem.project : null,
-    workspace.read_only,
-  );
+  renderCreatorRunPanel(selectedCreatorItem || null, workspace.read_only);
   const selectedProductionItem = projects.find(function (item) {
     return item.project.id === productionPackState.selectedProjectId;
   });
