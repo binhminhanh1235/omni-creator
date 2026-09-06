@@ -7,23 +7,23 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use omnicreator_core::{
-    assemble_creator_production_pack_v1, build_studio_pack_ux_view_v1,
-    build_studio_review_center_v1, compile_creator_workflow_plan_v1,
+    approve_creator_generated_visual_v1, assemble_creator_production_pack_v1,
+    build_studio_pack_ux_view_v1, build_studio_review_center_v1, compile_creator_workflow_plan_v1,
     default_segment_tts_compute_requirements_v1, derive_creator_run_coordinator_v1,
     dispatch_creator_voice_burst_v1, dispatch_gpu_burst_v1, execute_creator_visual_plan_v1,
     initial_studio_pack_catalog_v1, inspect_local_plugin_update_v1, install_local_plugin_folder_v1,
     load_latest_creator_content_scene_v1, load_latest_creator_content_v1,
-    load_latest_creator_production_pack_v1,
-    load_plugin_settings_ui, materialize_creator_workflow_plan_v1, plan_creator_visuals_v1,
+    load_latest_creator_production_pack_v1, load_plugin_settings_ui,
+    materialize_creator_workflow_plan_v1, plan_creator_visuals_v1,
     plan_creator_voice_orchestration_v1, preview_plugin_capability_impact_v1,
     project_board_projection_v1, reconcile_remote_session_v1, run_creator_content_scene_v1,
-    select_creator_stock_candidate_v1, approve_creator_generated_visual_v1,
-    scan_plugin_inventory_v1, uninstall_user_plugin_v1, update_local_plugin_folder_v1, Artifact,
-    ArtifactStore, AssetLibrarySnapshotV1, ComputeProviderConnectionState,
-    ComputeProviderLivenessPolicyV1, ComputeProviderRuntime, ComputeProviderSchedulingSnapshotV1,
-    ComputeRunningAssignmentV1, CreatorContentSceneOptionsV1, CreatorContentSceneOutcomeV1,
-    CreatorInputV1, CreatorProductionPackOptionsV1, CreatorRunCoordinatorV1,
-    CreatorStockDiscoveryV1, CreatorVisualActionV1, CreatorVisualAssetExecutorV1, CreatorVisualDiscoveryExecutorV1,
+    scan_plugin_inventory_v1, select_creator_stock_candidate_v1, uninstall_user_plugin_v1,
+    update_local_plugin_folder_v1, Artifact, ArtifactStore, AssetLibrarySnapshotV1,
+    ComputeProviderConnectionState, ComputeProviderLivenessPolicyV1, ComputeProviderRuntime,
+    ComputeProviderSchedulingSnapshotV1, ComputeRunningAssignmentV1, CreatorContentSceneOptionsV1,
+    CreatorContentSceneOutcomeV1, CreatorInputV1, CreatorProductionPackOptionsV1,
+    CreatorRunCoordinatorV1, CreatorStockDiscoveryV1, CreatorVisualActionV1,
+    CreatorVisualAssetExecutorV1, CreatorVisualDiscoveryExecutorV1,
     CreatorVisualGenerationRequestV1, CreatorVisualPlanV1, CreatorVisualPlanningOptionsV1,
     CreatorVisualStockFetchRequestV1, CreatorVoiceRuntimeV1, DiscoveredPlugin, Error as CoreError,
     GeneratedImagePluginResultV1, GeneratedImageRequestV1, GeneratedImageResolutionV1,
@@ -42,8 +42,7 @@ use omnicreator_core::{
     StudioPackAvailabilityStatusV1, StudioPackOverridesV1, StudioPackRouteTargetV1,
     StudioPackRuntimeSnapshotV1, StudioPackUxViewV1, StudioPackV1, StudioReviewCenterV1,
     VisualCandidate, VisualCandidateRankingInput, VisualCandidateSignals, VisualReviewSet,
-    VoiceIdentityV1,
-    VoiceModelIdentityV1, WorkflowStep, Workspace, WorkspaceSession,
+    VoiceIdentityV1, VoiceModelIdentityV1, WorkflowStep, Workspace, WorkspaceSession,
     CREATOR_STEP_VISUAL_PREPARE_V1, STICK_FIGURE_VISUAL_CAPABILITY_V1, STUDIO_PACK_SCHEMA_V1,
     STUDIO_PACK_VERSION_V1,
 };
@@ -1251,9 +1250,7 @@ fn creator_visual_plan_for_desktop_v1(
     let pack = catalog.resolve_v1(pack_id).map_err(error_string)?;
     let creator = load_latest_creator_content_scene_v1(store, artifacts, project_id)
         .map_err(error_string)?
-        .ok_or_else(|| {
-            "Content + SceneIntent must be prepared before visual review.".to_owned()
-        })?;
+        .ok_or_else(|| "Content + SceneIntent must be prepared before visual review.".to_owned())?;
     let inventory = plugin_inventory_report_v1(app)?;
     let runtime = studio_pack_runtime_snapshot_v1(app, &inventory.registry)?;
     let runtime_root = creator_plugin_runtime_root_v1(app)?;
@@ -1550,12 +1547,10 @@ fn start_creator_production(
         (Some(input), Some(existing)) => existing.content.source != *input,
         (Some(_), None) => true,
         (None, Some(_)) => false,
-        (None, None) => {
-            return Err(
-                "Creator topic or script is required until Content has a verified canonical artifact."
-                    .to_owned(),
-            )
-        }
+        (None, None) => return Err(
+            "Creator topic or script is required until Content has a verified canonical artifact."
+                .to_owned(),
+        ),
     };
     if should_run_content {
         let input = effective_input.expect("creator input is present when content must run");
