@@ -8,7 +8,8 @@ use std::{
 use chrono::{DateTime, Utc};
 use omnicreator_core::{
     build_studio_pack_ux_view_v1, build_studio_review_center_v1, dispatch_gpu_burst_v1,
-    initial_studio_pack_catalog_v1, load_plugin_settings_ui, reconcile_remote_session_v1,
+    initial_studio_pack_catalog_v1, load_plugin_settings_ui, project_board_projection_v1,
+    reconcile_remote_session_v1,
     scan_plugin_roots, ArtifactStore, ComputeProviderConnectionState,
     ComputeProviderLivenessPolicyV1, ComputeProviderRuntime, ComputeProviderSchedulingSnapshotV1,
     ComputeRunningAssignmentV1, Error as CoreError, GpuBatchBudgetOverviewV1,
@@ -17,7 +18,8 @@ use omnicreator_core::{
     HttpComputeProviderConfigV1, LlmGatewayClient, LlmGatewayConfig, LlmGatewayModel,
     MachineBinding, PluginRegistry, PluginRuntimeReadinessV1, PortableStudioPackCatalogV1,
     ProductionExportHistoryEntryV1, ProductionPackV1, ProductionPackageExportOutcomeV1,
-    ProductionPackageExporterV1, Project, ProjectDisplayStatus, RemoteComputeJobSpecV1,
+    ProductionPackageExporterV1, Project, ProjectBoardProjectionV1, ProjectDisplayStatus,
+    RemoteComputeJobSpecV1,
     RemoteReconciliationSummaryV1, RuntimeWorkloadEstimateV1, StateStore,
     StudioJobReviewSnapshotV1, StudioPackAvailabilityStatusV1, StudioPackOverridesV1,
     StudioPackRuntimeSnapshotV1, StudioPackUxViewV1, StudioPackV1, StudioReviewCenterV1, Workspace,
@@ -95,6 +97,7 @@ struct WorkspaceView {
 struct ProjectView {
     project: Project,
     status: ProjectDisplayStatus,
+    board: ProjectBoardProjectionV1,
 }
 
 #[derive(Debug, Serialize)]
@@ -996,10 +999,21 @@ fn snapshot_from_active(state: &State<'_, DesktopState>) -> Result<AppSnapshot, 
         .map(|project| {
             let status = store
                 .derive_project_status(&project.id)
-                .unwrap_or(ProjectDisplayStatus::NeedsReview);
-            ProjectView { project, status }
+                .map_err(error_string)?;
+            let jobs = store
+                .list_project_jobs(&project.id)
+                .map_err(error_string)?;
+            let steps = store
+                .list_project_steps(&project.id)
+                .map_err(error_string)?;
+            let board = project_board_projection_v1(status, &jobs, &steps);
+            Ok(ProjectView {
+                project,
+                status,
+                board,
+            })
         })
-        .collect();
+        .collect::<Result<Vec<_>, String>>()?;
 
     Ok(AppSnapshot::Ready {
         workspace: WorkspaceView {
