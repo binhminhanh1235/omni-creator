@@ -242,9 +242,44 @@ Phase 12 implementation notes:
 - tag mutations require the existing writable workspace guard
 - semantic embeddings, vector storage and visual-similarity models remain deferred
 
+## Phase 13 - Additional Stock Providers
+
+Expand stock coverage through the existing provider-neutral visual pipeline.
+
+Priority order:
+
+1. Pixabay
+2. Unsplash
+3. one commercial provider, selected between Storyblocks and Shutterstock after API access/license validation
+
+Implementation slices:
+
+- P0 — Pixabay VisualProvider for image + video search, preview-first selection, selected-asset download and portable provenance
+- P1 — Unsplash VisualProvider for image search with required attribution, hotlink-preview behavior and selected-use download tracking
+- P2 — commercial provider integration; evaluate Storyblocks first and Shutterstock as the alternative, with licensing contained inside the plugin boundary
+
+Architecture rules:
+
+- SceneIntent, VisualCandidate, Asset, Artifact and workflow contracts remain provider-neutral
+- provider search results normalize to the existing VisualCandidate contract
+- full media is resolved only after selection
+- API credentials stay machine-local and secret values are never persisted in portable project state
+- selected production media is copied into the granted job workspace before ArtifactStore promotion
+- provider/source IDs, creator/source-page information and license/provenance facts remain portable metadata
+- provider rate-limit, caching, attribution, download-tracking and licensing requirements must be enforced by each adapter
+- do not add provider-specific ranking state; reuse the existing relevance, cliché and reuse scoring
+- no scraping, stockpiling or mass-download workflow
+
+Success:
+
+- a SceneIntent can search multiple stock sources without changing core workflow
+- provider fallback remains capability-driven
+- selected assets retain enough provenance to audit their source and license path
+- free-provider integrations can be tested deterministically offline
+- commercial-provider promotion cannot succeed before licensing succeeds
+
 ## Later / optional
 
-- additional stock providers
 - additional TTS providers
 - Premiere/Final Cut exporters
 - richer quality plugins
