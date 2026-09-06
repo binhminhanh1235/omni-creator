@@ -937,17 +937,20 @@ fn is_sha256_hex_v1(value: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::Cell;
+    use std::{cell::Cell, fs};
 
     use chrono::Utc;
 
     use super::*;
     use crate::{
-        initial_studio_pack_catalog_v1, CreatorInputV1, SegmentV1, VisualCandidatePreview,
+        artifact_store::{AttemptOutputPromotion, AttemptPromotionRequest},
+        compile_creator_workflow_plan_v1, initial_studio_pack_catalog_v1,
+        materialize_creator_workflow_plan_v1, CreatorInputV1, LogicalUri, SegmentV1,
+        VisualCandidatePreview,
         VisualCandidateSignals, VisualPreviewKind, VoiceDirectionV1, CREATOR_CONTENT_SCHEMA_V1,
         CREATOR_CONTENT_VERSION_V1, CREATOR_SCENE_PLAN_SCHEMA_V1,
         CREATOR_SCENE_PLAN_VERSION_V1, SCENE_INTENT_SCHEMA, SCENE_INTENT_SCHEMA_VERSION,
-        SEGMENT_SCHEMA, SEGMENT_SCHEMA_VERSION,
+        SEGMENT_SCHEMA, SEGMENT_SCHEMA_VERSION, Workspace,
     };
 
     struct FixtureDiscovery {
@@ -1264,6 +1267,371 @@ mod tests {
         );
         approve_creator_generated_visual_v1(&mut plan, "SC001").unwrap();
         assert_eq!(plan.scenes[0].action, CreatorVisualActionV1::Generate);
+    }
+
+    struct FixtureAssetExecutor {
+        fetch_calls: Cell<usize>,
+        generate_calls: Cell<usize>,
+    }
+
+    impl FixtureAssetExecutor {
+        fn promote(
+            &self,
+            state_store: &mut StateStore,
+            artifact_store: &ArtifactStore,
+            job_id: &str,
+            scene: &SceneIntentV1,
+            artifact_type: &str,
+            metadata: serde_json::Value,
+        ) -> Result<Artifact> {
+            let attempt = state_store.start_attempt(job_id, Some("fixture-visual-executor"))?;
+            let staging_dir = artifact_store.data_root().join("cache").join("visual-fixture");
+            fs::create_dir_all(&staging_dir)?;
+            let source = staging_dir.join(format!("{job_id}.bin"));
+            fs::write(&source, format!("visual fixture for {}", scene.id).as_bytes())?;
+            let target_uri =
+                LogicalUri::parse(&format!("project://visual/{}/{}.bin", scene.id, job_id))?;
+            let artifacts = artifact_store.promote_attempt_outputs(
+                state_store,
+                AttemptPromotionRequest {
+                    attempt_id: attempt.attempt_id,
+                    job_id: job_id.to_owned(),
+                    outputs: vec![AttemptOutputPromotion {
+                        source: source.clone(),
+                        target_uri,
+                        artifact_type: artifact_type.to_owned(),
+                        metadata,
+                        expected_sha256: None,
+                    }],
+                    selected_output_index: 0,
+                },
+            )?;
+            let _ = fs::remove_file(source);
+            artifacts.into_iter().next().ok_or_else(|| {
+                Error::InvalidArtifact("fixture visual executor produced no artifact".to_owned())
+            })
+        }
+    }
+
+    impl CreatorVisualAssetExecutorV1 for FixtureAssetExecutor {
+        fn fetch_selected_stock_v1(
+            &self,
+            state_store: &mut StateStore,
+            artifact_store: &ArtifactStore,
+            job_id: &str,
+            scene: &SceneIntentV1,
+            candidate: &VisualCandidate,
+            target: &StudioPackRouteTargetV1,
+            routing: &VisualRoutingDecisionV1,
+        ) -> Result<Artifact> {
+            self.fetch_calls.set(self.fetch_calls.get() + 1);
+            self.promote(
+                state_store,
+                artifact_store,
+                job_id,
+                scene,
+                match candidate.media_type {
+                    VisualMediaType::Image => "image",
+                    VisualMediaType::Video => "video",
+                },
+                serde_json::json!({
+                    "source_provider": candidate.source_provider,
+                    "source_asset_id": candidate.source_asset_id,
+                    "selection_ref": candidate.selection_ref,
+                    "route_target": target,
+                    "visual_routing": routing,
+                }),
+            )
+        }
+
+        fn generate_visual_v1(
+            &self,
+            state_store: &mut StateStore,
+            artifact_store: &ArtifactStore,
+            job_id: &str,
+            scene: &SceneIntentV1,
+            target: &StudioPackRouteTargetV1,
+            routing: &VisualRoutingDecisionV1,
+        ) -> Result<Artifact> {
+            self.generate_calls.set(self.generate_calls.get() + 1);
+            self.promote(
+                state_store,
+                artifact_store,
+                job_id,
+                scene,
+                "image",
+                serde_json::json!({
+                    "source_provider": target.plugin_id,
+                    "capability": target.capability,
+                    "route_target": target,
+                    "visual_routing": routing,
+                }),
+            )
+        }
+    }
+
+    fn execution_fixture(
+        pack_id: &str,
+    ) -> (
+        tempfile::TempDir,
+        Workspace,
+        StateStore,
+        ArtifactStore,
+        Project,
+        EffectiveStudioPackV1,
+        CreatorContentV1,
+        CreatorScenePlanV1,
+    ) {
+        let temp = tempfile::tempdir().unwrap();
+        let workspace = Workspace::create(temp.path().join("data")).unwrap();
+        let state = StateStore::open(workspace.sqlite_path()).unwrap();
+        let pack = initial_studio_pack_catalog_v1()
+            .unwrap()
+            .resolve_v1(pack_id)
+            .unwrap();
+        let project = state
+            .create_project_with_studio_pack("Visual execution", Some(&pack.id))
+            .unwrap();
+        let workflow = compile_creator_workflow_plan_v1(&project, &pack).unwrap();
+        materialize_creator_workflow_plan_v1(&state, &workflow).unwrap();
+
+        let steps = state.list_project_steps(&project.id).unwrap();
+        let content_step = steps
+            .iter()
+            .find(|step| step.step == crate::CREATOR_STEP_CONTENT_PREPARE_V1)
+            .unwrap();
+        state
+            .set_step_status(&content_step.step_id, StepStatus::Succeeded)
+            .unwrap();
+        state.refresh_ready_steps(&project.id).unwrap();
+        let scene_step = state
+            .list_project_steps(&project.id)
+            .unwrap()
+            .into_iter()
+            .find(|step| step.step == crate::CREATOR_STEP_SCENE_PLAN_V1)
+            .unwrap();
+        state
+            .set_step_status(&scene_step.step_id, StepStatus::Succeeded)
+            .unwrap();
+        state.refresh_ready_steps(&project.id).unwrap();
+
+        let mut content = content();
+        content.project_id = project.id.clone();
+        let mut scene_plan = scene_plan("literal");
+        scene_plan.project_id = project.id.clone();
+        let artifacts = ArtifactStore::new(workspace.data_root()).unwrap();
+
+        (
+            temp,
+            workspace,
+            state,
+            artifacts,
+            project,
+            pack,
+            content,
+            scene_plan,
+        )
+    }
+
+    #[test]
+    fn review_blocked_scene_does_not_fetch_full_stock_asset() {
+        let (
+            _temp,
+            _workspace,
+            mut state,
+            artifacts,
+            project,
+            pack,
+            content,
+            scene_plan,
+        ) = execution_fixture("christian-cinematic");
+        let discovery = FixtureDiscovery {
+            calls: Cell::new(0),
+            inputs: vec![ranked_input(0.98)],
+            status: StockDiscoveryStatusV1::Complete,
+        };
+        let plan = plan_creator_visuals_v1(
+            &project,
+            &pack,
+            &content,
+            &scene_plan,
+            sha(),
+            &discovery,
+            &VisualRankingPolicy::default(),
+            VisualReviewOptions::default(),
+        )
+        .unwrap();
+        let executor = FixtureAssetExecutor {
+            fetch_calls: Cell::new(0),
+            generate_calls: Cell::new(0),
+        };
+
+        let outcome =
+            execute_creator_visual_plan_v1(&mut state, &artifacts, &plan, &scene_plan, &executor)
+                .unwrap();
+
+        assert!(!outcome.completed);
+        assert!(outcome.scenes[0].review_blocked);
+        assert_eq!(executor.fetch_calls.get(), 0);
+        assert!(state.list_project_jobs(&project.id).unwrap().is_empty());
+    }
+
+    #[test]
+    fn explicit_stock_selection_fetches_promotes_and_then_hits_verified_cache() {
+        let (
+            _temp,
+            _workspace,
+            mut state,
+            artifacts,
+            project,
+            pack,
+            content,
+            scene_plan,
+        ) = execution_fixture("christian-cinematic");
+        let discovery = FixtureDiscovery {
+            calls: Cell::new(0),
+            inputs: vec![ranked_input(0.98)],
+            status: StockDiscoveryStatusV1::Complete,
+        };
+        let mut plan = plan_creator_visuals_v1(
+            &project,
+            &pack,
+            &content,
+            &scene_plan,
+            sha(),
+            &discovery,
+            &VisualRankingPolicy::default(),
+            VisualReviewOptions::default(),
+        )
+        .unwrap();
+        select_creator_stock_candidate_v1(&mut plan, "SC001", "pexels:video:42").unwrap();
+        let executor = FixtureAssetExecutor {
+            fetch_calls: Cell::new(0),
+            generate_calls: Cell::new(0),
+        };
+
+        let first =
+            execute_creator_visual_plan_v1(&mut state, &artifacts, &plan, &scene_plan, &executor)
+                .unwrap();
+        assert!(first.completed);
+        assert!(!first.scenes[0].cache_hit);
+        assert_eq!(executor.fetch_calls.get(), 1);
+        let artifact = first.scenes[0].artifact.as_ref().unwrap();
+        assert!(artifacts.verify_artifact(artifact).unwrap());
+
+        let jobs = state.list_project_jobs(&project.id).unwrap();
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].status, StepStatus::Succeeded);
+        assert_eq!(state.list_attempts(&jobs[0].job_id).unwrap().len(), 1);
+
+        let second =
+            execute_creator_visual_plan_v1(&mut state, &artifacts, &plan, &scene_plan, &executor)
+                .unwrap();
+        assert!(second.completed);
+        assert!(second.scenes[0].cache_hit);
+        assert_eq!(executor.fetch_calls.get(), 1);
+        assert_eq!(state.list_project_jobs(&project.id).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn generated_route_dispatches_existing_generated_capability_without_stock_fetch() {
+        let (
+            _temp,
+            _workspace,
+            mut state,
+            artifacts,
+            project,
+            pack,
+            content,
+            mut scene_plan,
+        ) = execution_fixture("christian-cinematic");
+        scene_plan.scenes[0].scene_type = "conceptual".to_owned();
+        let discovery = FixtureDiscovery {
+            calls: Cell::new(0),
+            inputs: vec![ranked_input(0.99)],
+            status: StockDiscoveryStatusV1::Complete,
+        };
+        let plan = plan_creator_visuals_v1(
+            &project,
+            &pack,
+            &content,
+            &scene_plan,
+            sha(),
+            &discovery,
+            &VisualRankingPolicy::default(),
+            VisualReviewOptions::default(),
+        )
+        .unwrap();
+        let executor = FixtureAssetExecutor {
+            fetch_calls: Cell::new(0),
+            generate_calls: Cell::new(0),
+        };
+
+        let outcome =
+            execute_creator_visual_plan_v1(&mut state, &artifacts, &plan, &scene_plan, &executor)
+                .unwrap();
+
+        assert!(outcome.completed);
+        assert_eq!(executor.fetch_calls.get(), 0);
+        assert_eq!(executor.generate_calls.get(), 1);
+        assert_eq!(
+            plan.scenes[0]
+                .execution_target
+                .as_ref()
+                .unwrap()
+                .capability,
+            GENERATED_STILL_CAPABILITY_ROUTE_V1
+        );
+    }
+
+    #[test]
+    fn stick_route_dispatches_stick_capability_through_same_execution_boundary() {
+        let (
+            _temp,
+            _workspace,
+            mut state,
+            artifacts,
+            project,
+            pack,
+            content,
+            mut scene_plan,
+        ) = execution_fixture("christian-stick-explainer");
+        scene_plan.scenes[0].scene_type = "conceptual".to_owned();
+        let discovery = FixtureDiscovery {
+            calls: Cell::new(0),
+            inputs: Vec::new(),
+            status: StockDiscoveryStatusV1::Complete,
+        };
+        let plan = plan_creator_visuals_v1(
+            &project,
+            &pack,
+            &content,
+            &scene_plan,
+            sha(),
+            &discovery,
+            &VisualRankingPolicy::default(),
+            VisualReviewOptions::default(),
+        )
+        .unwrap();
+        let executor = FixtureAssetExecutor {
+            fetch_calls: Cell::new(0),
+            generate_calls: Cell::new(0),
+        };
+
+        let outcome =
+            execute_creator_visual_plan_v1(&mut state, &artifacts, &plan, &scene_plan, &executor)
+                .unwrap();
+
+        assert!(outcome.completed);
+        assert_eq!(executor.generate_calls.get(), 1);
+        assert_eq!(
+            plan.scenes[0]
+                .execution_target
+                .as_ref()
+                .unwrap()
+                .capability,
+            STICK_FIGURE_VISUAL_CAPABILITY_V1
+        );
     }
 
     #[test]
