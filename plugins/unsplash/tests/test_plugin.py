@@ -376,7 +376,7 @@ class UnsplashPluginTests(unittest.TestCase):
                     client_factory=lambda access_key: fake,
                 )
         self.assertEqual(raised.exception.code, "WORKSPACE_REQUIRED")
-        self.assertEqual([event[0] for event in fake.events], ["detail", "track"])
+        self.assertEqual(fake.events, [])
 
 
 if __name__ == "__main__":
