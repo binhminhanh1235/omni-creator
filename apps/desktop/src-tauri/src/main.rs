@@ -7,26 +7,27 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use omnicreator_core::{
+    apply_local_plugin_update_v1, apply_studio_pack_edit_v1, build_asset_library_snapshot_v1,
     assemble_creator_production_pack_v1, build_studio_pack_ux_view_v1,
     build_studio_review_center_v1, compile_creator_workflow_plan_v1, dispatch_gpu_burst_v1,
     initial_studio_pack_catalog_v1, inspect_local_plugin_update_v1, install_local_plugin_folder_v1,
-    load_latest_creator_production_pack_v1, materialize_creator_workflow_plan_v1,
-    run_creator_content_scene_v1,
-    load_plugin_settings_ui, preview_plugin_capability_impact_v1, project_board_projection_v1,
-    reconcile_remote_session_v1, scan_plugin_inventory_v1, uninstall_user_plugin_v1,
-    update_local_plugin_folder_v1, ArtifactStore, AssetLibrarySnapshotV1,
-    ComputeProviderConnectionState, ComputeProviderLivenessPolicyV1, ComputeProviderRuntime,
-    CreatorContentSceneOptionsV1, CreatorInputV1, CreatorProductionPackOptionsV1,
-    ComputeProviderSchedulingSnapshotV1, ComputeRunningAssignmentV1, Error as CoreError,
-    GpuBatchBudgetOverviewV1, GpuBatchPlanRequestV1, GpuBatchPlanV1, GpuBurstDispatchSummaryV1,
-    GpuBurstPlanV1, GpuJobPreparationV1, GpuWorkbenchQueueSnapshotV1, HandoffManifest,
-    HttpComputeProvider, HttpComputeProviderConfigV1, LlmGatewayClient, LlmGatewayConfig,
-    LlmGatewayModel, MachineBinding, PluginCapabilityImpactV1, PluginInventoryEntryV1,
-    PluginInventoryReportV1, PluginLifecycleStateV1, PluginMutationKindV1, PluginRegistry,
-    PluginRuntimeReadinessV1, PluginUpdatePreviewV1, PortableStudioPackCatalogV1,
-    ProductionExportHistoryEntryV1, ProductionPackV1, ProductionPackageExportOutcomeV1,
-    ProductionPackageExporterV1, Project, ProjectBoardProjectionV1, ProjectDisplayStatus,
-    RemoteComputeJobSpecV1, RemoteReconciliationSummaryV1, RuntimeWorkloadEstimateV1, StateStore,
+    load_latest_creator_production_pack_v1, load_plugin_settings_ui,
+    materialize_creator_workflow_plan_v1, preview_plugin_capability_impact_v1,
+    project_board_projection_v1, reconcile_remote_session_v1, run_creator_content_scene_v1,
+    scan_plugin_inventory_v1, uninstall_user_plugin_v1, update_local_plugin_folder_v1,
+    ArtifactStore, AssetLibrarySnapshotV1, ComputeProviderConnectionState,
+    ComputeProviderLivenessPolicyV1, ComputeProviderRuntime, ComputeProviderSchedulingSnapshotV1,
+    ComputeRunningAssignmentV1, CreatorContentSceneOptionsV1, CreatorInputV1,
+    CreatorProductionPackOptionsV1, Error as CoreError, GpuBatchBudgetOverviewV1,
+    GpuBatchPlanRequestV1, GpuBatchPlanV1, GpuBurstDispatchSummaryV1, GpuBurstPlanV1,
+    GpuJobPreparationV1, GpuWorkbenchQueueSnapshotV1, HandoffManifest, HttpComputeProvider,
+    HttpComputeProviderConfigV1, LlmGatewayClient, LlmGatewayConfig, LlmGatewayModel,
+    MachineBinding, PluginCapabilityImpactV1, PluginInventoryEntryV1, PluginInventoryReportV1,
+    PluginLifecycleStateV1, PluginMutationKindV1, PluginRegistry, PluginRuntimeReadinessV1,
+    PluginUpdatePreviewV1, PortableStudioPackCatalogV1, ProductionExportHistoryEntryV1,
+    ProductionPackV1, ProductionPackageExportOutcomeV1, ProductionPackageExporterV1, Project,
+    ProjectBoardProjectionV1, ProjectDisplayStatus, RemoteComputeJobSpecV1,
+    RemoteReconciliationSummaryV1, RuntimeWorkloadEstimateV1, StateStore,
     StudioJobReviewSnapshotV1, StudioPackAvailabilityStatusV1, StudioPackOverridesV1,
     StudioPackRuntimeSnapshotV1, StudioPackUxViewV1, StudioPackV1, StudioReviewCenterV1, Workspace,
     WorkspaceSession, STUDIO_PACK_SCHEMA_V1, STUDIO_PACK_VERSION_V1,
@@ -665,8 +666,7 @@ fn create_project_from_studio_pack(
     let project = store
         .create_project_with_studio_pack(title.trim(), Some(&selected_id))
         .map_err(error_string)?;
-    let workflow =
-        compile_creator_workflow_plan_v1(&project, &effective).map_err(error_string)?;
+    let workflow = compile_creator_workflow_plan_v1(&project, &effective).map_err(error_string)?;
     materialize_creator_workflow_plan_v1(&store, &workflow).map_err(error_string)?;
     snapshot_from_active(&state)
 }
@@ -903,8 +903,7 @@ fn export_production_pack(
             production_export_view_v1(&store, &artifacts, &project_id, Some(outcome), None)
         }
         Err(error) => {
-            let diagnostic =
-                production_export_diagnostic_v1(&error, &assembled.production_pack);
+            let diagnostic = production_export_diagnostic_v1(&error, &assembled.production_pack);
             production_export_view_v1(&store, &artifacts, &project_id, None, Some(diagnostic))
         }
     }
@@ -1844,8 +1843,12 @@ fn production_export_view_v1(
         .map_err(error_string)?;
     let assembled = load_latest_creator_production_pack_v1(store, artifacts, project_id)
         .map_err(error_string)?;
-    let last_pack = latest_portable_production_pack_v1(artifacts, project_id, &history)
-        .or_else(|| assembled.as_ref().map(|outcome| outcome.production_pack.clone()));
+    let last_pack =
+        latest_portable_production_pack_v1(artifacts, project_id, &history).or_else(|| {
+            assembled
+                .as_ref()
+                .map(|outcome| outcome.production_pack.clone())
+        });
     let state = if let Some(outcome) = outcome.as_ref() {
         if outcome.cache_hit {
             "cached".to_owned()
