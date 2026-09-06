@@ -2245,6 +2245,7 @@ fn main() {
             rename_project,
             delete_project,
             production_export_status,
+            assemble_production_pack,
             export_production_pack,
             llmgateway_status,
             save_llmgateway_settings,
