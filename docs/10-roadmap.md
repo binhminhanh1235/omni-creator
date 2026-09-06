@@ -306,13 +306,64 @@ Success:
 - free-provider integrations can be tested deterministically offline
 - commercial-provider promotion cannot succeed before licensing succeeds
 
+## Phase 14 - Plugin Manager Local Lifecycle
+
+Promote the plugin packaging V2 work into a guarded local-only lifecycle before any marketplace or remote distribution.
+
+Implementation slices:
+
+- P0 — installed plugin inventory + lifecycle contract
+- P1 — safe local install / uninstall
+- P2 — update + compatibility
+- P3 — desktop Plugin Manager UX
+
+P0 architecture rules:
+
+- the existing `PluginRegistry` remains the single canonical discovered-plugin registry
+- built-in and machine-local user-installed roots are scanned together through the existing manifest validation path
+- enabled/disabled is machine-local lifecycle state, not portable Project/Artifact/Studio Pack truth
+- inventory is a projection over the canonical registry and exposes manifest identity/version/API/types/capabilities plus install source/trust
+- disabled plugins remain discoverable inventory entries; runtime readiness marks them unavailable instead of pretending the capability was never installed
+- accepted registry entries are API-compatible by construction; rejected/incompatible packages remain scan diagnostics until the later Needs Attention UX projects them
+- installation directories, staging/rollback bookkeeping and update availability remain outside the portable Data Root
+- Studio Pack definitions remain capability-oriented and availability stays derived from registry + machine-local runtime/lifecycle state
+
+P1 safety rules:
+
+- start with local folder/package input only
+- inspect and validate the manifest before activation
+- stage first, then atomically activate
+- rollback failed activation
+- uninstall must not mutate canonical Project/Artifact/Job state
+- inspection must never run arbitrary install scripts
+
+P2 adds local update detection, API/version compatibility gates, safe upgrade/rollback and capability-impact preview.
+
+P3 exposes Installed / Disabled / Needs Attention, enable/disable, install/update/uninstall, health/readiness, capabilities and compatibility warnings. Read-only Data Root sessions remain safe because Plugin Manager installation state is machine-local.
+
+Explicit non-goals for the initial Phase 14 slices:
+
+- marketplace
+- remote package registry
+- billing
+- arbitrary install scripts
+- automatic background updates
+- signed-package PKI before the local lifecycle is verified
+- cloud plugin distribution
+
+Success:
+
+- a creator can understand what plugins are installed on this machine without duplicating PluginRegistry state
+- moving the Data Root does not carry machine-specific installation state
+- disabled/incompatible plugins produce deterministic setup diagnostics rather than corrupting portable projects
+- future install/update UX has a rollback-safe local contract to build on
+
 ## Later / optional
 
 - additional TTS providers
 - Premiere/Final Cut exporters
 - richer quality plugins
 - cloud ComputeProviders
-- Plugin Manager install/update flows
 - signed packages
 - marketplace only if ecosystem demand exists
 - Resolve scripting only if interchange is insufficient

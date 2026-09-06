@@ -301,13 +301,16 @@ Stick Figure    READY
 - manifest validation
 - executable/process protocol
 
-### V2
-- Plugin Manager
-- install ZIP/package
-- enable/disable
-- configuration
-- permission review
-- updates
+### V2 — Phase 14
+- Plugin Manager local lifecycle
+- installed inventory from the canonical PluginRegistry
+- built-in + machine-local user-installed roots
+- enable/disable as machine-local lifecycle state
+- local package/folder install with pre-activation manifest validation
+- configuration + permission review
+- rollback-safe updates
+
+V2 must not create a second plugin registry. Portable Studio Pack/project data keeps capability requirements only; install source, trust, enabled state, staging paths and update availability stay machine-local. A disabled plugin remains discoverable inventory state and is projected as runtime-unavailable.
 
 ### Later
 - signatures
