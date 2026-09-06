@@ -141,7 +141,10 @@ impl CreatorVisualScenePlanV1 {
                         .ranked_stock
                         .iter()
                         .any(|candidate| candidate.candidate.candidate_id == selected)
-                    || self.execution_target.as_ref().is_none_or(|target| !is_stock_target_v1(target))
+                    || self
+                        .execution_target
+                        .as_ref()
+                        .map_or(true, |target| !is_stock_target_v1(target))
                 {
                     return Err(Error::InvalidContract(
                         "selected stock execution is inconsistent with the ranked review set"
@@ -157,7 +160,7 @@ impl CreatorVisualScenePlanV1 {
                     || self
                         .execution_target
                         .as_ref()
-                        .is_none_or(|target| !is_generation_target_v1(target))
+                        .map_or(true, |target| !is_generation_target_v1(target))
                 {
                     return Err(Error::InvalidContract(
                         "generated execution requires a generated/stick route target and no stock selection"
@@ -763,7 +766,7 @@ mod tests {
     }
 
     #[test]
-    fn Studio_Pack_generated_first_route_skips_stock_discovery() {
+    fn studio_pack_generated_first_route_skips_stock_discovery() {
         let pack = initial_studio_pack_catalog_v1()
             .unwrap()
             .resolve_v1("christian-cinematic")
@@ -904,7 +907,7 @@ mod tests {
     }
 
     #[test]
-    fn visual_quality_threshold_comes_from_resolved_Studio_Pack() {
+    fn visual_quality_threshold_comes_from_resolved_studio_pack() {
         let pack = initial_studio_pack_catalog_v1()
             .unwrap()
             .resolve_v1("christian-cinematic")
