@@ -7,12 +7,15 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use omnicreator_core::{
-    build_studio_pack_ux_view_v1, build_studio_review_center_v1, dispatch_gpu_burst_v1,
+    assemble_creator_production_pack_v1, build_studio_pack_ux_view_v1,
+    build_studio_review_center_v1, compile_creator_workflow_plan_v1, dispatch_gpu_burst_v1,
     initial_studio_pack_catalog_v1, inspect_local_plugin_update_v1, install_local_plugin_folder_v1,
+    load_latest_creator_production_pack_v1, materialize_creator_workflow_plan_v1,
     load_plugin_settings_ui, preview_plugin_capability_impact_v1, project_board_projection_v1,
     reconcile_remote_session_v1, scan_plugin_inventory_v1, uninstall_user_plugin_v1,
     update_local_plugin_folder_v1, ArtifactStore, AssetLibrarySnapshotV1,
     ComputeProviderConnectionState, ComputeProviderLivenessPolicyV1, ComputeProviderRuntime,
+    CreatorProductionPackOptionsV1,
     ComputeProviderSchedulingSnapshotV1, ComputeRunningAssignmentV1, Error as CoreError,
     GpuBatchBudgetOverviewV1, GpuBatchPlanRequestV1, GpuBatchPlanV1, GpuBurstDispatchSummaryV1,
     GpuBurstPlanV1, GpuJobPreparationV1, GpuWorkbenchQueueSnapshotV1, HandoffManifest,
@@ -657,9 +660,13 @@ fn create_project_from_studio_pack(
     }
 
     let store = writable_store(&state)?;
-    store
+    let effective = catalog.resolve_v1(&selected_id).map_err(error_string)?;
+    let project = store
         .create_project_with_studio_pack(title.trim(), Some(&selected_id))
         .map_err(error_string)?;
+    let workflow =
+        compile_creator_workflow_plan_v1(&project, &effective).map_err(error_string)?;
+    materialize_creator_workflow_plan_v1(&store, &workflow).map_err(error_string)?;
     snapshot_from_active(&state)
 }
 
@@ -814,23 +821,49 @@ fn production_export_status(
 }
 
 #[tauri::command]
-fn export_production_pack(
+fn assemble_production_pack(
     state: State<'_, DesktopState>,
-    production_pack: ProductionPackV1,
+    project_id: String,
 ) -> Result<ProductionExportViewV1, String> {
-    let project_id = production_pack.project_id.clone();
     let data_root = active_data_root(&state)?;
     let mut store = writable_store(&state)?;
     store.get_project(&project_id).map_err(error_string)?;
     let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
+    assemble_creator_production_pack_v1(
+        &mut store,
+        &artifacts,
+        &project_id,
+        &CreatorProductionPackOptionsV1::default(),
+    )
+    .map_err(error_string)?;
+    production_export_view_v1(&store, &artifacts, &project_id, None, None)
+}
+
+#[tauri::command]
+fn export_production_pack(
+    state: State<'_, DesktopState>,
+    project_id: String,
+) -> Result<ProductionExportViewV1, String> {
+    let data_root = active_data_root(&state)?;
+    let mut store = writable_store(&state)?;
+    store.get_project(&project_id).map_err(error_string)?;
+    let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
+    let assembled = assemble_creator_production_pack_v1(
+        &mut store,
+        &artifacts,
+        &project_id,
+        &CreatorProductionPackOptionsV1::default(),
+    )
+    .map_err(error_string)?;
     let exporter = ProductionPackageExporterV1::default();
 
-    match exporter.export_v1(&mut store, &artifacts, &production_pack) {
+    match exporter.export_v1(&mut store, &artifacts, &assembled.production_pack) {
         Ok(outcome) => {
             production_export_view_v1(&store, &artifacts, &project_id, Some(outcome), None)
         }
         Err(error) => {
-            let diagnostic = production_export_diagnostic_v1(&error, &production_pack);
+            let diagnostic =
+                production_export_diagnostic_v1(&error, &assembled.production_pack);
             production_export_view_v1(&store, &artifacts, &project_id, None, Some(diagnostic))
         }
     }
@@ -1768,7 +1801,10 @@ fn production_export_view_v1(
     let history = store
         .production_export_history_v1(project_id)
         .map_err(error_string)?;
-    let last_pack = latest_portable_production_pack_v1(artifacts, project_id, &history);
+    let assembled = load_latest_creator_production_pack_v1(store, artifacts, project_id)
+        .map_err(error_string)?;
+    let last_pack = latest_portable_production_pack_v1(artifacts, project_id, &history)
+        .or_else(|| assembled.as_ref().map(|outcome| outcome.production_pack.clone()));
     let state = if let Some(outcome) = outcome.as_ref() {
         if outcome.cache_hit {
             "cached".to_owned()
@@ -1780,11 +1816,12 @@ fn production_export_view_v1(
             .first()
             .map(|entry| entry.job.status.as_str().to_ascii_lowercase())
             .unwrap_or_else(|| "failed".to_owned())
+    } else if let Some(entry) = history.first() {
+        entry.job.status.as_str().to_ascii_lowercase()
+    } else if assembled.is_some() {
+        "assembled".to_owned()
     } else {
-        history
-            .first()
-            .map(|entry| entry.job.status.as_str().to_ascii_lowercase())
-            .unwrap_or_else(|| "not_exported".to_owned())
+        "not_assembled".to_owned()
     };
 
     Ok(ProductionExportViewV1 {
