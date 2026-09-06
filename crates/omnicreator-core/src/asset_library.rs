@@ -116,9 +116,9 @@ impl StateStore {
 
     pub fn list_asset_tags_v1(&self, artifact_id: &str) -> Result<Vec<String>> {
         require_library_asset_v1(self, artifact_id)?;
-        let mut statement = self.connection.prepare(
-            "SELECT tag FROM artifact_tags WHERE artifact_id=?1 ORDER BY tag",
-        )?;
+        let mut statement = self
+            .connection
+            .prepare("SELECT tag FROM artifact_tags WHERE artifact_id=?1 ORDER BY tag")?;
         Ok(statement
             .query_map([artifact_id], |row| row.get(0))?
             .collect::<std::result::Result<Vec<_>, _>>()?)
@@ -215,7 +215,10 @@ impl StateStore {
             values.sort();
         }
 
-        let duplicate_groups = sha_groups.values().filter(|values| values.len() > 1).count();
+        let duplicate_groups = sha_groups
+            .values()
+            .filter(|values| values.len() > 1)
+            .count();
         let source_reuse_groups = source_groups
             .values()
             .filter(|values| values.len() > 1)
@@ -533,8 +536,7 @@ fn normalize_usage_kind_v1(value: &str) -> Result<String> {
             .all(|character| character.is_ascii_alphanumeric() || "._-".contains(character))
     {
         return Err(Error::InvalidContract(
-            "asset usage kind must be 1..=64 lowercase-compatible identifier characters"
-                .to_owned(),
+            "asset usage kind must be 1..=64 lowercase-compatible identifier characters".to_owned(),
         ));
     }
     Ok(normalized)
@@ -677,9 +679,15 @@ mod tests {
             created_at,
         );
 
-        store.add_asset_tag_v1(&artifact.artifact_id, " Warm ").unwrap();
-        store.add_asset_tag_v1(&artifact.artifact_id, "warm").unwrap();
-        store.add_asset_tag_v1(&artifact.artifact_id, "Faith").unwrap();
+        store
+            .add_asset_tag_v1(&artifact.artifact_id, " Warm ")
+            .unwrap();
+        store
+            .add_asset_tag_v1(&artifact.artifact_id, "warm")
+            .unwrap();
+        store
+            .add_asset_tag_v1(&artifact.artifact_id, "Faith")
+            .unwrap();
         assert_eq!(
             store.list_asset_tags_v1(&artifact.artifact_id).unwrap(),
             vec!["faith".to_owned(), "warm".to_owned()]
@@ -799,7 +807,9 @@ mod tests {
             "portable-source",
             created_at,
         );
-        store.add_asset_tag_v1(&artifact.artifact_id, "portable").unwrap();
+        store
+            .add_asset_tag_v1(&artifact.artifact_id, "portable")
+            .unwrap();
         let reference = Utc.with_ymd_and_hms(2026, 9, 6, 12, 0, 0).unwrap();
         let before = store.asset_library_snapshot_v1(reference).unwrap();
         drop(store);
