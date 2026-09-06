@@ -803,6 +803,417 @@ fn remove_asset_tag(
         .map_err(error_string)
 }
 
+
+struct DesktopVisualRuntimeV1<'a> {
+    registry: &'a PluginRegistry,
+    runtime: &'a StudioPackRuntimeSnapshotV1,
+    runtime_root: PathBuf,
+}
+
+impl DesktopVisualRuntimeV1<'_> {
+    fn resolve_plugin_v1(
+        &self,
+        target: &StudioPackRouteTargetV1,
+        preferred_provider: Option<&str>,
+    ) -> CoreResult<&DiscoveredPlugin> {
+        let ready = |plugin_id: &str| {
+            matches!(
+                self.runtime.get_v1(plugin_id),
+                PluginRuntimeReadinessV1::Ready
+            )
+        };
+
+        if let Some(plugin_id) = preferred_provider.or(target.plugin_id.as_deref()) {
+            let plugin = self.registry.get(plugin_id).ok_or_else(|| {
+                CoreError::InvalidContract(format!(
+                    "visual plugin {plugin_id} is not installed"
+                ))
+            })?;
+            if !ready(&plugin.manifest.id) {
+                return Err(CoreError::InvalidContract(format!(
+                    "visual plugin {} is not runtime-ready",
+                    plugin.manifest.id
+                )));
+            }
+            if !plugin
+                .manifest
+                .capabilities
+                .iter()
+                .any(|capability| capability == &target.capability)
+            {
+                return Err(CoreError::InvalidContract(format!(
+                    "visual plugin {} does not provide {}",
+                    plugin.manifest.id, target.capability
+                )));
+            }
+            return Ok(plugin);
+        }
+
+        self.registry
+            .plugin_ids_for_capability(&target.capability)
+            .iter()
+            .filter(|plugin_id| ready(plugin_id))
+            .find_map(|plugin_id| self.registry.get(plugin_id))
+            .ok_or_else(|| {
+                CoreError::InvalidContract(format!(
+                    "no runtime-ready visual plugin provides {}",
+                    target.capability
+                ))
+            })
+    }
+
+    fn process_result_v1(
+        plugin: &DiscoveredPlugin,
+        response: PluginResponse,
+        operation: &str,
+    ) -> CoreResult<serde_json::Value> {
+        match response {
+            PluginResponse::Success { result, .. } => Ok(result),
+            PluginResponse::Failure { error, .. } => Err(CoreError::PluginProtocol {
+                plugin: plugin.manifest.id.clone(),
+                message: format!("{operation} failed with {}: {}", error.code, error.message),
+            }),
+        }
+    }
+
+    fn deterministic_signals_v1(
+        candidate: &VisualCandidate,
+        ordinal: usize,
+    ) -> VisualCandidateSignals {
+        let relevance = (0.96 - ordinal as f64 * 0.025).clamp(0.72, 0.96);
+        let quality = match (candidate.width, candidate.height) {
+            (Some(width), Some(height)) if width >= 1920 || height >= 1080 => 0.92,
+            (Some(width), Some(height)) if width >= 1280 || height >= 720 => 0.86,
+            _ => 0.78,
+        };
+        let editability = if candidate.media_type == omnicreator_core::VisualMediaType::Video {
+            0.88
+        } else {
+            0.82
+        };
+        VisualCandidateSignals {
+            semantic_relevance: relevance,
+            emotional_relevance: (relevance - 0.04).max(0.0),
+            narrative_purpose: (relevance - 0.02).max(0.0),
+            visual_quality: quality,
+            channel_continuity: 0.80,
+            editability,
+            usage_count: 0,
+            used_recently: false,
+        }
+    }
+
+    fn target_uri_v1(
+        scene_id: &str,
+        job_id: &str,
+        relative_output: &str,
+    ) -> CoreResult<omnicreator_core::LogicalUri> {
+        let extension = Path::new(relative_output)
+            .extension()
+            .and_then(|value| value.to_str())
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or("bin");
+        omnicreator_core::LogicalUri::parse(&format!(
+            "project://visual/{scene_id}/{job_id}.{extension}"
+        ))
+    }
+
+    fn finish_attempt_for_error_v1(
+        state_store: &mut StateStore,
+        attempt_id: &str,
+        error: &CoreError,
+    ) {
+        let code = match error {
+            CoreError::PluginProtocol { .. } => "PROVIDER_UNAVAILABLE",
+            CoreError::PluginTimeout { .. } => "NETWORK_TIMEOUT",
+            CoreError::PluginProcessExited { .. } | CoreError::PluginSpawn { .. } => {
+                "LOCAL_RUNTIME_CONTEXT_ERROR"
+            }
+            _ => "LOCAL_RUNTIME_CONTEXT_ERROR",
+        };
+        let _ = state_store.finish_attempt_failure(attempt_id, code);
+    }
+}
+
+impl CreatorVisualDiscoveryExecutorV1 for DesktopVisualRuntimeV1<'_> {
+    fn discover_stock_v1(
+        &self,
+        scene: &omnicreator_core::SceneIntentV1,
+        ordered_targets: &[StudioPackRouteTargetV1],
+    ) -> CoreResult<CreatorStockDiscoveryV1> {
+        let mut ranking_inputs = Vec::new();
+        let mut seen = BTreeSet::new();
+        let mut any_runtime_ready = false;
+
+        for target in ordered_targets {
+            let Ok(plugin) = self.resolve_plugin_v1(target, target.plugin_id.as_deref()) else {
+                continue;
+            };
+            any_runtime_ready = true;
+
+            let process = match PluginProcess::spawn(plugin, PluginProcessOptions::default()) {
+                Ok(process) => process,
+                Err(_) => continue,
+            };
+            let initialized = process.initialize(serde_json::json!({}));
+            if initialized
+                .ok()
+                .and_then(|call| Self::process_result_v1(plugin, call.response, "plugin.initialize").ok())
+                .is_none()
+            {
+                let _ = process.shutdown();
+                continue;
+            }
+
+            let media_type = match target.capability.as_str() {
+                "stock_image" => "image",
+                "stock_video" => "video",
+                _ => {
+                    let _ = process.shutdown();
+                    continue;
+                }
+            };
+            let call = process.execute(
+                "visual.resolve",
+                serde_json::json!({
+                    "scene": scene,
+                    "media_type": media_type,
+                }),
+            );
+            let result = match call
+                .ok()
+                .and_then(|call| Self::process_result_v1(plugin, call.response, "visual.resolve").ok())
+            {
+                Some(result) => result,
+                None => {
+                    let _ = process.shutdown();
+                    continue;
+                }
+            };
+            let _ = process.shutdown();
+
+            let candidates = result
+                .get("candidates")
+                .and_then(serde_json::Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            for raw in candidates {
+                let candidate: VisualCandidate = match serde_json::from_value(raw) {
+                    Ok(candidate) => candidate,
+                    Err(_) => continue,
+                };
+                if candidate.validate().is_err() || !seen.insert(candidate.candidate_id.clone()) {
+                    continue;
+                }
+                let ordinal = ranking_inputs.len();
+                ranking_inputs.push(VisualCandidateRankingInput {
+                    signals: Self::deterministic_signals_v1(&candidate, ordinal),
+                    candidate,
+                });
+            }
+        }
+
+        Ok(CreatorStockDiscoveryV1 {
+            status: if !ranking_inputs.is_empty() || any_runtime_ready {
+                StockDiscoveryStatusV1::Complete
+            } else {
+                StockDiscoveryStatusV1::Unavailable
+            },
+            ranking_inputs,
+        })
+    }
+}
+
+impl CreatorVisualAssetExecutorV1 for DesktopVisualRuntimeV1<'_> {
+    fn fetch_selected_stock_v1(
+        &self,
+        state_store: &mut StateStore,
+        artifact_store: &ArtifactStore,
+        request: CreatorVisualStockFetchRequestV1<'_>,
+    ) -> CoreResult<Artifact> {
+        let plugin = self.resolve_plugin_v1(
+            request.target,
+            Some(request.candidate.source_provider.as_str()),
+        )?;
+        let workspace = PluginJobWorkspace::create(&self.runtime_root, request.job_id)?;
+        let process = PluginProcess::spawn(plugin, PluginProcessOptions::default())?;
+        let initialize = process.initialize(workspace.initialization_context(plugin)?)?;
+        Self::process_result_v1(plugin, initialize.response, "plugin.initialize")?;
+
+        let started =
+            state_store.start_attempt(request.job_id, Some(&format!("plugin:{}", plugin.manifest.id)))?;
+        let result = (|| {
+            let call = process.execute(
+                "visual.fetch_selected",
+                serde_json::json!({
+                    "selection_ref": request.candidate.selection_ref,
+                    "quality_mode": "standard",
+                }),
+            )?;
+            let value =
+                Self::process_result_v1(plugin, call.response, "visual.fetch_selected")?;
+            let selected: SelectedVisualOutput = serde_json::from_value(value)?;
+            selected.validate()?;
+            if selected.source_provider != request.candidate.source_provider
+                || selected.source_asset_id != request.candidate.source_asset_id
+                || selected.selection_ref != request.candidate.selection_ref
+            {
+                return Err(CoreError::InvalidArtifact(
+                    "selected stock plugin output does not match reviewed candidate".to_owned(),
+                ));
+            }
+            let verified = workspace.verify_output_file(&selected.relative_output)?;
+            let mut promotion =
+                selected.promotion(Self::target_uri_v1(
+                    &request.scene.id,
+                    request.job_id,
+                    &selected.relative_output,
+                )?)?;
+            let metadata = promotion
+                .metadata
+                .as_object_mut()
+                .ok_or_else(|| {
+                    CoreError::InvalidArtifact(
+                        "selected visual metadata must be an object".to_owned(),
+                    )
+                })?;
+            metadata.insert(
+                "route_target".to_owned(),
+                serde_json::to_value(request.target)?,
+            );
+            metadata.insert(
+                "visual_routing".to_owned(),
+                serde_json::to_value(request.routing)?,
+            );
+
+            let artifacts = artifact_store.promote_attempt_outputs(
+                state_store,
+                omnicreator_core::artifact_store::AttemptPromotionRequest {
+                    attempt_id: started.attempt_id.clone(),
+                    job_id: request.job_id.to_owned(),
+                    outputs: vec![omnicreator_core::artifact_store::AttemptOutputPromotion {
+                        source: verified.path().to_path_buf(),
+                        target_uri: promotion.target_uri,
+                        artifact_type: promotion.artifact_type,
+                        metadata: promotion.metadata,
+                        expected_sha256: None,
+                    }],
+                    selected_output_index: 0,
+                },
+            )?;
+            artifacts.into_iter().next().ok_or_else(|| {
+                CoreError::InvalidArtifact(
+                    "selected stock plugin produced no promoted artifact".to_owned(),
+                )
+            })
+        })();
+
+        let _ = process.shutdown();
+        match result {
+            Ok(artifact) => Ok(artifact),
+            Err(error) => {
+                Self::finish_attempt_for_error_v1(state_store, &started.attempt_id, &error);
+                Err(error)
+            }
+        }
+    }
+
+    fn generate_visual_v1(
+        &self,
+        state_store: &mut StateStore,
+        artifact_store: &ArtifactStore,
+        request: CreatorVisualGenerationRequestV1<'_>,
+    ) -> CoreResult<Artifact> {
+        let plugin = self.resolve_plugin_v1(request.target, request.target.plugin_id.as_deref())?;
+        let workspace = PluginJobWorkspace::create(&self.runtime_root, request.job_id)?;
+        let process = PluginProcess::spawn(plugin, PluginProcessOptions::default())?;
+        let initialize = process.initialize(workspace.initialization_context(plugin)?)?;
+        Self::process_result_v1(plugin, initialize.response, "plugin.initialize")?;
+
+        let style = GeneratedImageStyleV1 {
+            preset: request
+                .target
+                .preset
+                .clone()
+                .unwrap_or_else(|| "default".to_owned()),
+            description: None,
+        };
+        let seed = request
+            .scene
+            .id
+            .bytes()
+            .fold(0_u64, |value, byte| value.wrapping_mul(131).wrapping_add(u64::from(byte)));
+        let generated = GeneratedImageRequestV1::from_scene_v1(
+            request.scene.clone(),
+            style,
+            GeneratedImageResolutionV1 {
+                width: 1280,
+                height: 720,
+            },
+            Some(seed),
+            BTreeMap::new(),
+        )?;
+
+        let started =
+            state_store.start_attempt(request.job_id, Some(&format!("plugin:{}", plugin.manifest.id)))?;
+        let result = (|| {
+            let call = process.execute("visual.generate", serde_json::to_value(&generated)?)?;
+            let value = Self::process_result_v1(plugin, call.response, "visual.generate")?;
+            let generated_result: GeneratedImagePluginResultV1 = serde_json::from_value(value)?;
+            let verified = workspace.verify_output_file(&generated_result.relative_output)?;
+
+            let target_uri = Self::target_uri_v1(
+                &request.scene.id,
+                request.job_id,
+                &generated_result.relative_output,
+            )?;
+            let artifacts = artifact_store.promote_attempt_outputs(
+                state_store,
+                omnicreator_core::artifact_store::AttemptPromotionRequest {
+                    attempt_id: started.attempt_id.clone(),
+                    job_id: request.job_id.to_owned(),
+                    outputs: vec![omnicreator_core::artifact_store::AttemptOutputPromotion {
+                        source: verified.path().to_path_buf(),
+                        target_uri,
+                        artifact_type: "image".to_owned(),
+                        metadata: serde_json::json!({
+                            "source_provider": plugin.manifest.id,
+                            "capability": request.target.capability,
+                            "route_target": request.target,
+                            "visual_routing": request.routing,
+                            "model": {
+                                "id": generated_result.model_id,
+                                "version": generated_result.model_version,
+                            },
+                            "seed": generated_result.seed,
+                            "prompt_sha256": generated_result.prompt_sha256,
+                            "settings_fingerprint": generated_result.settings_fingerprint,
+                            "provider_metadata": generated_result.metadata,
+                            "provenance": generated_result.provenance,
+                        }),
+                        expected_sha256: Some(generated_result.sha256),
+                    }],
+                    selected_output_index: 0,
+                },
+            )?;
+            artifacts.into_iter().next().ok_or_else(|| {
+                CoreError::InvalidArtifact(
+                    "generated visual plugin produced no promoted artifact".to_owned(),
+                )
+            })
+        })();
+
+        let _ = process.shutdown();
+        match result {
+            Ok(artifact) => Ok(artifact),
+            Err(error) => {
+                Self::finish_attempt_for_error_v1(state_store, &started.attempt_id, &error);
+                Err(error)
+            }
+        }
+    }
+}
+
 #[tauri::command]
 fn review_center(
     app: AppHandle,
