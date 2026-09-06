@@ -211,12 +211,17 @@ impl StateStore {
         self.get_step(root_step_id)?;
         let mut statement = self.connection.prepare(
             r#"
-            WITH RECURSIVE affected(id, depth) AS (
+            WITH RECURSIVE paths(id, depth) AS (
                 SELECT ?1, 0
-                UNION
-                SELECT d.downstream_step_id, affected.depth + 1
+                UNION ALL
+                SELECT d.downstream_step_id, paths.depth + 1
                 FROM dependencies d
-                JOIN affected ON d.upstream_step_id = affected.id
+                JOIN paths ON d.upstream_step_id = paths.id
+            ),
+            affected(id, depth) AS (
+                SELECT id, MIN(depth)
+                FROM paths
+                GROUP BY id
             )
             SELECT s.id,s.project_id,s.step_key,s.unit_key,s.status,s.input_hash
             FROM affected
