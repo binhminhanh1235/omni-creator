@@ -271,3 +271,16 @@ The plan contains no provider endpoints, model IDs, credentials, secret values, 
 **Reason:** Phases 0-14 produced the individual creator capabilities but the desktop still exposes them as separate islands and Production Pack export still accepts hand-authored internal JSON. Connecting those capabilities through the already-proven DAG closes a creator-workflow gap without introducing a shadow scheduler or new durable state model.
 
 Marketplace, package signing and remote registries remain optional ecosystem concerns and do not address this MVP orchestration gap.
+
+
+## ADR-035: Creator content and SceneIntent execution remains Job/Attempt/Artifact-native
+
+**Decision:** Phase 15 P1 introduces portable `CreatorInputV1`, `CreatorContentV1` and `CreatorScenePlanV1` contracts, but does not introduce a new orchestration state store.
+
+TOPIC input may use the existing LLMGateway content helper to produce narration. SCRIPT input is accepted directly so creator-authored text is not rewritten merely to enter the pipeline. Deterministic segmentation produces canonical `SegmentV1` records, then the existing structured SceneIntent helper generates exactly one provider-neutral `SceneIntentV1` per segment.
+
+Each content/scene execution is represented by the existing Job and Attempt contracts and produces a verified ArtifactStore artifact. Input hashes drive cache reuse and downstream invalidation. Provider credentials, endpoints, account/session identity and physical model routing remain machine-local LLMGateway concerns.
+
+Missing LLMGateway configuration or credentials are represented as the retryable error code `LLMGATEWAY_SETUP_REQUIRED`. Review Center reconstructs a blocking setup item with a Configure LLMGateway action from canonical Job/Attempt state rather than persisting a separate UX flag.
+
+**Reason:** The creator pipeline needs end-to-end resumability and explainable failure states, while the architecture already owns those semantics in WorkflowStep / Job / Attempt / ArtifactStore. P1 therefore composes existing primitives instead of creating a second pipeline engine.
