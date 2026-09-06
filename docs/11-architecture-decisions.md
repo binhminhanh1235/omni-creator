@@ -243,3 +243,16 @@ For the commercial P2 provider, Storyblocks is selected after license compatibil
 Storyblocks transaction requirements remain adapter-owned. Core may pass its existing canonical `project_id` as additive operation context; the Storyblocks end-user identifier, HMAC keys and test/production entitlement remain machine-local. Test mode can search/preview but cannot return a promotable selected output. Production selected download happens only after user/core selection and only into the granted job workspace.
 
 **Reason:** Stock APIs differ mainly in transport policy, attribution, caching, rate limits and licensing. Keeping those differences inside adapters lets additional providers participate in the existing relevance, cliche and reuse scoring without fragmenting SceneIntent, workflow state or ArtifactStore ownership.
+
+
+## ADR-033: Plugin lifecycle state is machine-local and registry-backed
+
+**Decision:** Phase 14 Plugin Manager uses the existing `PluginRegistry` as the single discovered-plugin registry. Built-in and user-installed plugin roots are scanned through the same manifest/API validation path. Installed-plugin inventory is a projection over that registry plus machine-local lifecycle metadata.
+
+Enabled/disabled state, install source, trust classification, installation paths, staging/rollback bookkeeping and update availability are machine-local. They are not Project, Artifact, Studio Pack or portable Data Root truth.
+
+A disabled plugin remains discoverable in inventory so its identity, version and capabilities are inspectable. Runtime readiness marks it unavailable with a deterministic lifecycle reason instead of removing all evidence that the plugin is installed. Studio Pack availability therefore continues to derive from canonical registry + ephemeral runtime readiness as established by ADR-027.
+
+Built-in plugins are trusted as application-shipped code. Locally installed packages are classified as local/unverified until a future signed-package phase defines stronger trust. Package inspection validates manifests without executing arbitrary install scripts.
+
+**Reason:** Plugin installation differs per machine even when creators share or move the same Data Root. Persisting machine installation truth in portable state would create false availability, leak absolute paths and duplicate registry ownership. Keeping lifecycle metadata machine-local preserves ADR-024 portability while still allowing safe install/update UX to evolve.
