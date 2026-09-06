@@ -1,0 +1,37 @@
+schema: omnicreator.plugin-manifest
+schema_version: 1
+id: storyblocks
+name: Storyblocks Visuals
+version: 1.0.0
+api_version: 1
+
+types:
+  - visual
+
+entrypoint:
+  command: python3
+  args:
+    - plugin.py
+
+capabilities:
+  - stock_video
+  - stock_image
+  - preview_first_search
+  - selected_asset_download
+  - license_gated_download
+
+scene_types:
+  - literal
+  - emotional
+  - conceptual
+
+permissions:
+  network:
+    - api.storyblocks.com
+    - d2v9y0dukr6mq2.cloudfront.net
+    - d1yn1kh78jj1rr.cloudfront.net
+  filesystem:
+    - job-workspace
+
+settings:
+  schema: settings.schema.json

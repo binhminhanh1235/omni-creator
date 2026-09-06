@@ -1,0 +1,67 @@
+{
+  "type": "object",
+  "title": "Storyblocks Visuals",
+  "description": "Preview-first Storyblocks image/video search with HMAC authentication and production-license-gated selected downloads.",
+  "properties": {
+    "media_type": {
+      "type": "string",
+      "title": "Media type",
+      "enum": ["video", "image", "both"],
+      "default": "video"
+    },
+    "per_query": {
+      "type": "integer",
+      "title": "Candidates per query",
+      "minimum": 1,
+      "maximum": 80,
+      "default": 8
+    },
+    "orientation": {
+      "type": "string",
+      "title": "Orientation",
+      "description": "Auto derives the provider-specific orientation from SceneIntent.",
+      "enum": ["auto", "all", "horizontal", "vertical"],
+      "default": "auto",
+      "x-omnicreator-visibility": "advanced"
+    },
+    "safe_search": {
+      "type": "boolean",
+      "title": "Safe search",
+      "default": true,
+      "x-omnicreator-visibility": "advanced"
+    },
+    "sort_by": {
+      "type": "string",
+      "title": "Result order",
+      "enum": ["most_relevant", "most_downloaded", "most_recent", "trending_now", "undiscovered"],
+      "default": "most_relevant",
+      "x-omnicreator-visibility": "advanced"
+    },
+    "public_key_env": {
+      "type": "string",
+      "title": "Public key environment variable",
+      "default": "STORYBLOCKS_PUBLIC_KEY",
+      "x-omnicreator-visibility": "advanced"
+    },
+    "private_key_env": {
+      "type": "string",
+      "title": "Private key environment variable",
+      "default": "STORYBLOCKS_PRIVATE_KEY",
+      "x-omnicreator-visibility": "advanced"
+    },
+    "user_id_env": {
+      "type": "string",
+      "title": "Storyblocks user ID environment variable",
+      "description": "Stable machine-local identifier for the licensed end user.",
+      "default": "STORYBLOCKS_USER_ID",
+      "x-omnicreator-visibility": "advanced"
+    },
+    "api_mode_env": {
+      "type": "string",
+      "title": "API mode environment variable",
+      "description": "Set STORYBLOCKS_API_MODE=production only for production API credentials. Test mode may search but cannot produce promotable selected assets.",
+      "default": "STORYBLOCKS_API_MODE",
+      "x-omnicreator-visibility": "advanced"
+    }
+  }
+}
