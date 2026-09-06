@@ -1265,3 +1265,54 @@ button { cursor: pointer; }
     flex: 1;
   }
 }
+
+
+.creator-stage-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.creator-stage-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 7px;
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.creator-stage-pill b {
+  font-weight: 700;
+}
+
+.creator-stage-pill small {
+  opacity: 0.68;
+  font-size: 9px;
+}
+
+.creator-stage-pill.succeeded,
+.creator-stage-pill.skipped {
+  border-color: rgba(83, 196, 133, 0.5);
+}
+
+.creator-stage-pill.running,
+.creator-stage-pill.queued {
+  border-color: rgba(91, 154, 255, 0.55);
+}
+
+.creator-stage-pill.retryable,
+.creator-stage-pill.failed,
+.creator-stage-pill.fatal {
+  border-color: rgba(255, 125, 102, 0.65);
+}
+
+.creator-stage-pill.notready,
+.creator-stage-pill.not_ready,
+.creator-stage-pill.stale {
+  opacity: 0.72;
+}
