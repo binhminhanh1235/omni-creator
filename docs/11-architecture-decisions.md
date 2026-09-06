@@ -216,3 +216,13 @@ The plugin advertises exact semantic capability `stick_figure_visual`, `visual_g
 Characters, actions and objects are renderer-local deterministic projections of SceneIntent. They are returned as artifact metadata, not stored as new core workflow state. The reference renderer writes offline SVG only inside the granted job workspace and returns portable relative output plus provenance.
 
 **Reason:** This validates ADR-006 in practice: a radically different visual style can plug into the frozen SceneIntent/Plugin API contracts without a second workflow engine, new provider-specific project fields or changes to Job/Attempt semantics.
+
+## ADR-031: Asset Library intelligence indexes canonical artifacts
+
+**Decision:** Phase 12 keeps `ArtifactStore` + SQLite `artifacts` canonical and adds relational tags/usages plus derived exact-hash/source-reuse projections. It does not create a second asset/blob database.
+
+Exact duplicate detection uses the SHA-256 already required on every artifact. Source reuse uses existing portable provenance identifiers when available. Last-used and used-recently are derived from idempotent usage rows. `AssetV1` is not expanded with workflow-specific usage state.
+
+Asset Library UI is a derived view. Writer sessions may mutate tags through the canonical StateStore; read-only sessions may inspect the same projection but cannot mutate it. Moving the Data Root preserves the projection because durable state contains artifact IDs, project/context IDs and logical URIs rather than machine paths.
+
+**Reason:** This provides useful reuse intelligence immediately without premature embeddings, vector databases, background indexing services or provider-specific project state. More expensive semantic/visual similarity can be added later only if library scale justifies it.
