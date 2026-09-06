@@ -4,17 +4,15 @@ use chrono::{TimeZone, Utc};
 use omnicreator_core::{
     compile_creator_workflow_plan_v1, default_segment_tts_compute_requirements_v1,
     dispatch_creator_voice_burst_v1, initial_studio_pack_catalog_v1,
-    materialize_creator_workflow_plan_v1, plan_creator_voice_orchestration_v1,
-    ComputeDeviceV1, ComputeJobDispatchAckV1, ComputeJobDispatchV1,
-    ComputeProviderCapabilitiesV1, ComputeProviderConnectionState, ComputeProviderExecution,
-    ComputeProviderSchedulingSnapshotV1, ComputeProviderSessionIdentityV1,
-    ComputeProviderSessionV1, ComputeRemoteJournalEntryV1, CreatorContentV1, CreatorInputV1,
-    CreatorVoiceRuntimeV1, Error, PronunciationRuleV1, Result, SegmentV1,
-    SegmentTtsLockStateV1, StateStore, StepStatus, VoiceDirectionV1, VoiceIdentityV1,
+    materialize_creator_workflow_plan_v1, plan_creator_voice_orchestration_v1, ComputeDeviceV1,
+    ComputeJobDispatchAckV1, ComputeJobDispatchV1, ComputeProviderCapabilitiesV1,
+    ComputeProviderConnectionState, ComputeProviderExecution, ComputeProviderSchedulingSnapshotV1,
+    ComputeProviderSessionIdentityV1, ComputeProviderSessionV1, ComputeRemoteJournalEntryV1,
+    CreatorContentV1, CreatorInputV1, CreatorVoiceRuntimeV1, Error, PronunciationRuleV1, Result,
+    SegmentTtsLockStateV1, SegmentV1, StateStore, StepStatus, VoiceDirectionV1, VoiceIdentityV1,
     VoiceModelIdentityV1, Workspace, CREATOR_CONTENT_SCHEMA_V1, CREATOR_CONTENT_VERSION_V1,
     CREATOR_STEP_CONTENT_PREPARE_V1, CREATOR_STEP_PRODUCTION_PACK_V1,
-    CREATOR_STEP_VOICE_PREPARE_V1, CREATOR_TTS_STEP_V1, SEGMENT_SCHEMA,
-    SEGMENT_SCHEMA_VERSION,
+    CREATOR_STEP_VOICE_PREPARE_V1, CREATOR_TTS_STEP_V1, SEGMENT_SCHEMA, SEGMENT_SCHEMA_VERSION,
 };
 
 struct Fixture {
@@ -56,7 +54,10 @@ fn fixture() -> Fixture {
         project_id: project.id.clone(),
         source: CreatorInputV1::script("First segment.\n\nSecond segment."),
         script: "First segment.\n\nSecond segment.".to_owned(),
-        segments: vec![segment("S001", 1, "First segment."), segment("S002", 2, "Second segment.")],
+        segments: vec![
+            segment("S001", 1, "First segment."),
+            segment("S002", 2, "Second segment."),
+        ],
     };
     content.validate_v1().unwrap();
 
@@ -210,7 +211,10 @@ fn p3_materializes_segment_tts_jobs_and_voice_parent_waits_for_them() {
     assert!(plan.completed_segment_ids.is_empty());
     assert!(plan.in_flight_job_ids.is_empty());
 
-    let steps = fixture.store.list_project_steps(&fixture.project_id).unwrap();
+    let steps = fixture
+        .store
+        .list_project_steps(&fixture.project_id)
+        .unwrap();
     let tts = steps
         .iter()
         .filter(|step| step.step == CREATOR_TTS_STEP_V1)
@@ -274,8 +278,7 @@ fn p3_retry_preserves_voice_take_history_and_uses_next_take_uri() {
         fail: true,
         ..Default::default()
     };
-    let failed =
-        dispatch_creator_voice_burst_v1(&mut fixture.store, &mut failing, &first).unwrap();
+    let failed = dispatch_creator_voice_burst_v1(&mut fixture.store, &mut failing, &first).unwrap();
     assert_eq!(failed.failures.len(), 2);
     assert!(failed.dispatched.is_empty());
 
@@ -366,8 +369,7 @@ fn p3_voice_settings_change_invalidates_only_voice_and_downstream_work() {
 
     for segment in &changed.segments {
         assert_ne!(
-            old_hashes[&segment.segment_id],
-            segment.job.input_hash,
+            old_hashes[&segment.segment_id], segment.job.input_hash,
             "{} must get a new hash when voice settings change",
             segment.segment_id
         );
