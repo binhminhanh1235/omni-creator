@@ -777,9 +777,17 @@ mod tests {
 
     #[test]
     fn stick_explainer_is_blocked_without_stick_capability() {
-        let catalog = initial_studio_pack_catalog_v1().unwrap();
-        let registry = checked_in_registry_v1();
-        let availability = catalog
+        let generated = ["generated_still"];
+        let stock = ["stock_image", "stock_video"];
+        let registry = registry_with_v1(
+            &[
+                ("generated", "visual", generated.as_slice()),
+                ("pexels", "visual", stock.as_slice()),
+            ],
+            true,
+        );
+        let availability = initial_studio_pack_catalog_v1()
+            .unwrap()
             .evaluate_availability_v1(
                 "christian-stick-explainer",
                 &registry,
@@ -797,6 +805,29 @@ mod tests {
                 && reason.code == StudioPackAvailabilityReasonCodeV1::RequiredCapabilityMissing
                 && reason.blocking
         }));
+    }
+
+    #[test]
+    fn checked_in_stick_plugin_unlocks_christian_stick_explainer() {
+        let registry = checked_in_registry_v1();
+        let availability = initial_studio_pack_catalog_v1()
+            .unwrap()
+            .evaluate_availability_v1(
+                "christian-stick-explainer",
+                &registry,
+                &StudioPackRuntimeSnapshotV1::default(),
+            )
+            .unwrap();
+
+        assert_eq!(
+            availability.status,
+            StudioPackAvailabilityStatusV1::Available
+        );
+        assert!(registry
+            .plugin_ids_for_capability(STICK_FIGURE_VISUAL_CAPABILITY_V1)
+            .iter()
+            .any(|plugin_id| plugin_id == "stick-figure-reference"));
+        assert!(availability.reasons.is_empty());
     }
 
     #[test]
