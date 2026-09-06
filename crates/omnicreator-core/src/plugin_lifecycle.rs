@@ -208,7 +208,6 @@ pub fn scan_plugin_inventory_v1(
     }
 }
 
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PluginInstallOutcomeV1 {
     pub plugin_id: String,
@@ -288,8 +287,7 @@ pub fn install_local_plugin_folder_v1(
             )));
         }
 
-        let install_directory =
-            user_plugin_root.join(plugin_install_directory_name_v1(&plugin_id));
+        let install_directory = user_plugin_root.join(plugin_install_directory_name_v1(&plugin_id));
         if install_directory.exists() {
             return Err(Error::InvalidContract(format!(
                 "plugin id '{plugin_id}' already has a managed installation directory"
@@ -373,10 +371,7 @@ pub fn uninstall_user_plugin_v1(
 fn create_plugin_staging_session_v1(root: &Path, operation: &str) -> Result<PathBuf> {
     loop {
         let sequence = PLUGIN_STAGING_SEQUENCE_V1.fetch_add(1, Ordering::Relaxed);
-        let session = root.join(format!(
-            "{operation}-{}-{sequence}",
-            std::process::id()
-        ));
+        let session = root.join(format!("{operation}-{}-{sequence}", std::process::id()));
         match fs::create_dir(&session) {
             Ok(()) => return Ok(session),
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
@@ -637,7 +632,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn valid_local_plugin_folder_installs_without_executing_entrypoint() {
         let temp = tempdir().unwrap();
@@ -693,8 +687,7 @@ mod tests {
             "future_capability",
         );
 
-        let result =
-            install_local_plugin_folder_v1(source_root.join("future"), &[], &user_root);
+        let result = install_local_plugin_folder_v1(source_root.join("future"), &[], &user_root);
 
         assert!(matches!(result, Err(Error::InvalidContract(_))));
         assert!(scan_plugin_roots(&[user_root.clone()]).registry.is_empty());
@@ -762,11 +755,7 @@ mod tests {
         )
         .unwrap();
 
-        let result = install_local_plugin_folder_v1(
-            source_root.join("candidate"),
-            &[],
-            &user_root,
-        );
+        let result = install_local_plugin_folder_v1(source_root.join("candidate"), &[], &user_root);
 
         assert!(matches!(result, Err(Error::InvalidContract(_))));
         assert!(outside.exists());
@@ -792,12 +781,8 @@ mod tests {
             "generated_still",
         );
 
-        let installed = install_local_plugin_folder_v1(
-            source_root.join("candidate"),
-            &[],
-            &user_root,
-        )
-        .unwrap();
+        let installed =
+            install_local_plugin_folder_v1(source_root.join("candidate"), &[], &user_root).unwrap();
         assert!(installed.install_directory.exists());
 
         let removed = uninstall_user_plugin_v1("remove-me", &[], &user_root).unwrap();
@@ -827,8 +812,7 @@ mod tests {
             "stock_video",
         );
 
-        let result =
-            uninstall_user_plugin_v1("shipped-plugin", &[built_in.clone()], &user_root);
+        let result = uninstall_user_plugin_v1("shipped-plugin", &[built_in.clone()], &user_root);
 
         assert!(matches!(result, Err(Error::InvalidContract(_))));
         assert!(scan_plugin_roots(&[built_in])

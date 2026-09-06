@@ -408,7 +408,6 @@ fn set_plugin_enabled(
     plugin_inventory(app)
 }
 
-
 #[tauri::command]
 fn install_plugin_from_folder(
     app: AppHandle,
