@@ -482,3 +482,55 @@ Checked-in runtime capability inventory for P1 is intentionally derived from rea
 - Generated Image API: `generated_still`, `visual_generate`, `api_execution`
 
 There is no stick-figure plugin on current main. `Christian Stick Explainer` therefore requires the explicit semantic capability `stick_figure_visual` and remains unavailable until a compatible visual plugin advertises that capability. Generic generated-image capability is not treated as an equivalent substitute.
+
+## Phase 10 P2 creator controls and Review Center
+
+P2 makes Studio Packs the creator-facing entry point without changing canonical ownership.
+
+### Basic
+
+Basic is the default new-production path. It presents the built-in Studio Pack catalog, derived availability and blocking/setup reasons before project creation. A project can only be created from an `AVAILABLE` pack. The selected resolved pack ID is written directly to the existing canonical `Project.studio_pack` field.
+
+The UI does not need to understand PluginRegistry internals. Availability still comes from the P1 evaluator over the canonical `PluginRegistry` plus an ephemeral machine-local runtime readiness snapshot. Credential readiness is derived from symbolic `*_env` plugin setting references and the local process environment; secret values are never serialized into the portable catalog or project state.
+
+### Customize
+
+Customize exposes only high-value contract fields already owned by Studio Pack v1:
+
+- curated preset IDs
+- automation level
+- existing quality thresholds
+
+A project customization is represented as an ordinary portable child `StudioPackV1` extending the selected built-in pack. It is saved in the portable Studio Pack catalog and resolved by the existing deterministic P0 resolver. The project continues to store only the selected Studio Pack ID.
+
+The desktop layer does not implement another inheritance algorithm. Resetting all project overrides returns the project to its built-in parent and removes the now-unused project-specific child definition.
+
+### Advanced
+
+Advanced shows resolved plugin/capability routes, target ordering, value sources and capability diagnostics. Existing LLMGateway, Compute Provider/GPU Workbench and Production Pack controls remain in their established machine-local/canonical boundaries.
+
+Creator overrides cannot inject arbitrary routes, provider endpoints, model request fields, credential values or absolute machine paths into Studio Pack state. Provider-specific controls remain in the owning plugin/runtime surface.
+
+### Automation levels
+
+`ASSISTED`, `BALANCED` and `AUTOPILOT` are deterministic policy projections over canonical workflow/review semantics:
+
+- Assisted never auto-advances creator review checkpoints.
+- Balanced may auto-advance deterministic/low-risk work and routes ambiguous decisions to review.
+- Autopilot may auto-advance low-risk work without an ambiguity checkpoint.
+- All three stop on blocking capability/setup errors and high-impact exceptions.
+
+These policies do not create Job/Attempt state and do not bypass the existing workflow state machine.
+
+### Review Center
+
+Review Center is reconstructed on demand from existing canonical state:
+
+- Studio Pack capability/setup availability
+- `WorkflowStep`
+- `Job`
+- `Attempt`
+
+Failed/retryable jobs expose a canonical retry preparation action. The action transitions the existing Job back to `READY` through the existing state-transition rules; it does not edit a UI-only review record. Once the canonical problem is resolved, the item disappears from the next projection.
+
+No Review Center database, JSON state file, browser local storage or shadow workflow state is introduced.

@@ -467,3 +467,270 @@ button { cursor: pointer; }
   .production-pack-head { flex-direction: column; }
   .production-history-row { grid-template-columns: 1fr; }
 }
+
+
+/* Phase 10 P2 — Studio Pack creator workflow */
+.studio-pack-creator,
+.review-center {
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 18px;
+  margin: 18px 0;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.studio-creator-head,
+.review-center-head,
+.studio-pack-card-head,
+.review-item-head {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.studio-mode-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.studio-mode-tab {
+  border: 0;
+  border-radius: 9px;
+  padding: 8px 11px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.studio-mode-tab.active {
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--text);
+}
+
+.studio-title-field {
+  margin: 16px 0;
+}
+
+.studio-pack-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.studio-pack-card {
+  min-height: 96px;
+  padding: 13px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.studio-pack-card:hover,
+.studio-pack-card.selected {
+  border-color: rgba(255, 255, 255, 0.32);
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.studio-pack-card.selected {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+
+.studio-pack-card-head span,
+.value-source,
+.studio-pack-project-tag {
+  display: inline-flex;
+  width: fit-content;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 7px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.studio-pack-card.ready .studio-pack-card-head span,
+.studio-pack-availability.ready strong {
+  opacity: 0.95;
+}
+
+.studio-pack-card.setup,
+.studio-pack-availability.setup {
+  border-style: dashed;
+}
+
+.studio-pack-card.blocked {
+  opacity: 0.66;
+}
+
+.studio-pack-project-tag {
+  margin-left: 7px;
+}
+
+.studio-pack-project-tag.missing {
+  opacity: 0.6;
+}
+
+.studio-mode-content {
+  margin-top: 14px;
+}
+
+.studio-pack-availability {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+
+.studio-pack-reasons {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.studio-customize-grid,
+.studio-quality-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.studio-create-actions {
+  margin-top: 14px;
+}
+
+.studio-route-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.studio-route-row {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.studio-route-row > strong {
+  margin-right: 8px;
+}
+
+.studio-route-row ol {
+  margin: 9px 0 0;
+  padding-left: 20px;
+}
+
+.studio-route-row li {
+  margin: 4px 0;
+}
+
+.studio-route-row li span {
+  display: inline-block;
+  min-width: 76px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.studio-route-row small {
+  display: block;
+  color: var(--muted);
+  margin-top: 7px;
+}
+
+.review-counts {
+  display: grid;
+  justify-items: end;
+  gap: 3px;
+}
+
+.review-counts span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.review-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.review-item {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+
+.review-item.blocking {
+  border-style: solid;
+}
+
+.review-item.action_required {
+  border-style: dashed;
+}
+
+.review-item-head > div {
+  display: grid;
+  gap: 3px;
+}
+
+.review-item-head span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.review-item p {
+  margin: 9px 0;
+  font-size: 13px;
+}
+
+.review-item-source {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.review-retry {
+  margin-top: 10px;
+}
+
+.review-clear {
+  display: grid;
+  gap: 5px;
+  padding: 14px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+}
+
+.review-clear span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media (max-width: 760px) {
+  .studio-creator-head,
+  .review-center-head {
+    flex-direction: column;
+  }
+
+  .studio-mode-tabs {
+    width: 100%;
+  }
+
+  .studio-mode-tab {
+    flex: 1;
+  }
+}

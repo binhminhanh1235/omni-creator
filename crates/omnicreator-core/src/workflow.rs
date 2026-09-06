@@ -3,8 +3,9 @@ use rusqlite::{params, types::Type, OptionalExtension};
 use uuid::Uuid;
 
 use crate::{
-    state::parse_step_status, Artifact, Attempt, Error, FailureDisposition, InvalidationImpact,
-    ProjectDisplayStatus, ReconciliationSummary, Result, StateStore, StepStatus, WorkflowStep,
+    state::{job_from_row, parse_step_status},
+    Artifact, Attempt, Error, FailureDisposition, InvalidationImpact, Job, ProjectDisplayStatus,
+    ReconciliationSummary, Result, StateStore, StepStatus, WorkflowStep,
 };
 
 impl StepStatus {
@@ -469,6 +470,44 @@ impl StateStore {
         })
     }
 
+    pub fn list_project_jobs(&self, project_id: &str) -> Result<Vec<Job>> {
+        self.get_project(project_id)?;
+        let mut statement = self.connection.prepare(
+            "SELECT id,project_id,step_key,unit_key,status,input_hash,selected_attempt_id,selected_artifact_id \
+             FROM jobs WHERE project_id=?1 ORDER BY step_key,unit_key,id",
+        )?;
+        let jobs = statement
+            .query_map([project_id], job_from_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(jobs)
+    }
+
+    pub fn list_project_steps(&self, project_id: &str) -> Result<Vec<WorkflowStep>> {
+        self.get_project(project_id)?;
+        let mut statement = self.connection.prepare(
+            "SELECT id,project_id,step_key,unit_key,status,input_hash \
+             FROM steps WHERE project_id=?1 ORDER BY step_key,unit_key,id",
+        )?;
+        let steps = statement
+            .query_map([project_id], step_from_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(steps)
+    }
+
+    pub fn prepare_job_retry(&mut self, job_id: &str) -> Result<Job> {
+        let job = self.get_job(job_id)?;
+        if !matches!(job.status, StepStatus::Failed | StepStatus::Retryable) {
+            return Err(Error::InvalidTransition(format!(
+                "job {job_id}: {} cannot be prepared for retry",
+                job.status.as_str()
+            )));
+        }
+        ensure_transition(job.status, StepStatus::Ready, "job", job_id)?;
+        self.connection
+            .execute("UPDATE jobs SET status='READY' WHERE id=?1", [job_id])?;
+        self.get_job(job_id)
+    }
+
     pub fn derive_project_status(&self, project_id: &str) -> Result<ProjectDisplayStatus> {
         self.get_project(project_id)?;
 
@@ -904,6 +943,30 @@ mod tests {
             job.selected_attempt.as_deref(),
             Some(second.attempt_id.as_str())
         );
+    }
+
+    #[test]
+    fn review_retry_preparation_preserves_attempt_history() {
+        let temp = tempfile::tempdir().unwrap();
+        let workspace = Workspace::create(temp.path().join("data")).unwrap();
+        let mut state = StateStore::open(workspace.sqlite_path()).unwrap();
+        let project = state.create_project("Review Retry").unwrap();
+        let job = state
+            .create_job(&project.id, "visual", "SC01", "input-hash")
+            .unwrap();
+
+        let first = state.start_attempt(&job.job_id, Some("worker-a")).unwrap();
+        state
+            .finish_attempt_failure(&first.attempt_id, "NETWORK_TIMEOUT")
+            .unwrap();
+
+        let prepared = state.prepare_job_retry(&job.job_id).unwrap();
+        assert_eq!(prepared.status, StepStatus::Ready);
+        assert_eq!(state.list_attempts(&job.job_id).unwrap().len(), 1);
+
+        let second = state.start_attempt(&job.job_id, Some("worker-b")).unwrap();
+        assert_eq!(second.status, StepStatus::Running);
+        assert_eq!(state.list_attempts(&job.job_id).unwrap().len(), 2);
     }
 
     #[test]

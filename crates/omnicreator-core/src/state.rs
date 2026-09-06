@@ -284,13 +284,26 @@ impl StateStore {
     }
 
     pub fn create_project(&self, title: &str) -> Result<Project> {
+        self.create_project_with_studio_pack(title, None)
+    }
+
+    pub fn create_project_with_studio_pack(
+        &self,
+        title: &str,
+        studio_pack: Option<&str>,
+    ) -> Result<Project> {
+        if studio_pack.is_some_and(|value| value.trim().is_empty()) {
+            return Err(Error::InvalidContract(
+                "project studio_pack must not be empty when present".to_owned(),
+            ));
+        }
         let now = Utc::now();
         let project = Project {
             id: format!("prj_{}", Uuid::new_v4().simple()),
             title: title.to_owned(),
             created_at: now,
             updated_at: now,
-            studio_pack: None,
+            studio_pack: studio_pack.map(ToOwned::to_owned),
             channel_profile: None,
             script_version: 1,
             production_lock: false,
@@ -311,6 +324,26 @@ impl StateStore {
             ],
         )?;
         Ok(project)
+    }
+
+    pub fn update_project_studio_pack(
+        &self,
+        id: &str,
+        studio_pack: Option<&str>,
+    ) -> Result<Project> {
+        if studio_pack.is_some_and(|value| value.trim().is_empty()) {
+            return Err(Error::InvalidContract(
+                "project studio_pack must not be empty when present".to_owned(),
+            ));
+        }
+        let changed = self.connection.execute(
+            "UPDATE projects SET studio_pack=?1, updated_at=?2 WHERE id=?3",
+            params![studio_pack, Utc::now().to_rfc3339(), id],
+        )?;
+        if changed == 0 {
+            return Err(Error::ProjectNotFound(id.to_owned()));
+        }
+        self.get_project(id)
     }
 
     pub fn update_project_title(&self, id: &str, title: &str) -> Result<Project> {
@@ -564,7 +597,7 @@ fn project_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Project> {
     })
 }
 
-fn job_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Job> {
+pub(crate) fn job_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Job> {
     let status: String = row.get(4)?;
     Ok(Job {
         job_id: row.get(0)?,
@@ -677,6 +710,34 @@ mod tests {
         let read_only = StateStore::open_read_only(workspace.sqlite_path()).unwrap();
         assert_eq!(read_only.list_projects().unwrap().len(), 1);
         assert!(read_only.create_project("Forbidden").is_err());
+    }
+
+    #[test]
+    fn project_studio_pack_binding_persists_canonically() {
+        let temp = tempfile::tempdir().unwrap();
+        let workspace = Workspace::create(temp.path().join("data")).unwrap();
+        let store = StateStore::open(workspace.sqlite_path()).unwrap();
+
+        let project = store
+            .create_project_with_studio_pack("Pack Project", Some("christian-cinematic"))
+            .unwrap();
+        assert_eq!(project.studio_pack.as_deref(), Some("christian-cinematic"));
+
+        let updated = store
+            .update_project_studio_pack(&project.id, Some("night-devotional"))
+            .unwrap();
+        assert_eq!(updated.studio_pack.as_deref(), Some("night-devotional"));
+
+        drop(store);
+        let reopened = StateStore::open(workspace.sqlite_path()).unwrap();
+        assert_eq!(
+            reopened
+                .get_project(&project.id)
+                .unwrap()
+                .studio_pack
+                .as_deref(),
+            Some("night-devotional")
+        );
     }
 
     #[test]
