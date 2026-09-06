@@ -45,7 +45,10 @@ pub struct CreatorRunCoordinatorV1 {
 
 impl CreatorRunCoordinatorV1 {
     pub fn is_terminal_v1(&self) -> bool {
-        matches!(self.action, CreatorRunActionV1::Export | CreatorRunActionV1::Complete)
+        matches!(
+            self.action,
+            CreatorRunActionV1::Export | CreatorRunActionV1::Complete
+        )
     }
 }
 
