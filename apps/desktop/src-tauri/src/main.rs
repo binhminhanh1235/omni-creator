@@ -28,8 +28,8 @@ use omnicreator_core::{
     ProjectBoardProjectionV1, ProjectDisplayStatus, RemoteComputeJobSpecV1,
     RemoteReconciliationSummaryV1, RuntimeWorkloadEstimateV1, StateStore,
     StudioJobReviewSnapshotV1, StudioPackAvailabilityStatusV1, StudioPackOverridesV1,
-    StudioPackRuntimeSnapshotV1, StudioPackUxViewV1, StudioPackV1, StudioReviewCenterV1, Workspace,
-    WorkspaceSession, STUDIO_PACK_SCHEMA_V1, STUDIO_PACK_VERSION_V1,
+    StudioPackRuntimeSnapshotV1, StudioPackUxViewV1, StudioPackV1, StudioReviewCenterV1,
+    WorkflowStep, Workspace, WorkspaceSession, STUDIO_PACK_SCHEMA_V1, STUDIO_PACK_VERSION_V1,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
@@ -125,6 +125,7 @@ struct ProjectView {
     project: Project,
     status: ProjectDisplayStatus,
     board: ProjectBoardProjectionV1,
+    steps: Vec<WorkflowStep>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1362,6 +1363,7 @@ fn snapshot_from_active(state: &State<'_, DesktopState>) -> Result<AppSnapshot, 
                 project,
                 status,
                 board,
+                steps,
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
