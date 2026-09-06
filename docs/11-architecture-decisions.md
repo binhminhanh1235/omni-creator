@@ -226,3 +226,14 @@ Exact duplicate detection uses the SHA-256 already required on every artifact. S
 Asset Library UI is a derived view. Writer sessions may mutate tags through the canonical StateStore; read-only sessions may inspect the same projection but cannot mutate it. Moving the Data Root preserves the projection because durable state contains artifact IDs, project/context IDs and logical URIs rather than machine paths.
 
 **Reason:** This provides useful reuse intelligence immediately without premature embeddings, vector databases, background indexing services or provider-specific project state. More expensive semantic/visual similarity can be added later only if library scale justifies it.
+
+
+## ADR-032: Stock provider policy stays inside VisualProvider adapters
+
+**Decision:** Phase 13 adds Pixabay, Unsplash and a later access-gated commercial stock provider behind the existing SceneIntent -> VisualCandidate -> selected Asset boundary. Core does not gain provider-specific search, attribution, licensing or ranking state.
+
+Provider search returns preview-safe `VisualCandidate` records plus opaque `selection_ref` values. Full-resolution/download URLs are resolved only after selection and are not persisted as canonical project truth. Selected production media is written into the granted job workspace and promoted only after core verification.
+
+A generic machine-local `provider-cache` permission may be granted when an upstream API requires response caching. Cache state is scoped by plugin and is never portable or canonical. Credentials remain environment-backed machine-local configuration.
+
+**Reason:** Stock APIs differ mainly in transport policy, attribution, caching, rate limits and licensing. Keeping those differences inside adapters lets additional providers participate in the existing relevance, cliche and reuse scoring without fragmenting SceneIntent, workflow state or ArtifactStore ownership.

@@ -1,0 +1,75 @@
+{
+  "type": "object",
+  "title": "Pixabay Visuals",
+  "description": "Preview-first Pixabay image/video search with a 24-hour provider response cache. The API key stays machine-local.",
+  "properties": {
+    "media_type": {
+      "type": "string",
+      "title": "Media type",
+      "description": "Search videos by default; use images or both when a scene benefits from stills.",
+      "enum": ["video", "image", "both"],
+      "default": "video"
+    },
+    "per_query": {
+      "type": "integer",
+      "title": "Candidates per query",
+      "description": "Pixabay requires at least 3 results per page.",
+      "minimum": 3,
+      "maximum": 80,
+      "default": 8
+    },
+    "orientation": {
+      "type": "string",
+      "title": "Orientation",
+      "description": "Auto derives horizontal/vertical from SceneIntent; square scenes use all orientations.",
+      "enum": ["auto", "all", "horizontal", "vertical"],
+      "default": "auto",
+      "x-omnicreator-visibility": "advanced"
+    },
+    "language": {
+      "type": "string",
+      "title": "Search language",
+      "description": "Pixabay search language code.",
+      "enum": ["cs", "da", "de", "en", "es", "fr", "id", "it", "hu", "nl", "no", "pl", "pt", "ro", "sk", "fi", "sv", "tr", "vi", "th", "bg", "ru", "el", "ja", "ko", "zh"],
+      "default": "en",
+      "x-omnicreator-visibility": "advanced"
+    },
+    "safe_search": {
+      "type": "boolean",
+      "title": "Safe search",
+      "description": "Request only results suitable for all ages.",
+      "default": true,
+      "x-omnicreator-visibility": "advanced"
+    },
+    "order": {
+      "type": "string",
+      "title": "Result order",
+      "enum": ["popular", "latest"],
+      "default": "popular",
+      "x-omnicreator-visibility": "advanced"
+    },
+    "minimum_width": {
+      "type": "integer",
+      "title": "Minimum width",
+      "minimum": 0,
+      "maximum": 7680,
+      "default": 1280,
+      "x-omnicreator-visibility": "advanced"
+    },
+    "minimum_height": {
+      "type": "integer",
+      "title": "Minimum height",
+      "minimum": 0,
+      "maximum": 4320,
+      "default": 720,
+      "x-omnicreator-visibility": "advanced"
+    },
+    "api_key_env": {
+      "type": "string",
+      "title": "API key environment variable",
+      "description": "Name of the machine-local environment variable containing the Pixabay API key. The secret value is never stored in OmniCreator project data.",
+      "default": "PIXABAY_API_KEY",
+      "x-omnicreator-visibility": "advanced"
+    }
+  }
+}

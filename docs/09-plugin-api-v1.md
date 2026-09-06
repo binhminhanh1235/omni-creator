@@ -149,6 +149,21 @@ Plugins should write only to granted workspace paths unless a permission explici
 
 Core later promotes verified outputs into the artifact store.
 
+
+### Provider cache permission
+
+Plugin Runtime v1 supports an additive machine-local `provider-cache` filesystem permission for provider adapters whose upstream API requires response caching.
+
+When declared, core grants a plugin-specific directory under the machine runtime root and includes its absolute path as optional `provider_cache` initialization context. The path is runtime configuration only:
+
+- it is never written into portable Project / SceneIntent / Asset / Artifact state
+- one plugin cannot receive another plugin's cache directory
+- cached provider responses must not contain API keys or other secret values
+- cache files are never promoted into ArtifactStore
+- loss of the machine-local cache must not corrupt canonical state
+
+The existing `job-workspace` permission remains the only place where production outputs may be written for later ArtifactStore promotion.
+
 ## Core ownership rule
 
 Plugins may not:
