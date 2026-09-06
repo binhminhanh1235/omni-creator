@@ -270,6 +270,14 @@ Architecture rules:
 - do not add provider-specific ranking state; reuse the existing relevance, cliché and reuse scoring
 - no scraping, stockpiling or mass-download workflow
 
+P0 Pixabay implementation notes:
+
+- checked-in `pixabay` plugin supports image + video preview-first search and selected-asset download
+- Pixabay's 24-hour API response caching requirement uses the generic machine-local `provider-cache` permission
+- search candidates expose preview URLs only; production download URLs are resolved after selection
+- API key values remain outside portable settings and cache keys/files
+- source provider/asset ID, creator, source page, attribution and Content License label flow through portable provenance
+
 Success:
 
 - a SceneIntent can search multiple stock sources without changing core workflow
