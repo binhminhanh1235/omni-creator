@@ -206,3 +206,13 @@ Machine-local plugin credential readiness is evaluated ephemerally from symbolic
 `GPU_PARTIAL` maps to the `NEEDS REVIEW` creator column because retryable partial GPU work requires action rather than representing a distinct lifecycle stage.
 
 Action summaries are derived from canonical counts. Restart reconciliation, Data Root moves and read-only opens therefore reconstruct the same board from the portable workspace. Studio Pack, Review Center, GPU Workbench and Production Pack remain the owning surfaces for their respective mutations.
+
+## ADR-030: Stick figure visuals reuse the existing visual.generate boundary
+
+**Decision:** Phase 11 implements stick figures as a normal process-isolated visual plugin consuming the existing SceneIntent-backed generated-image request and `visual.generate` operation.
+
+The plugin advertises exact semantic capability `stick_figure_visual`, `visual_generate` and deterministic-seed support. It deliberately does not advertise `generated_still`, preventing generic generated-image routes from selecting it accidentally. The existing visual-generation preflight accepts either `generated_still` or `stick_figure_visual` as a semantic generation capability while still requiring `visual_generate`.
+
+Characters, actions and objects are renderer-local deterministic projections of SceneIntent. They are returned as artifact metadata, not stored as new core workflow state. The reference renderer writes offline SVG only inside the granted job workspace and returns portable relative output plus provenance.
+
+**Reason:** This validates ADR-006 in practice: a radically different visual style can plug into the frozen SceneIntent/Plugin API contracts without a second workflow engine, new provider-specific project fields or changes to Job/Attempt semantics.
