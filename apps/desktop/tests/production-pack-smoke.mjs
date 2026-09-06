@@ -9,15 +9,22 @@ const app = fs.readFileSync(appPath, "utf8");
 const backend = fs.readFileSync(backendPath, "utf8");
 
 const appMarkers = [
+  "Assemble Production Pack",
   "Export to Resolve",
-  "Regenerate Production Pack",
+  "assemble_production_pack",
   "export_production_pack",
   "production_export_status",
-  "CANONICAL PRODUCTIONPACK V1 JSON",
+  "Canonical ProductionPack details",
   "LOGICAL PACKAGE LOCATION",
   "logical_uri",
   "Canonical export history",
 ];
+
+if (app.includes("CANONICAL PRODUCTIONPACK V1 JSON") || app.includes("productionPack: parsed")) {
+  throw new Error(
+    "Production Pack desktop regression: normal flow must not require hand-authored ProductionPack JSON",
+  );
+}
 
 for (const marker of appMarkers) {
   if (!app.includes(marker)) {
@@ -26,6 +33,9 @@ for (const marker of appMarkers) {
 }
 
 const backendMarkers = [
+  "assemble_creator_production_pack_v1",
+  "CreatorProductionPackOptionsV1",
+  "materialize_creator_workflow_plan_v1",
   "ProductionPackageExporterV1",
   "production_export_history_v1",
   "ProductionExportDiagnosticViewV1",
