@@ -68,6 +68,8 @@ jobs:
         run: node apps/desktop/tests/asset-library-smoke.mjs
       - name: Desktop Plugin Manager P1 regression
         run: node apps/desktop/tests/plugin-manager-p1-smoke.mjs
+      - name: Desktop Plugin Manager P2 regression
+        run: node apps/desktop/tests/plugin-manager-p2-smoke.mjs
       - name: Desktop clippy
         run: cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets -- -D warnings
       - name: Desktop tests

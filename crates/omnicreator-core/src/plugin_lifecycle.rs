@@ -5,9 +5,13 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
+use semver::Version;
 use serde::{Deserialize, Serialize};
 
-use crate::{scan_plugin_roots, Error, PluginDiagnostic, PluginRegistry, Result};
+use crate::{
+    scan_plugin_roots, Error, PluginDiagnostic, PluginManifest, PluginRegistry,
+    PortableStudioPackCatalogV1, Project, Result, StudioPackRouteTargetV1,
+};
 
 pub const PLUGIN_LIFECYCLE_SCHEMA_V1: &str = "omnicreator.plugin-lifecycle";
 pub const PLUGIN_LIFECYCLE_SCHEMA_VERSION_V1: u32 = 1;
@@ -366,6 +370,595 @@ pub fn uninstall_user_plugin_v1(
         plugin_id: plugin_id.to_owned(),
         removed_directory: plugin_directory,
     })
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct PluginCapabilityDeltaV1 {
+    pub added: Vec<String>,
+    pub removed: Vec<String>,
+    pub retained: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct PluginUpdatePreviewV1 {
+    pub plugin_id: String,
+    pub installed_version: String,
+    pub candidate_version: String,
+    pub installed_types: Vec<String>,
+    pub candidate_types: Vec<String>,
+    pub installed_capabilities: Vec<String>,
+    pub candidate_capabilities: Vec<String>,
+    pub capability_delta: PluginCapabilityDeltaV1,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct PluginUpdateOutcomeV1 {
+    pub preview: PluginUpdatePreviewV1,
+    pub install_directory: PathBuf,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PluginMutationKindV1 {
+    Disable,
+    Remove,
+    Update,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct PluginCapabilityImpactV1 {
+    pub plugin_id: String,
+    pub mutation: PluginMutationKindV1,
+    pub lost_capabilities: Vec<String>,
+    pub gained_capabilities: Vec<String>,
+    pub affected_pack_ids: Vec<String>,
+    pub blocking_pack_ids: Vec<String>,
+    pub affected_project_ids: Vec<String>,
+    pub blocking_project_ids: Vec<String>,
+}
+
+struct StagedPluginCandidateV1 {
+    session: PathBuf,
+    directory: PathBuf,
+    manifest: PluginManifest,
+}
+
+pub fn inspect_local_plugin_update_v1(
+    expected_plugin_id: &str,
+    source_directory: impl AsRef<Path>,
+    built_in_roots: &[PathBuf],
+    user_plugin_root: impl AsRef<Path>,
+) -> Result<PluginUpdatePreviewV1> {
+    let user_plugin_root = user_plugin_root.as_ref();
+    let staged = stage_local_plugin_candidate_v1(
+        source_directory.as_ref(),
+        user_plugin_root,
+        "update-inspect",
+    )?;
+    let result = inspect_staged_plugin_update_v1(
+        expected_plugin_id,
+        &staged.manifest,
+        built_in_roots,
+        user_plugin_root,
+    );
+    cleanup_plugin_staging_v1(&staged.session, user_plugin_root.join(".update-staging"));
+    result
+}
+
+pub fn update_local_plugin_folder_v1(
+    expected_plugin_id: &str,
+    source_directory: impl AsRef<Path>,
+    built_in_roots: &[PathBuf],
+    user_plugin_root: impl AsRef<Path>,
+) -> Result<PluginUpdateOutcomeV1> {
+    let user_plugin_root = user_plugin_root.as_ref();
+    let staged =
+        stage_local_plugin_candidate_v1(source_directory.as_ref(), user_plugin_root, "update")?;
+    let staging_root = user_plugin_root.join(".update-staging");
+
+    let result = (|| {
+        let preview = inspect_staged_plugin_update_v1(
+            expected_plugin_id,
+            &staged.manifest,
+            built_in_roots,
+            user_plugin_root,
+        )?;
+
+        let canonical_user_root = fs::canonicalize(user_plugin_root)?;
+        let user_scan = scan_plugin_roots(std::slice::from_ref(&canonical_user_root));
+        let current = user_scan.registry.get(expected_plugin_id).ok_or_else(|| {
+            Error::InvalidContract(format!(
+                "user-installed plugin '{expected_plugin_id}' was not found for update"
+            ))
+        })?;
+        let current_directory = fs::canonicalize(&current.directory)?;
+        if current_directory.parent() != Some(canonical_user_root.as_path()) {
+            return Err(Error::InvalidContract(format!(
+                "refusing to update plugin '{expected_plugin_id}' outside the managed user plugin root"
+            )));
+        }
+
+        let candidate_version = preview.candidate_version.clone();
+        let built_in_roots = built_in_roots.to_vec();
+        let verification_root = canonical_user_root.clone();
+        activate_plugin_update_v1(
+            &current_directory,
+            &staged.directory,
+            &staged.session,
+            || {
+                let mut roots = built_in_roots.clone();
+                roots.push(verification_root.clone());
+                let scan = scan_plugin_roots(&roots);
+                let plugin = scan.registry.get(expected_plugin_id).ok_or_else(|| {
+                    Error::InvalidContract(format!(
+                        "updated plugin '{expected_plugin_id}' did not pass post-activation discovery"
+                    ))
+                })?;
+                if plugin.manifest.version != candidate_version {
+                    return Err(Error::InvalidContract(format!(
+                        "updated plugin '{expected_plugin_id}' version mismatch after activation"
+                    )));
+                }
+                Ok(())
+            },
+        )?;
+
+        Ok(PluginUpdateOutcomeV1 {
+            preview,
+            install_directory: current_directory,
+        })
+    })();
+
+    cleanup_plugin_staging_v1(&staged.session, staging_root);
+    result
+}
+
+pub fn preview_plugin_capability_impact_v1(
+    registry: &PluginRegistry,
+    lifecycle: &PluginLifecycleStateV1,
+    catalog: &PortableStudioPackCatalogV1,
+    projects: &[Project],
+    plugin_id: &str,
+    mutation: PluginMutationKindV1,
+    update: Option<&PluginUpdatePreviewV1>,
+) -> Result<PluginCapabilityImpactV1> {
+    let plugin_id = plugin_id.trim();
+    if plugin_id.is_empty() {
+        return Err(Error::InvalidContract(
+            "plugin id must not be empty for impact preview".to_owned(),
+        ));
+    }
+    let current = registry.get(plugin_id).ok_or_else(|| {
+        Error::InvalidContract(format!(
+            "plugin '{plugin_id}' is not installed for impact preview"
+        ))
+    })?;
+
+    let replacement = match mutation {
+        PluginMutationKindV1::Update => {
+            let update = update.ok_or_else(|| {
+                Error::InvalidContract(
+                    "update impact preview requires an inspected update candidate".to_owned(),
+                )
+            })?;
+            if update.plugin_id != plugin_id {
+                return Err(Error::InvalidContract(format!(
+                    "update preview plugin id '{}' does not match selected plugin '{plugin_id}'",
+                    update.plugin_id
+                )));
+            }
+            Some((
+                update.candidate_types.as_slice(),
+                update.candidate_capabilities.as_slice(),
+            ))
+        }
+        PluginMutationKindV1::Disable | PluginMutationKindV1::Remove => None,
+    };
+
+    let current_capabilities = normalized_strings_v1(&current.manifest.capabilities);
+    let candidate_capabilities = replacement
+        .map(|(_, capabilities)| normalized_strings_v1(capabilities))
+        .unwrap_or_default();
+    let all_capabilities = current_capabilities
+        .iter()
+        .chain(candidate_capabilities.iter())
+        .cloned()
+        .collect::<BTreeSet<_>>();
+
+    let mut lost_capabilities = Vec::new();
+    let mut gained_capabilities = Vec::new();
+    for capability in all_capabilities {
+        let before = enabled_provider_exists_for_capability_v1(
+            registry,
+            lifecycle,
+            &capability,
+            plugin_id,
+            None,
+            false,
+        );
+        let after = enabled_provider_exists_for_capability_v1(
+            registry,
+            lifecycle,
+            &capability,
+            plugin_id,
+            replacement,
+            mutation != PluginMutationKindV1::Update,
+        );
+        if before && !after {
+            lost_capabilities.push(capability.clone());
+        } else if !before && after {
+            gained_capabilities.push(capability.clone());
+        }
+    }
+
+    let mut affected_pack_ids = Vec::new();
+    let mut blocking_pack_ids = Vec::new();
+    for definition in catalog.list_definitions_v1()? {
+        let effective = catalog.resolve_v1(&definition.id)?;
+        let mut affected = false;
+        let mut blocking = false;
+
+        for route in effective.config.routes.values() {
+            let before = route
+                .targets
+                .iter()
+                .map(|target| {
+                    target_has_enabled_provider_v1(
+                        registry, lifecycle, target, plugin_id, None, false,
+                    )
+                })
+                .collect::<Vec<_>>();
+            let after = route
+                .targets
+                .iter()
+                .map(|target| {
+                    target_has_enabled_provider_v1(
+                        registry,
+                        lifecycle,
+                        target,
+                        plugin_id,
+                        replacement,
+                        mutation != PluginMutationKindV1::Update,
+                    )
+                })
+                .collect::<Vec<_>>();
+
+            if before != after {
+                affected = true;
+            }
+            if before.iter().any(|available| *available)
+                && !after.iter().any(|available| *available)
+            {
+                blocking = true;
+            }
+        }
+
+        if affected {
+            affected_pack_ids.push(definition.id.clone());
+        }
+        if blocking {
+            blocking_pack_ids.push(definition.id.clone());
+        }
+    }
+
+    affected_pack_ids.sort();
+    affected_pack_ids.dedup();
+    blocking_pack_ids.sort();
+    blocking_pack_ids.dedup();
+
+    let affected_pack_set = affected_pack_ids.iter().collect::<BTreeSet<_>>();
+    let blocking_pack_set = blocking_pack_ids.iter().collect::<BTreeSet<_>>();
+    let mut affected_project_ids = projects
+        .iter()
+        .filter(|project| {
+            project
+                .studio_pack
+                .as_ref()
+                .is_some_and(|pack_id| affected_pack_set.contains(pack_id))
+        })
+        .map(|project| project.id.clone())
+        .collect::<Vec<_>>();
+    let mut blocking_project_ids = projects
+        .iter()
+        .filter(|project| {
+            project
+                .studio_pack
+                .as_ref()
+                .is_some_and(|pack_id| blocking_pack_set.contains(pack_id))
+        })
+        .map(|project| project.id.clone())
+        .collect::<Vec<_>>();
+    affected_project_ids.sort();
+    affected_project_ids.dedup();
+    blocking_project_ids.sort();
+    blocking_project_ids.dedup();
+
+    Ok(PluginCapabilityImpactV1 {
+        plugin_id: plugin_id.to_owned(),
+        mutation,
+        lost_capabilities,
+        gained_capabilities,
+        affected_pack_ids,
+        blocking_pack_ids,
+        affected_project_ids,
+        blocking_project_ids,
+    })
+}
+
+fn stage_local_plugin_candidate_v1(
+    source_directory: &Path,
+    user_plugin_root: &Path,
+    operation: &str,
+) -> Result<StagedPluginCandidateV1> {
+    let source_metadata = fs::symlink_metadata(source_directory)?;
+    if source_metadata.file_type().is_symlink() || !source_metadata.is_dir() {
+        return Err(Error::InvalidContract(format!(
+            "local plugin update source must be a real directory, not a symlink or file: {}",
+            source_directory.display()
+        )));
+    }
+
+    fs::create_dir_all(user_plugin_root)?;
+    let canonical_user_root = fs::canonicalize(user_plugin_root)?;
+    let source_directory = fs::canonicalize(source_directory)?;
+    if source_directory.starts_with(&canonical_user_root) {
+        return Err(Error::InvalidContract(format!(
+            "local plugin update source must be outside the managed user plugin root: {}",
+            canonical_user_root.display()
+        )));
+    }
+
+    let staging_root = canonical_user_root.join(".update-staging");
+    fs::create_dir_all(&staging_root)?;
+    let session = create_plugin_staging_session_v1(&staging_root, operation)?;
+    let directory = session.join("candidate");
+
+    let result = (|| {
+        copy_plugin_directory_v1(&source_directory, &directory)?;
+        let scan = scan_plugin_roots(std::slice::from_ref(&session));
+        if !scan.diagnostics.is_empty() || scan.registry.len() != 1 {
+            return Err(Error::InvalidContract(format!(
+                "local plugin update candidate failed canonical manifest validation: {}",
+                plugin_diagnostics_summary_v1(&scan.diagnostics)
+            )));
+        }
+        let manifest = scan
+            .registry
+            .plugins()
+            .next()
+            .expect("one staged update candidate was just counted")
+            .manifest
+            .clone();
+        Ok(StagedPluginCandidateV1 {
+            session: session.clone(),
+            directory,
+            manifest,
+        })
+    })();
+
+    if result.is_err() {
+        cleanup_plugin_staging_v1(&session, staging_root);
+    }
+    result
+}
+
+fn inspect_staged_plugin_update_v1(
+    expected_plugin_id: &str,
+    candidate: &PluginManifest,
+    built_in_roots: &[PathBuf],
+    user_plugin_root: &Path,
+) -> Result<PluginUpdatePreviewV1> {
+    let expected_plugin_id = expected_plugin_id.trim();
+    if expected_plugin_id.is_empty() {
+        return Err(Error::InvalidContract(
+            "expected plugin id must not be empty for update".to_owned(),
+        ));
+    }
+    if candidate.id != expected_plugin_id {
+        return Err(Error::InvalidContract(format!(
+            "update candidate plugin id '{}' does not match installed plugin '{expected_plugin_id}'",
+            candidate.id
+        )));
+    }
+
+    let built_in = scan_plugin_roots(built_in_roots);
+    if built_in.registry.get(expected_plugin_id).is_some() {
+        return Err(Error::InvalidContract(format!(
+            "built-in plugin '{expected_plugin_id}' cannot be updated from a local package"
+        )));
+    }
+
+    let user_scan = scan_plugin_roots(&[user_plugin_root.to_path_buf()]);
+    let installed = user_scan.registry.get(expected_plugin_id).ok_or_else(|| {
+        Error::InvalidContract(format!(
+            "user-installed plugin '{expected_plugin_id}' was not found for update"
+        ))
+    })?;
+
+    let installed_version = Version::parse(&installed.manifest.version).map_err(|error| {
+        Error::InvalidContract(format!(
+            "installed plugin '{expected_plugin_id}' version '{}' is not valid SemVer: {error}",
+            installed.manifest.version
+        ))
+    })?;
+    let candidate_version = Version::parse(&candidate.version).map_err(|error| {
+        Error::InvalidContract(format!(
+            "update candidate for '{expected_plugin_id}' version '{}' is not valid SemVer: {error}",
+            candidate.version
+        ))
+    })?;
+    if candidate_version <= installed_version {
+        return Err(Error::InvalidContract(format!(
+            "update candidate for '{expected_plugin_id}' must be newer than installed version {}; found {}",
+            installed.manifest.version, candidate.version
+        )));
+    }
+
+    let installed_types = normalized_strings_v1(&installed.manifest.types);
+    let candidate_types = normalized_strings_v1(&candidate.types);
+    let installed_capabilities = normalized_strings_v1(&installed.manifest.capabilities);
+    let candidate_capabilities = normalized_strings_v1(&candidate.capabilities);
+    let installed_set = installed_capabilities
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let candidate_set = candidate_capabilities
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+
+    Ok(PluginUpdatePreviewV1 {
+        plugin_id: expected_plugin_id.to_owned(),
+        installed_version: installed.manifest.version.clone(),
+        candidate_version: candidate.version.clone(),
+        installed_types,
+        candidate_types,
+        installed_capabilities,
+        candidate_capabilities,
+        capability_delta: PluginCapabilityDeltaV1 {
+            added: candidate_set.difference(&installed_set).cloned().collect(),
+            removed: installed_set.difference(&candidate_set).cloned().collect(),
+            retained: installed_set
+                .intersection(&candidate_set)
+                .cloned()
+                .collect(),
+        },
+    })
+}
+
+fn activate_plugin_update_v1<F>(
+    current_directory: &Path,
+    candidate_directory: &Path,
+    session: &Path,
+    verify: F,
+) -> Result<()>
+where
+    F: FnOnce() -> Result<()>,
+{
+    let previous = session.join("previous");
+    fs::rename(current_directory, &previous)?;
+
+    if let Err(error) = fs::rename(candidate_directory, current_directory) {
+        let rollback = fs::rename(&previous, current_directory);
+        let note = match rollback {
+            Ok(()) => "previous installation restored".to_owned(),
+            Err(rollback_error) => format!("rollback also failed: {rollback_error}"),
+        };
+        return Err(Error::InvalidContract(format!(
+            "failed to activate plugin update: {error}; {note}"
+        )));
+    }
+
+    if let Err(error) = verify() {
+        let failed_candidate = session.join("failed-candidate");
+        let _ = fs::rename(current_directory, &failed_candidate);
+        let rollback = fs::rename(&previous, current_directory);
+        let note = match rollback {
+            Ok(()) => "previous installation restored".to_owned(),
+            Err(rollback_error) => format!("rollback also failed: {rollback_error}"),
+        };
+        let _ = fs::remove_dir_all(&failed_candidate);
+        return Err(Error::InvalidContract(format!(
+            "plugin update failed post-activation verification: {error}; {note}"
+        )));
+    }
+
+    let _ = fs::remove_dir_all(&previous);
+    Ok(())
+}
+
+fn cleanup_plugin_staging_v1(session: &Path, staging_root: PathBuf) {
+    let _ = fs::remove_dir_all(session);
+    let _ = fs::remove_dir(staging_root);
+}
+
+fn normalized_strings_v1(values: &[String]) -> Vec<String> {
+    let mut values = values
+        .iter()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    values.sort();
+    values.dedup();
+    values
+}
+
+fn enabled_provider_exists_for_capability_v1(
+    registry: &PluginRegistry,
+    lifecycle: &PluginLifecycleStateV1,
+    capability: &str,
+    mutated_plugin_id: &str,
+    replacement: Option<(&[String], &[String])>,
+    remove_mutated: bool,
+) -> bool {
+    registry.plugins().any(|plugin| {
+        if !lifecycle.is_enabled_v1(&plugin.manifest.id) {
+            return false;
+        }
+        if plugin.manifest.id == mutated_plugin_id {
+            if remove_mutated {
+                return false;
+            }
+            let capabilities = replacement
+                .map(|(_, capabilities)| capabilities)
+                .unwrap_or(plugin.manifest.capabilities.as_slice());
+            return capabilities.iter().any(|value| value == capability);
+        }
+        plugin
+            .manifest
+            .capabilities
+            .iter()
+            .any(|value| value == capability)
+    })
+}
+
+fn target_has_enabled_provider_v1(
+    registry: &PluginRegistry,
+    lifecycle: &PluginLifecycleStateV1,
+    target: &StudioPackRouteTargetV1,
+    mutated_plugin_id: &str,
+    replacement: Option<(&[String], &[String])>,
+    remove_mutated: bool,
+) -> bool {
+    registry.plugins().any(|plugin| {
+        if !lifecycle.is_enabled_v1(&plugin.manifest.id) {
+            return false;
+        }
+
+        if plugin.manifest.id == mutated_plugin_id {
+            if remove_mutated {
+                return false;
+            }
+            let (types, capabilities) = replacement.unwrap_or((
+                plugin.manifest.types.as_slice(),
+                plugin.manifest.capabilities.as_slice(),
+            ));
+            return target_matches_contract_v1(target, &plugin.manifest.id, types, capabilities);
+        }
+
+        target_matches_contract_v1(
+            target,
+            &plugin.manifest.id,
+            &plugin.manifest.types,
+            &plugin.manifest.capabilities,
+        )
+    })
+}
+
+fn target_matches_contract_v1(
+    target: &StudioPackRouteTargetV1,
+    plugin_id: &str,
+    types: &[String],
+    capabilities: &[String],
+) -> bool {
+    let id_match = target
+        .plugin_id
+        .as_deref()
+        .map_or(true, |required| required == plugin_id);
+    id_match
+        && types.iter().any(|value| value == &target.plugin_type)
+        && capabilities.iter().any(|value| value == &target.capability)
 }
 
 fn create_plugin_staging_session_v1(root: &Path, operation: &str) -> Result<PathBuf> {
@@ -831,6 +1424,422 @@ mod tests {
             .registry
             .get("shipped-plugin")
             .is_some());
+    }
+
+    fn write_plugin_contract_v1(
+        root: &Path,
+        directory: &str,
+        id: &str,
+        version: &str,
+        api_version: u32,
+        plugin_type: &str,
+        capabilities: &[&str],
+    ) {
+        let plugin_dir = root.join(directory);
+        fs::create_dir_all(&plugin_dir).unwrap();
+        let manifest = json!({
+            "schema": PLUGIN_MANIFEST_SCHEMA,
+            "schema_version": PLUGIN_MANIFEST_SCHEMA_VERSION,
+            "id": id,
+            "name": format!("{id} Plugin"),
+            "version": version,
+            "api_version": api_version,
+            "types": [plugin_type],
+            "entrypoint": {"command": "plugin-bin", "args": []},
+            "capabilities": capabilities,
+            "scene_types": [],
+            "permissions": {"filesystem": ["job-workspace"], "network": []},
+            "settings": null
+        });
+        fs::write(
+            plugin_dir.join("plugin.json"),
+            serde_json::to_vec_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn update_inspection_reports_semver_and_capability_delta() {
+        let temp = tempdir().unwrap();
+        let user_root = temp.path().join("user");
+        let source_root = temp.path().join("source");
+        fs::create_dir_all(&user_root).unwrap();
+        fs::create_dir_all(&source_root).unwrap();
+        write_plugin_contract_v1(
+            &user_root,
+            "current",
+            "local-visual",
+            "1.0.0",
+            PLUGIN_API_VERSION,
+            "visual",
+            &["old_capability", "shared_capability"],
+        );
+        write_plugin_contract_v1(
+            &source_root,
+            "candidate",
+            "local-visual",
+            "1.1.0",
+            PLUGIN_API_VERSION,
+            "visual",
+            &["shared_capability", "new_capability"],
+        );
+
+        let preview = inspect_local_plugin_update_v1(
+            "local-visual",
+            source_root.join("candidate"),
+            &[],
+            &user_root,
+        )
+        .unwrap();
+
+        assert_eq!(preview.installed_version, "1.0.0");
+        assert_eq!(preview.candidate_version, "1.1.0");
+        assert_eq!(preview.capability_delta.added, vec!["new_capability"]);
+        assert_eq!(preview.capability_delta.removed, vec!["old_capability"]);
+        assert_eq!(preview.capability_delta.retained, vec!["shared_capability"]);
+        assert!(!user_root.join(".update-staging").exists());
+    }
+
+    #[test]
+    fn update_candidate_must_match_id_and_be_strictly_newer_semver() {
+        let temp = tempdir().unwrap();
+        let user_root = temp.path().join("user");
+        let source_root = temp.path().join("source");
+        fs::create_dir_all(&user_root).unwrap();
+        fs::create_dir_all(&source_root).unwrap();
+        write_plugin_contract_v1(
+            &user_root,
+            "current",
+            "local-visual",
+            "1.0.0",
+            PLUGIN_API_VERSION,
+            "visual",
+            &["generated_still"],
+        );
+        write_plugin_contract_v1(
+            &source_root,
+            "wrong-id",
+            "different-plugin",
+            "2.0.0",
+            PLUGIN_API_VERSION,
+            "visual",
+            &["generated_still"],
+        );
+        write_plugin_contract_v1(
+            &source_root,
+            "same-version",
+            "local-visual",
+            "1.0.0",
+            PLUGIN_API_VERSION,
+            "visual",
+            &["generated_still"],
+        );
+        write_plugin_contract_v1(
+            &source_root,
+            "bad-version",
+            "local-visual",
+            "nightly",
+            PLUGIN_API_VERSION,
+            "visual",
+            &["generated_still"],
+        );
+
+        assert!(inspect_local_plugin_update_v1(
+            "local-visual",
+            source_root.join("wrong-id"),
+            &[],
+            &user_root,
+        )
+        .is_err());
+        assert!(inspect_local_plugin_update_v1(
+            "local-visual",
+            source_root.join("same-version"),
+            &[],
+            &user_root,
+        )
+        .is_err());
+        assert!(inspect_local_plugin_update_v1(
+            "local-visual",
+            source_root.join("bad-version"),
+            &[],
+            &user_root,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn incompatible_api_update_is_rejected_before_activation() {
+        let temp = tempdir().unwrap();
+        let user_root = temp.path().join("user");
+        let source_root = temp.path().join("source");
+        fs::create_dir_all(&user_root).unwrap();
+        fs::create_dir_all(&source_root).unwrap();
+        write_plugin_contract_v1(
+            &user_root,
+            "current",
+            "local-visual",
+            "1.0.0",
+            PLUGIN_API_VERSION,
+            "visual",
+            &["generated_still"],
+        );
+        write_plugin_contract_v1(
+            &source_root,
+            "candidate",
+            "local-visual",
+            "2.0.0",
+            PLUGIN_API_VERSION + 1,
+            "visual",
+            &["generated_still"],
+        );
+
+        let result = update_local_plugin_folder_v1(
+            "local-visual",
+            source_root.join("candidate"),
+            &[],
+            &user_root,
+        );
+
+        assert!(matches!(result, Err(Error::InvalidContract(_))));
+        let current = scan_plugin_roots(std::slice::from_ref(&user_root));
+        assert_eq!(
+            current
+                .registry
+                .get("local-visual")
+                .unwrap()
+                .manifest
+                .version,
+            "1.0.0"
+        );
+    }
+
+    #[test]
+    fn user_plugin_update_atomically_replaces_installed_contract() {
+        let temp = tempdir().unwrap();
+        let user_root = temp.path().join("user");
+        let source_root = temp.path().join("source");
+        fs::create_dir_all(&user_root).unwrap();
+        fs::create_dir_all(&source_root).unwrap();
+        write_plugin_contract_v1(
+            &user_root,
+            "current",
+            "local-visual",
+            "1.0.0",
+            PLUGIN_API_VERSION,
+            "visual",
+            &["old_capability"],
+        );
+        fs::write(user_root.join("current/old-only.txt"), b"old").unwrap();
+        write_plugin_contract_v1(
+            &source_root,
+            "candidate",
+            "local-visual",
+            "1.2.0",
+            PLUGIN_API_VERSION,
+            "visual",
+            &["new_capability"],
+        );
+        fs::write(source_root.join("candidate/new-only.txt"), b"new").unwrap();
+
+        let outcome = update_local_plugin_folder_v1(
+            "local-visual",
+            source_root.join("candidate"),
+            &[],
+            &user_root,
+        )
+        .unwrap();
+
+        assert_eq!(outcome.preview.installed_version, "1.0.0");
+        assert_eq!(outcome.preview.candidate_version, "1.2.0");
+        assert!(outcome.install_directory.join("new-only.txt").is_file());
+        assert!(!outcome.install_directory.join("old-only.txt").exists());
+        let scan = scan_plugin_roots(std::slice::from_ref(&user_root));
+        let plugin = scan.registry.get("local-visual").unwrap();
+        assert_eq!(plugin.manifest.version, "1.2.0");
+        assert_eq!(plugin.manifest.capabilities, vec!["new_capability"]);
+        assert!(!user_root.join(".update-staging").exists());
+    }
+
+    #[test]
+    fn failed_post_activation_verification_restores_previous_plugin() {
+        let temp = tempdir().unwrap();
+        let current = temp.path().join("current");
+        let session = temp.path().join("session");
+        let candidate = session.join("candidate");
+        fs::create_dir_all(&current).unwrap();
+        fs::create_dir_all(&candidate).unwrap();
+        fs::write(current.join("version.txt"), b"old").unwrap();
+        fs::write(candidate.join("version.txt"), b"new").unwrap();
+
+        let result = activate_plugin_update_v1(&current, &candidate, &session, || {
+            Err(Error::InvalidContract(
+                "forced post-activation verification failure".to_owned(),
+            ))
+        });
+
+        assert!(matches!(result, Err(Error::InvalidContract(_))));
+        assert_eq!(fs::read(current.join("version.txt")).unwrap(), b"old");
+        assert!(!candidate.exists());
+    }
+
+    #[test]
+    fn built_in_plugin_local_update_is_rejected() {
+        let temp = tempdir().unwrap();
+        let built_in = temp.path().join("built-in");
+        let user_root = temp.path().join("user");
+        let source_root = temp.path().join("source");
+        fs::create_dir_all(&built_in).unwrap();
+        fs::create_dir_all(&user_root).unwrap();
+        fs::create_dir_all(&source_root).unwrap();
+        write_plugin_contract_v1(
+            &built_in,
+            "shipped",
+            "shipped-plugin",
+            "1.0.0",
+            PLUGIN_API_VERSION,
+            "visual",
+            &["stock_video"],
+        );
+        write_plugin_contract_v1(
+            &source_root,
+            "candidate",
+            "shipped-plugin",
+            "2.0.0",
+            PLUGIN_API_VERSION,
+            "visual",
+            &["stock_video"],
+        );
+
+        let result = inspect_local_plugin_update_v1(
+            "shipped-plugin",
+            source_root.join("candidate"),
+            std::slice::from_ref(&built_in),
+            &user_root,
+        );
+
+        assert!(matches!(result, Err(Error::InvalidContract(_))));
+        assert!(scan_plugin_roots(std::slice::from_ref(&built_in))
+            .registry
+            .get("shipped-plugin")
+            .is_some());
+    }
+
+    #[test]
+    fn capability_impact_projects_studio_pack_and_project_blockers_without_mutation() {
+        let temp = tempdir().unwrap();
+        let root = temp.path().join("plugins");
+        fs::create_dir_all(&root).unwrap();
+        write_plugin_contract_v1(
+            &root,
+            "pexels",
+            "pexels",
+            "1.0.0",
+            PLUGIN_API_VERSION,
+            "visual",
+            &["stock_video", "stock_image"],
+        );
+        write_plugin_contract_v1(
+            &root,
+            "generated",
+            "generated",
+            "1.0.0",
+            PLUGIN_API_VERSION,
+            "visual",
+            &["generated_still"],
+        );
+        write_plugin_contract_v1(
+            &root,
+            "stick",
+            "stick",
+            "1.0.0",
+            PLUGIN_API_VERSION,
+            "visual",
+            &["stick_figure_visual"],
+        );
+        let registry = scan_plugin_roots(std::slice::from_ref(&root)).registry;
+        let catalog = crate::initial_studio_pack_catalog_v1().unwrap();
+        let now = chrono::Utc::now();
+        let projects = vec![Project {
+            id: "project-stick".to_owned(),
+            title: "Stick Project".to_owned(),
+            created_at: now,
+            updated_at: now,
+            studio_pack: Some("christian-stick-explainer".to_owned()),
+            channel_profile: None,
+            script_version: 1,
+            production_lock: false,
+        }];
+        let catalog_before = catalog.canonical_json_v1().unwrap();
+        let projects_before = projects.clone();
+
+        let impact = preview_plugin_capability_impact_v1(
+            &registry,
+            &PluginLifecycleStateV1::default(),
+            &catalog,
+            &projects,
+            "stick",
+            PluginMutationKindV1::Remove,
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(impact.lost_capabilities, vec!["stick_figure_visual"]);
+        assert!(impact
+            .affected_pack_ids
+            .contains(&"christian-stick-explainer".to_owned()));
+        assert!(impact
+            .blocking_pack_ids
+            .contains(&"christian-stick-explainer".to_owned()));
+        assert_eq!(impact.affected_project_ids, vec!["project-stick"]);
+        assert_eq!(impact.blocking_project_ids, vec!["project-stick"]);
+        assert_eq!(catalog.canonical_json_v1().unwrap(), catalog_before);
+        assert_eq!(projects, projects_before);
+    }
+
+    #[test]
+    fn update_impact_uses_candidate_contract_without_activating_it() {
+        let temp = tempdir().unwrap();
+        let root = temp.path().join("plugins");
+        fs::create_dir_all(&root).unwrap();
+        write_plugin_contract_v1(
+            &root,
+            "visual",
+            "visual",
+            "1.0.0",
+            PLUGIN_API_VERSION,
+            "visual",
+            &["generated_still"],
+        );
+        let registry = scan_plugin_roots(std::slice::from_ref(&root)).registry;
+        let preview = PluginUpdatePreviewV1 {
+            plugin_id: "visual".to_owned(),
+            installed_version: "1.0.0".to_owned(),
+            candidate_version: "2.0.0".to_owned(),
+            installed_types: vec!["visual".to_owned()],
+            candidate_types: vec!["visual".to_owned()],
+            installed_capabilities: vec!["generated_still".to_owned()],
+            candidate_capabilities: vec!["stock_image".to_owned()],
+            capability_delta: PluginCapabilityDeltaV1 {
+                added: vec!["stock_image".to_owned()],
+                removed: vec!["generated_still".to_owned()],
+                retained: vec![],
+            },
+        };
+
+        let impact = preview_plugin_capability_impact_v1(
+            &registry,
+            &PluginLifecycleStateV1::default(),
+            &crate::initial_studio_pack_catalog_v1().unwrap(),
+            &[],
+            "visual",
+            PluginMutationKindV1::Update,
+            Some(&preview),
+        )
+        .unwrap();
+
+        assert_eq!(impact.lost_capabilities, vec!["generated_still"]);
+        assert_eq!(impact.gained_capabilities, vec!["stock_image"]);
+        assert_eq!(registry.get("visual").unwrap().manifest.version, "1.0.0");
     }
 
     #[test]
