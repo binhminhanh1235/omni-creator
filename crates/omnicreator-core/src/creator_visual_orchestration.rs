@@ -116,6 +116,22 @@ impl CreatorVisualScenePlanV1 {
                 ));
             }
         }
+        if self
+            .review
+            .as_ref()
+            .is_some_and(|review| review.scene_id != self.scene_id)
+        {
+            return Err(Error::InvalidContract(
+                "creator visual review scene_id mismatch".to_owned(),
+            ));
+        }
+        if self.execution_target.as_ref().is_some_and(|target| {
+            !self.route_targets.iter().any(|route_target| route_target == target)
+        }) {
+            return Err(Error::InvalidContract(
+                "creator visual execution target must come from the Studio Pack route".to_owned(),
+            ));
+        }
 
         match self.action {
             CreatorVisualActionV1::AwaitingStockSelection => {
@@ -137,7 +153,12 @@ impl CreatorVisualScenePlanV1 {
                     )
                 })?;
                 if self.routing.route != VisualRouteV1::StockReview
-                    || self.review.is_none()
+                    || self.review.as_ref().map_or(true, |review| {
+                        !review
+                            .candidates
+                            .iter()
+                            .any(|candidate| candidate.candidate_id == selected)
+                    })
                     || !self
                         .ranked_stock
                         .iter()
@@ -278,6 +299,15 @@ pub fn plan_creator_visuals_v1(
         route.validate_v1()?;
 
         let route_targets = route.targets.clone();
+        if let Some(target) = route_targets
+            .iter()
+            .find(|target| !is_stock_target_v1(target) && !is_generation_target_v1(target))
+        {
+            return Err(Error::InvalidContract(format!(
+                "unsupported creator visual route capability: {}",
+                target.capability
+            )));
+        }
         let generation_index = route_targets
             .iter()
             .position(is_generation_target_v1);
@@ -313,6 +343,9 @@ pub fn plan_creator_visuals_v1(
                 discovered.validate_v1(scene)?;
                 let ranked_stock =
                     rank_visual_candidates(scene, discovered.ranking_inputs, ranking_policy)?;
+                for ranked in &ranked_stock {
+                    stock_target_for_candidate_v1(&stock_targets, &ranked.candidate)?;
+                }
                 let routing = route_scene_visual_v1(
                     scene,
                     discovered.status,
@@ -440,6 +473,16 @@ pub fn select_creator_stock_candidate_v1(
             "stock selection is only valid for stock-review routes".to_owned(),
         ));
     }
+    if scene.review.as_ref().map_or(true, |review| {
+        !review
+            .candidates
+            .iter()
+            .any(|candidate| candidate.candidate_id == candidate_id)
+    }) {
+        return Err(Error::InvalidContract(format!(
+            "candidate {candidate_id} is outside the displayed review set"
+        )));
+    }
     let candidate = scene
         .ranked_stock
         .iter()
@@ -548,6 +591,18 @@ pub fn execute_creator_visual_plan_v1(
                 "creator visual workflow step is missing; materialize Phase 15 P0 first".to_owned(),
             )
         })?;
+
+    if visual_step.status == StepStatus::Succeeded
+        && plan.scenes.iter().any(|scene| {
+            matches!(
+                scene.action,
+                CreatorVisualActionV1::AwaitingStockSelection
+                    | CreatorVisualActionV1::AwaitingGenerationApproval
+            )
+        })
+    {
+        prepare_visual_aggregate_step_v1(state_store, &visual_step.step_id)?;
+    }
 
     let mut scenes = Vec::with_capacity(plan.scenes.len());
     let mut all_complete = true;
@@ -1335,9 +1390,9 @@ mod tests {
                     VisualMediaType::Video => "video",
                 },
                 serde_json::json!({
-                    "source_provider": candidate.source_provider,
-                    "source_asset_id": candidate.source_asset_id,
-                    "selection_ref": candidate.selection_ref,
+                    "source_provider": candidate.source_provider.clone(),
+                    "source_asset_id": candidate.source_asset_id.clone(),
+                    "selection_ref": candidate.selection_ref.clone(),
                     "route_target": target,
                     "visual_routing": routing,
                 }),
@@ -1361,8 +1416,8 @@ mod tests {
                 scene,
                 "image",
                 serde_json::json!({
-                    "source_provider": target.plugin_id,
-                    "capability": target.capability,
+                    "source_provider": target.plugin_id.clone(),
+                    "capability": target.capability.clone(),
                     "route_target": target,
                     "visual_routing": routing,
                 }),
