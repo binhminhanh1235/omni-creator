@@ -58,7 +58,11 @@ pub fn derive_creator_run_coordinator_v1(
     project_id: &str,
 ) -> Result<CreatorRunCoordinatorV1> {
     let project = state_store.get_project(project_id)?;
-    if project.studio_pack.as_deref().is_none_or(str::is_empty) {
+    if project
+        .studio_pack
+        .as_deref()
+        .map_or(true, str::is_empty)
+    {
         return Ok(snapshot(
             project_id,
             CreatorRunStageV1::ContentScene,
