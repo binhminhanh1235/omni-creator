@@ -236,4 +236,6 @@ Provider search returns preview-safe `VisualCandidate` records plus opaque `sele
 
 A generic machine-local `provider-cache` permission may be granted when an upstream API requires response caching. Cache state is scoped by plugin and is never portable or canonical. Credentials remain environment-backed machine-local configuration.
 
+For Unsplash specifically, API-policy behavior is adapter-owned: previews use returned hotlinked `photo.urls.*` URLs, attribution links carry OmniCreator UTM parameters, and selected use must complete the returned `photo.links.download_location` tracking request before the selected photo bytes can enter the job workspace. Tracking/download transport URLs do not become portable project state.
+
 **Reason:** Stock APIs differ mainly in transport policy, attribution, caching, rate limits and licensing. Keeping those differences inside adapters lets additional providers participate in the existing relevance, cliche and reuse scoring without fragmenting SceneIntent, workflow state or ArtifactStore ownership.
