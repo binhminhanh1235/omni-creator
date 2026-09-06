@@ -402,6 +402,6 @@ fn p3_voice_settings_change_invalidates_only_voice_and_downstream_work() {
             .find(|step| step.step == CREATOR_STEP_PRODUCTION_PACK_V1)
             .unwrap()
             .status,
-        StepStatus::Stale
+        StepStatus::NotReady
     );
 }
