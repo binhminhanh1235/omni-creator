@@ -5,22 +5,22 @@ use omnicreator_core::artifact_store::{AttemptOutputPromotion, AttemptPromotionR
 use omnicreator_core::{
     assemble_creator_production_pack_v1, compile_creator_workflow_plan_v1,
     default_segment_tts_compute_requirements_v1, derive_creator_run_coordinator_v1,
-    execute_creator_visual_plan_v1, initial_studio_pack_catalog_v1, materialize_creator_workflow_plan_v1, plan_creator_visuals_v1,
+    execute_creator_visual_plan_v1, initial_studio_pack_catalog_v1,
+    materialize_creator_workflow_plan_v1, plan_creator_visuals_v1,
     plan_creator_voice_orchestration_v1, run_creator_content_scene_v1, Artifact, ArtifactStore,
     ComputeDeviceV1, ComputeProviderCapabilitiesV1, ComputeProviderConnectionState,
     ComputeProviderSchedulingSnapshotV1, ComputeProviderSessionIdentityV1,
     ComputeProviderSessionV1, CreatorContentSceneOptionsV1, CreatorInputV1, CreatorLlmExecutorV1,
-    CreatorProductionPackOptionsV1, CreatorRunActionV1, CreatorRunStageV1,
-    CreatorStockDiscoveryV1, CreatorVisualAssetExecutorV1,
-    CreatorVisualDiscoveryExecutorV1, CreatorVisualGenerationRequestV1,
-    CreatorVisualPlanningOptionsV1, CreatorVisualStockFetchRequestV1, CreatorVoiceRuntimeV1, Error,
-    LogicalUri, PathResolver, ProductionPackageExporterV1, PronunciationRuleV1, Result,
-    SceneIntentV1, SegmentTtsLockStateV1, SegmentV1, StateStore, StepStatus,
-    StockDiscoveryStatusV1, StudioPackRouteTargetV1, VoiceIdentityV1, VoiceModelIdentityV1,
-    VoiceTimingCueV1, VoiceTimingV1, Workspace, CREATOR_STEP_PRODUCTION_PACK_V1,
-    CREATOR_STEP_VISUAL_PREPARE_V1, CREATOR_STEP_VOICE_PREPARE_V1, SCENE_INTENT_SCHEMA,
-    SCENE_INTENT_SCHEMA_VERSION, VOICE_AUDIO_ARTIFACT_TYPE_V1, VOICE_TIMING_ARTIFACT_TYPE_V1,
-    VOICE_TIMING_SCHEMA_V1,
+    CreatorProductionPackOptionsV1, CreatorRunActionV1, CreatorRunStageV1, CreatorStockDiscoveryV1,
+    CreatorVisualAssetExecutorV1, CreatorVisualDiscoveryExecutorV1,
+    CreatorVisualGenerationRequestV1, CreatorVisualPlanningOptionsV1,
+    CreatorVisualStockFetchRequestV1, CreatorVoiceRuntimeV1, Error, LogicalUri, PathResolver,
+    ProductionPackageExporterV1, PronunciationRuleV1, Result, SceneIntentV1, SegmentTtsLockStateV1,
+    SegmentV1, StateStore, StepStatus, StockDiscoveryStatusV1, StudioPackRouteTargetV1,
+    VoiceIdentityV1, VoiceModelIdentityV1, VoiceTimingCueV1, VoiceTimingV1, Workspace,
+    CREATOR_STEP_PRODUCTION_PACK_V1, CREATOR_STEP_VISUAL_PREPARE_V1, CREATOR_STEP_VOICE_PREPARE_V1,
+    SCENE_INTENT_SCHEMA, SCENE_INTENT_SCHEMA_VERSION, VOICE_AUDIO_ARTIFACT_TYPE_V1,
+    VOICE_TIMING_ARTIFACT_TYPE_V1, VOICE_TIMING_SCHEMA_V1,
 };
 use sha2::{Digest, Sha256};
 
@@ -332,8 +332,7 @@ fn phase15_offline_creator_input_reaches_verified_resolve_package() {
     .unwrap();
     assert_eq!(creator.content.segments.len(), 2);
     assert_eq!(creator.scene_plan.scenes.len(), 2);
-    let after_content =
-        derive_creator_run_coordinator_v1(&store, &artifacts, &project.id).unwrap();
+    let after_content = derive_creator_run_coordinator_v1(&store, &artifacts, &project.id).unwrap();
     assert_eq!(after_content.stage, CreatorRunStageV1::Visual);
     assert_eq!(after_content.action, CreatorRunActionV1::StartOrResume);
 
@@ -370,8 +369,7 @@ fn phase15_offline_creator_input_reaches_verified_resolve_package() {
             .status,
         StepStatus::Succeeded
     );
-    let before_voice =
-        derive_creator_run_coordinator_v1(&store, &artifacts, &project.id).unwrap();
+    let before_voice = derive_creator_run_coordinator_v1(&store, &artifacts, &project.id).unwrap();
     assert_eq!(before_voice.stage, CreatorRunStageV1::VoiceCompute);
     assert_eq!(before_voice.action, CreatorRunActionV1::StartOrResume);
 
@@ -385,8 +383,7 @@ fn phase15_offline_creator_input_reaches_verified_resolve_package() {
     .unwrap();
     assert_eq!(voice_plan.segments.len(), 2);
     assert_eq!(voice_plan.burst.scheduled_job_count(), 2);
-    let compute_ready =
-        derive_creator_run_coordinator_v1(&store, &artifacts, &project.id).unwrap();
+    let compute_ready = derive_creator_run_coordinator_v1(&store, &artifacts, &project.id).unwrap();
     assert_eq!(compute_ready.stage, CreatorRunStageV1::VoiceCompute);
     assert_eq!(compute_ready.action, CreatorRunActionV1::RunCompute);
 
@@ -448,8 +445,7 @@ fn phase15_offline_creator_input_reaches_verified_resolve_package() {
             .status,
         StepStatus::Succeeded
     );
-    let export_ready =
-        derive_creator_run_coordinator_v1(&store, &artifacts, &project.id).unwrap();
+    let export_ready = derive_creator_run_coordinator_v1(&store, &artifacts, &project.id).unwrap();
     assert_eq!(export_ready.stage, CreatorRunStageV1::ReadyToEdit);
     assert_eq!(export_ready.action, CreatorRunActionV1::Export);
 
