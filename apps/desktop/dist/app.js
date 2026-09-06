@@ -28,6 +28,13 @@ const assetLibraryState = {
   query: "",
   scope: "all",
 };
+const pluginManagerState = {
+  inventory: null,
+  tab: "enabled",
+  pending: null,
+  projects: [],
+  readOnly: false,
+};
 
 
 function escapeHtml(value) {
@@ -1869,6 +1876,419 @@ function renderAssetLibrary(snapshot, readOnly) {
   });
 }
 
+
+function pluginReadiness(view, pluginId) {
+  const rows = view && Array.isArray(view.readiness) ? view.readiness : [];
+  return (
+    rows.find(function (item) {
+      return item.plugin_id === pluginId;
+    }) || { plugin_id: pluginId, status: "ready", reason_code: null }
+  );
+}
+
+function pluginManagerBucket(view, plugin) {
+  if (!plugin.enabled) return "disabled";
+  const readiness = pluginReadiness(view, plugin.id);
+  if (
+    plugin.compatibility !== "compatible" ||
+    readiness.status !== "ready"
+  ) {
+    return "needs_attention";
+  }
+  return "enabled";
+}
+
+function pluginBadge(value, kind) {
+  return (
+    '<span class="plugin-badge ' +
+    escapeHtml(kind || "") +
+    '">' +
+    escapeHtml(statusLabel(value)) +
+    "</span>"
+  );
+}
+
+function pluginTokenList(values) {
+  const items = Array.isArray(values) ? values : [];
+  if (!items.length) return '<span class="muted compact">None declared</span>';
+  return (
+    '<div class="plugin-token-list">' +
+    items
+      .map(function (value) {
+        return "<code>" + escapeHtml(value) + "</code>";
+      })
+      .join("") +
+    "</div>"
+  );
+}
+
+function impactItems(label, values, blocking) {
+  const items = Array.isArray(values) ? values : [];
+  return (
+    '<div class="plugin-impact-row ' +
+    (blocking && items.length ? "blocking" : "") +
+    '"><strong>' +
+    escapeHtml(label) +
+    "</strong><span>" +
+    (items.length ? escapeHtml(items.join(", ")) : "None") +
+    "</span></div>"
+  );
+}
+
+function pluginImpactMarkup(pending) {
+  if (!pending || !pending.impact) return "";
+  const impact = pending.impact;
+  const preview = pending.updatePreview;
+  const updateMarkup = preview
+    ? '<div class="plugin-update-preview">' +
+      '<div class="plugin-version-arrow"><strong>' +
+      escapeHtml(preview.installed_version) +
+      "</strong><span>→</span><strong>" +
+      escapeHtml(preview.candidate_version) +
+      "</strong></div>" +
+      '<div class="plugin-delta-grid">' +
+      impactItems("Added capabilities", preview.capability_delta.added, false) +
+      impactItems("Removed capabilities", preview.capability_delta.removed, true) +
+      impactItems("Retained capabilities", preview.capability_delta.retained, false) +
+      "</div></div>"
+    : "";
+  const blocking =
+    (impact.blocking_pack_ids || []).length > 0 ||
+    (impact.blocking_project_ids || []).length > 0;
+  return (
+    '<section class="plugin-impact-preview ' +
+    (blocking ? "blocking" : "") +
+    '">' +
+    '<div class="panel-heading"><div><p class="eyebrow">IMPACT PREVIEW</p><h3>' +
+    escapeHtml(statusLabel(pending.kind)) +
+    " " +
+    escapeHtml(pending.pluginId) +
+    '</h3></div><span class="plugin-impact-state">' +
+    (blocking ? "BLOCKING IMPACT" : "REVIEW IMPACT") +
+    "</span></div>" +
+    updateMarkup +
+    impactItems("Lost capabilities", impact.lost_capabilities, true) +
+    impactItems("Gained capabilities", impact.gained_capabilities, false) +
+    impactItems("Affected Studio Packs", impact.affected_pack_ids, false) +
+    impactItems("Blocking Studio Packs", impact.blocking_pack_ids, true) +
+    impactItems("Affected Projects", impact.affected_project_ids, false) +
+    impactItems("Blocking Projects", impact.blocking_project_ids, true) +
+    '<p class="muted compact">This is a projection only. Project and Studio Pack portable state is not rewritten.</p>' +
+    '<div class="actions compact-actions">' +
+    '<button class="btn danger" id="plugin-confirm-mutation">Confirm ' +
+    escapeHtml(statusLabel(pending.kind)) +
+    "</button>" +
+    '<button class="btn" id="plugin-cancel-mutation">Cancel</button>' +
+    "</div></section>"
+  );
+}
+
+function pluginDiagnosticMarkup(diagnostic) {
+  return (
+    '<article class="plugin-diagnostic-card">' +
+    '<div class="plugin-card-head"><div><strong>' +
+    escapeHtml(diagnostic.code) +
+    '</strong><div class="hash">' +
+    escapeHtml(diagnostic.path) +
+    "</div></div>" +
+    pluginBadge("needs attention", "attention") +
+    "</div>" +
+    '<p class="muted compact">' +
+    escapeHtml(diagnostic.message) +
+    "</p></article>"
+  );
+}
+
+function pluginCardMarkup(view, plugin) {
+  const readiness = pluginReadiness(view, plugin.id);
+  const source = plugin.source || "built_in";
+  const userInstalled = source === "user_installed";
+  const readinessKind =
+    readiness.status === "ready"
+      ? "ready"
+      : readiness.status === "setup_required"
+        ? "attention"
+        : "blocked";
+  const action = plugin.enabled
+    ? '<button class="btn plugin-disable" data-plugin-id="' +
+      escapeHtml(plugin.id) +
+      '">Disable</button>'
+    : '<button class="btn primary plugin-enable" data-plugin-id="' +
+      escapeHtml(plugin.id) +
+      '">Enable</button>';
+  const updateAction = userInstalled
+    ? '<button class="btn plugin-update" data-plugin-id="' +
+      escapeHtml(plugin.id) +
+      '">Inspect Update</button>'
+    : '<button class="btn" disabled title="Built-in plugins are updated with the application distribution.">Update · App managed</button>';
+  const removeAction = userInstalled
+    ? '<button class="btn danger plugin-uninstall" data-plugin-id="' +
+      escapeHtml(plugin.id) +
+      '">Uninstall</button>'
+    : '<button class="btn" disabled title="Built-in plugins cannot be uninstalled locally.">Built-in · Cannot uninstall</button>';
+
+  return (
+    '<article class="plugin-card" data-plugin-id="' +
+    escapeHtml(plugin.id) +
+    '">' +
+    '<div class="plugin-card-head"><div><p class="eyebrow">' +
+    escapeHtml(source === "built_in" ? "BUILT-IN" : "USER INSTALLED") +
+    "</p><h3>" +
+    escapeHtml(plugin.name) +
+    '</h3><div class="hash">' +
+    escapeHtml(plugin.id) +
+    "</div></div><div class=\"plugin-badge-stack\">" +
+    pluginBadge(plugin.enabled ? "enabled" : "disabled", plugin.enabled ? "ready" : "disabled") +
+    pluginBadge(readiness.status, readinessKind) +
+    "</div></div>" +
+    '<div class="plugin-meta-grid">' +
+    '<div><span>VERSION</span><strong>' +
+    escapeHtml(plugin.version) +
+    "</strong></div>" +
+    '<div><span>PLUGIN API</span><strong>v' +
+    escapeHtml(plugin.api_version) +
+    "</strong></div>" +
+    '<div><span>TRUST</span><strong>' +
+    escapeHtml(statusLabel(plugin.trust)) +
+    "</strong></div>" +
+    '<div><span>COMPATIBILITY</span><strong>' +
+    escapeHtml(statusLabel(plugin.compatibility)) +
+    "</strong></div>" +
+    "</div>" +
+    (readiness.reason_code
+      ? '<div class="notice subtle plugin-setup-reason">Setup / readiness: ' +
+        escapeHtml(readiness.reason_code) +
+        "</div>"
+      : "") +
+    '<div class="plugin-contract-section"><span>Types</span>' +
+    pluginTokenList(plugin.types) +
+    "</div>" +
+    '<div class="plugin-contract-section"><span>Capabilities</span>' +
+    pluginTokenList(plugin.capabilities) +
+    "</div>" +
+    '<div class="actions compact-actions">' +
+    action +
+    updateAction +
+    removeAction +
+    "</div></article>"
+  );
+}
+
+function renderPluginManager(view, projects, readOnly) {
+  const panel = document.getElementById("plugin-manager-panel");
+  if (!panel) return;
+  pluginManagerState.inventory = view;
+  pluginManagerState.projects = projects || [];
+  pluginManagerState.readOnly = !!readOnly;
+
+  const plugins = view && Array.isArray(view.plugins) ? view.plugins : [];
+  const diagnostics = view && Array.isArray(view.diagnostics) ? view.diagnostics : [];
+  const tab = pluginManagerState.tab || "enabled";
+  const filtered = plugins.filter(function (plugin) {
+    return pluginManagerBucket(view, plugin) === tab;
+  });
+  const emptyCopy =
+    tab === "enabled"
+      ? "No enabled, ready plugins are available on this machine."
+      : tab === "disabled"
+        ? "No plugins are disabled."
+        : "No installed plugins need attention.";
+  const cards = filtered.length
+    ? filtered.map(function (plugin) { return pluginCardMarkup(view, plugin); }).join("")
+    : '<div class="empty compact-empty">' + emptyCopy + "</div>";
+  const diagnosticCards =
+    tab === "needs_attention" && diagnostics.length
+      ? '<div class="plugin-diagnostics"><p class="eyebrow">DISCOVERY DIAGNOSTICS</p>' +
+        diagnostics.map(pluginDiagnosticMarkup).join("") +
+        "</div>"
+      : "";
+  const counts = {
+    enabled: plugins.filter(function (p) { return pluginManagerBucket(view, p) === "enabled"; }).length,
+    disabled: plugins.filter(function (p) { return pluginManagerBucket(view, p) === "disabled"; }).length,
+    needs_attention:
+      plugins.filter(function (p) { return pluginManagerBucket(view, p) === "needs_attention"; }).length +
+      diagnostics.length,
+  };
+  const tabs = [
+    ["enabled", "Installed / Enabled"],
+    ["disabled", "Disabled"],
+    ["needs_attention", "Needs Attention"],
+  ]
+    .map(function (item) {
+      return (
+        '<button class="plugin-tab ' +
+        (tab === item[0] ? "active" : "") +
+        '" data-plugin-tab="' +
+        item[0] +
+        '">' +
+        item[1] +
+        " <span>" +
+        counts[item[0]] +
+        "</span></button>"
+      );
+    })
+    .join("");
+
+  panel.innerHTML =
+    '<div class="plugin-manager-head"><div><p class="eyebrow">PLUGIN MANAGER</p><h2>Machine-local lifecycle</h2>' +
+    '<p class="muted compact">Canonical PluginRegistry inventory, local lifecycle state, runtime readiness and Studio Pack impact in one place.</p></div>' +
+    '<div class="actions compact-actions"><button class="btn primary" id="plugin-install-folder">Install from Local Folder</button>' +
+    '<button class="btn" id="plugin-refresh">Refresh</button></div></div>' +
+    (readOnly
+      ? '<div class="notice subtle">Data Root is read-only. Plugin lifecycle remains machine-local, so install, update, enable/disable and uninstall are still available.</div>'
+      : "") +
+    '<div class="plugin-tabs">' +
+    tabs +
+    "</div>" +
+    pluginImpactMarkup(pluginManagerState.pending) +
+    '<div class="plugin-grid">' +
+    cards +
+    "</div>" +
+    diagnosticCards;
+
+  document.querySelectorAll(".plugin-tab").forEach(function (button) {
+    button.onclick = function () {
+      pluginManagerState.tab = button.dataset.pluginTab;
+      pluginManagerState.pending = null;
+      renderPluginManager(view, projects, readOnly);
+    };
+  });
+
+  document.getElementById("plugin-refresh").onclick = function () {
+    loadPluginManager(projects, readOnly);
+  };
+
+  document.getElementById("plugin-install-folder").onclick = async function () {
+    const sourcePath = await call("pick_plugin_folder");
+    if (!sourcePath) return;
+    const next = await call("install_plugin_from_folder", { sourcePath: sourcePath });
+    pluginManagerState.tab = "enabled";
+    pluginManagerState.pending = null;
+    await refreshPluginManagerAfterMutation(next);
+    showToast("Plugin installed from the selected local folder.");
+  };
+
+  document.querySelectorAll(".plugin-enable").forEach(function (button) {
+    button.onclick = async function () {
+      const next = await call("set_plugin_enabled", {
+        pluginId: button.dataset.pluginId,
+        enabled: true,
+      });
+      pluginManagerState.tab = "enabled";
+      await refreshPluginManagerAfterMutation(next);
+      showToast("Plugin enabled and Studio Pack availability refreshed.");
+    };
+  });
+
+  document.querySelectorAll(".plugin-disable").forEach(function (button) {
+    button.onclick = function () {
+      preparePluginMutation("disable", button.dataset.pluginId, null, null);
+    };
+  });
+
+  document.querySelectorAll(".plugin-uninstall").forEach(function (button) {
+    button.onclick = function () {
+      preparePluginMutation("remove", button.dataset.pluginId, null, null);
+    };
+  });
+
+  document.querySelectorAll(".plugin-update").forEach(function (button) {
+    button.onclick = async function () {
+      const sourcePath = await call("pick_plugin_folder");
+      if (!sourcePath) return;
+      const preview = await call("inspect_plugin_update", {
+        pluginId: button.dataset.pluginId,
+        sourcePath: sourcePath,
+      });
+      await preparePluginMutation("update", button.dataset.pluginId, sourcePath, preview);
+    };
+  });
+
+  const cancel = document.getElementById("plugin-cancel-mutation");
+  if (cancel) {
+    cancel.onclick = function () {
+      pluginManagerState.pending = null;
+      renderPluginManager(view, projects, readOnly);
+    };
+  }
+  const confirm = document.getElementById("plugin-confirm-mutation");
+  if (confirm) {
+    confirm.onclick = applyPendingPluginMutation;
+  }
+}
+
+async function preparePluginMutation(kind, pluginId, sourcePath, updatePreview) {
+  const impact = await call("plugin_mutation_impact", {
+    pluginId: pluginId,
+    mutation: kind,
+    sourcePath: sourcePath,
+  });
+  pluginManagerState.pending = {
+    kind: kind,
+    pluginId: pluginId,
+    sourcePath: sourcePath,
+    updatePreview: updatePreview,
+    impact: impact,
+  };
+  renderPluginManager(
+    pluginManagerState.inventory,
+    pluginManagerState.projects,
+    pluginManagerState.readOnly,
+  );
+  const preview = document.querySelector(".plugin-impact-preview");
+  if (preview) preview.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+async function applyPendingPluginMutation() {
+  const pending = pluginManagerState.pending;
+  if (!pending) return;
+  let next;
+  if (pending.kind === "disable") {
+    next = await call("set_plugin_enabled", {
+      pluginId: pending.pluginId,
+      enabled: false,
+    });
+    pluginManagerState.tab = "disabled";
+  } else if (pending.kind === "remove") {
+    next = await call("uninstall_plugin", { pluginId: pending.pluginId });
+    pluginManagerState.tab = "enabled";
+  } else if (pending.kind === "update") {
+    next = await call("apply_plugin_update", {
+      pluginId: pending.pluginId,
+      sourcePath: pending.sourcePath,
+    });
+    pluginManagerState.tab = "enabled";
+  } else {
+    throw new Error("Unsupported pending plugin mutation: " + pending.kind);
+  }
+  pluginManagerState.pending = null;
+  await refreshPluginManagerAfterMutation(next);
+  showToast("Plugin lifecycle change applied and Studio Pack availability refreshed.");
+}
+
+async function refreshPluginManagerAfterMutation(view) {
+  renderPluginManager(
+    view,
+    pluginManagerState.projects,
+    pluginManagerState.readOnly,
+  );
+  await loadStudioPackWorkspace(pluginManagerState.projects, pluginManagerState.readOnly);
+}
+
+async function loadPluginManager(projects, readOnly) {
+  const panel = document.getElementById("plugin-manager-panel");
+  if (!panel) return;
+  panel.innerHTML =
+    '<div class="plugin-manager-loading"><p class="eyebrow">PLUGIN MANAGER</p><p class="muted">Scanning canonical installed inventory…</p></div>';
+  try {
+    const view = await call("plugin_inventory");
+    renderPluginManager(view, projects, readOnly);
+  } catch (_error) {
+    panel.innerHTML =
+      '<div class="notice">Plugin Manager inventory is unavailable on this machine.</div>';
+  }
+}
+
 async function loadAssetLibrary(readOnly) {
   const panel = document.getElementById("asset-library-panel");
   if (!panel) return;
@@ -1913,6 +2333,7 @@ function renderWorkspace(snapshot) {
     '<div id="studio-pack-creator" class="studio-pack-creator"></div>' +
     board +
     '<div id="review-center" class="review-center"></div>' +
+    '<div id="plugin-manager-panel" class="plugin-manager-panel"></div>' +
     '<div id="asset-library-panel" class="asset-library-panel"></div>' +
     '<div id="production-pack-panel" class="production-pack-panel"></div>' +
     '<div class="batch-toolbar"><div><strong id="gpu-selected-count">' +
@@ -1931,6 +2352,7 @@ function renderWorkspace(snapshot) {
     "</div></div></div>" +
     '<div class="actions">' +
     '<button class="btn primary" id="handoff"' + (workspace.read_only ? " disabled" : "") + ">Prepare for Device Handoff</button>" +
+    '<button class="btn" id="open-plugin-manager">Plugin Manager</button>' +
     '<button class="btn" id="change-root">Change Data Folder</button>' +
     '</div></aside><aside class="panel" id="llmgateway-panel">' +
     '<p class="eyebrow">LLM ROUTER</p><h3>LLMGateway</h3>' +
@@ -2014,6 +2436,10 @@ function renderWorkspace(snapshot) {
     render(await call("prepare_device_handoff"));
   };
   document.getElementById("change-root").onclick = renderFirstLaunch;
+  document.getElementById("open-plugin-manager").onclick = function () {
+    const manager = document.getElementById("plugin-manager-panel");
+    if (manager) manager.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
   const selectedProductionItem = projects.find(function (item) {
     return item.project.id === productionPackState.selectedProjectId;
   });
@@ -2028,6 +2454,7 @@ function renderWorkspace(snapshot) {
   loadComputeProviderStatus(workspace.read_only);
   loadLlmGatewayPanel();
   loadStudioPackWorkspace(projects, workspace.read_only);
+  loadPluginManager(projects, workspace.read_only);
   loadAssetLibrary(workspace.read_only);
 }
 
