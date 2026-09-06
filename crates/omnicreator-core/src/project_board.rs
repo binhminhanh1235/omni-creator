@@ -60,10 +60,9 @@ pub fn project_board_projection_v1(
         .count();
 
     let (summary, actionable_count) = match column {
-        ProjectBoardColumnV1::Ideas => (
-            "Choose a Studio Pack and start preparation.".to_owned(),
-            1,
-        ),
+        ProjectBoardColumnV1::Ideas => {
+            ("Choose a Studio Pack and start preparation.".to_owned(), 1)
+        }
         ProjectBoardColumnV1::Preparing => {
             let count = unfinished_steps.max(1);
             (
@@ -88,17 +87,11 @@ pub fn project_board_projection_v1(
         }
         ProjectBoardColumnV1::GpuReady => {
             let count = gpu_ready.max(1);
-            (
-                format!("{count} GPU job{} ready.", plural(count)),
-                count,
-            )
+            (format!("{count} GPU job{} ready.", plural(count)), count)
         }
         ProjectBoardColumnV1::GpuRunning => {
             let count = running.max(1);
-            (
-                format!("{count} GPU job{} running.", plural(count)),
-                count,
-            )
+            (format!("{count} GPU job{} running.", plural(count)), count)
         }
         ProjectBoardColumnV1::ReadyToEdit => (
             "Open the Production Pack and continue creative editing.".to_owned(),
@@ -115,7 +108,11 @@ pub fn project_board_projection_v1(
 }
 
 fn plural(count: usize) -> &'static str {
-    if count == 1 { "" } else { "s" }
+    if count == 1 {
+        ""
+    } else {
+        "s"
+    }
 }
 
 #[cfg(test)]
@@ -260,7 +257,9 @@ mod tests {
 
         assert_eq!(loaded.studio_pack.as_deref(), Some("christian-cinematic"));
         assert_eq!(after, before);
-        assert!(read_only.update_project_title(&project.id, "Forbidden").is_err());
+        assert!(read_only
+            .update_project_title(&project.id, "Forbidden")
+            .is_err());
     }
 
     #[test]
@@ -272,7 +271,9 @@ mod tests {
         let job = store
             .create_job(&project.id, "voice", "S01", "input-hash")
             .unwrap();
-        store.start_attempt(&job.job_id, Some("remote-gpu")).unwrap();
+        store
+            .start_attempt(&job.job_id, Some("remote-gpu"))
+            .unwrap();
 
         let running = project_board_projection_v1(
             store.derive_project_status(&project.id).unwrap(),
@@ -296,8 +297,7 @@ mod tests {
 
     #[test]
     fn ready_to_edit_points_to_existing_production_pack() {
-        let projection =
-            project_board_projection_v1(ProjectDisplayStatus::ReadyForEdit, &[], &[]);
+        let projection = project_board_projection_v1(ProjectDisplayStatus::ReadyForEdit, &[], &[]);
 
         assert_eq!(projection.column, ProjectBoardColumnV1::ReadyToEdit);
         assert_eq!(
