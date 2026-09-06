@@ -201,7 +201,6 @@ pub fn review_plugin_permissions(
     workspace: &PluginJobWorkspace,
 ) -> Result<PluginPermissionReview> {
     let workspace_root = path_utf8(workspace.root())?;
-    let provider_cache_root = path_utf8(&workspace.provider_cache_dir(&manifest.id)?)?;
     let mut warnings = Vec::new();
     let mut filesystem = Vec::new();
     let mut seen_filesystem = BTreeSet::new();
@@ -228,7 +227,7 @@ pub fn review_plugin_permissions(
                 permission: permission.to_owned(),
                 allowed: true,
                 enforcement: PluginPermissionEnforcement::WorkspaceBound,
-                root: Some(provider_cache_root.clone()),
+                root: Some(path_utf8(&workspace.provider_cache_dir(&manifest.id)?)?),
             });
         } else {
             filesystem.push(PluginFilesystemPermissionReview {
