@@ -63,7 +63,9 @@ fn repository_storyblocks_plugin_is_discoverable_and_license_gated() {
         "unexpected settings diagnostics: {:?}",
         settings.diagnostics
     );
-    let ui = settings.ui.expect("Storyblocks settings UI must be generated");
+    let ui = settings
+        .ui
+        .expect("Storyblocks settings UI must be generated");
     assert_eq!(ui.plugin_id, "storyblocks");
     assert_eq!(ui.schema_ref, "settings.schema.json");
 
