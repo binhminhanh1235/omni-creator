@@ -13,6 +13,11 @@ const productionPackState = {
   selectedProjectId: null,
   viewByProject: new Map(),
 };
+const creatorRunState = {
+  selectedProjectId: null,
+  draftByProject: new Map(),
+  kindByProject: new Map(),
+};
 const studioPackState = {
   catalog: null,
   review: null,
@@ -199,6 +204,11 @@ function projectCard(item, readOnly) {
       : '<span class="studio-pack-project-tag missing">NO STUDIO PACK</span>') +
     "</div></div>" +
     '<div class="project-actions">' +
+    (item.board && item.board.column === "PREPARING"
+      ? '<button class="icon-btn project-start-resume" data-id="' +
+        escapeHtml(project.id) +
+        '">Start / Resume</button>'
+      : "") +
     (item.board && item.board.column === "NEEDS_REVIEW"
       ? '<button class="icon-btn project-review-center" data-id="' +
         escapeHtml(project.id) +
@@ -272,6 +282,84 @@ function renderProjectKanban(projects, readOnly) {
       .join("") +
     "</div>"
   );
+}
+
+function renderCreatorRunPanel(project, readOnly) {
+  const panel = document.getElementById("creator-run-panel");
+  if (!panel) return;
+
+  if (!project) {
+    panel.innerHTML = "";
+    panel.hidden = true;
+    return;
+  }
+
+  panel.hidden = false;
+  const kind = creatorRunState.kindByProject.get(project.id) || "TOPIC";
+  const draft = creatorRunState.draftByProject.get(project.id) || "";
+  panel.innerHTML =
+    '<div class="creator-run-head"><div><p class="eyebrow">CREATOR RUN</p><h3>' +
+    escapeHtml(project.title) +
+    '</h3></div><button class="icon-btn" id="close-creator-run">Close</button></div>' +
+    '<p class="muted compact">Start or resume canonical content + SceneIntent preparation. Completed artifacts are cache-reused; retry history remains in Job/Attempt state.</p>' +
+    '<div class="field compact-field"><label>INPUT TYPE</label><select id="creator-input-kind">' +
+    '<option value="TOPIC"' +
+    (kind === "TOPIC" ? " selected" : "") +
+    ">Topic</option>" +
+    '<option value="SCRIPT"' +
+    (kind === "SCRIPT" ? " selected" : "") +
+    ">Script</option></select></div>" +
+    '<div class="field"><label>TOPIC OR SCRIPT</label><textarea id="creator-input-text" rows="6" placeholder="Enter a topic or paste a script..."' +
+    (readOnly ? " readonly" : "") +
+    ">" +
+    escapeHtml(draft) +
+    "</textarea></div>" +
+    '<div class="actions"><button class="btn primary" id="run-creator-production"' +
+    (readOnly ? " disabled" : "") +
+    ">Start / Resume</button>" +
+    '<button class="btn" id="creator-open-review">Review blockers</button></div>';
+
+  document.getElementById("close-creator-run").onclick = function () {
+    creatorRunState.selectedProjectId = null;
+    renderCreatorRunPanel(null, readOnly);
+  };
+  document.getElementById("creator-open-review").onclick = function () {
+    const review = document.getElementById("review-center");
+    if (review) review.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const kindInput = document.getElementById("creator-input-kind");
+  const textInput = document.getElementById("creator-input-text");
+  kindInput.onchange = function () {
+    creatorRunState.kindByProject.set(project.id, kindInput.value);
+  };
+  textInput.oninput = function () {
+    creatorRunState.draftByProject.set(project.id, textInput.value);
+  };
+
+  const runButton = document.getElementById("run-creator-production");
+  runButton.onclick = async function () {
+    const inputText = textInput.value.trim();
+    if (!inputText) {
+      showToast("Enter a creator topic or script first.");
+      return;
+    }
+    creatorRunState.kindByProject.set(project.id, kindInput.value);
+    creatorRunState.draftByProject.set(project.id, textInput.value);
+    runButton.disabled = true;
+    try {
+      render(
+        await call("start_creator_production", {
+          projectId: project.id,
+          inputKind: kindInput.value,
+          inputText: inputText,
+        }),
+      );
+      showToast("Creator content and SceneIntent state advanced canonically.");
+    } catch (_error) {
+      render(await call("list_projects"));
+    }
+  };
 }
 
 function productionPackSummaryMarkup(view) {
@@ -2361,6 +2449,7 @@ function renderWorkspace(snapshot) {
     readOnlyNotice +
     '<div id="studio-pack-creator" class="studio-pack-creator"></div>' +
     board +
+    '<div id="creator-run-panel" class="creator-run-panel" hidden></div>' +
     '<div id="review-center" class="review-center"></div>' +
     '<div id="plugin-manager-panel" class="plugin-manager-panel"></div>' +
     '<div id="asset-library-panel" class="asset-library-panel"></div>' +
@@ -2405,6 +2494,19 @@ function renderWorkspace(snapshot) {
   document.getElementById("prepare-gpu-batch").onclick = function () {
     prepareGpuWorkbench(workspace.read_only);
   };
+
+  document.querySelectorAll(".project-start-resume").forEach(function (button) {
+    button.onclick = function () {
+      const item = projects.find(function (candidate) {
+        return candidate.project.id === button.dataset.id;
+      });
+      if (!item) return;
+      creatorRunState.selectedProjectId = item.project.id;
+      renderCreatorRunPanel(item.project, workspace.read_only);
+      const panel = document.getElementById("creator-run-panel");
+      if (panel) panel.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+  });
 
   document.querySelectorAll(".project-review-center").forEach(function (button) {
     button.onclick = function () {
@@ -2469,6 +2571,13 @@ function renderWorkspace(snapshot) {
     const manager = document.getElementById("plugin-manager-panel");
     if (manager) manager.scrollIntoView({ behavior: "smooth", block: "start" });
   };
+  const selectedCreatorItem = projects.find(function (item) {
+    return item.project.id === creatorRunState.selectedProjectId;
+  });
+  renderCreatorRunPanel(
+    selectedCreatorItem ? selectedCreatorItem.project : null,
+    workspace.read_only,
+  );
   const selectedProductionItem = projects.find(function (item) {
     return item.project.id === productionPackState.selectedProjectId;
   });
