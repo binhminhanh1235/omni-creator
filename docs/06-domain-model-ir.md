@@ -365,3 +365,21 @@ A production package contains deterministic SRT, FCPXML, a portable serialized P
 The source report records canonical artifact facts (`artifact_id`, logical URI, artifact type and SHA256), stable timeline usage references, and only source/provenance metadata that already exists in `Artifact.metadata`. Missing optional provenance is valid. Machine-specific absolute paths are rejected from portable report/metadata serialization.
 
 The semantic export hash includes every portable input that changes these files, including the normalized ProductionPack, export/profile/layout versions, artifact IDs/logical URIs/hashes and relevant provenance metadata. The path-bearing FCPXML execution variant additionally uses a non-portable binding fingerprint at runtime so Data Root rebinding cannot reuse stale file URLs. The binding path itself is not persisted.
+
+## Phase 12 Asset Library intelligence
+
+Asset Library intelligence is a projection/index over canonical `Artifact` rows and the existing `AssetV1` media contract. It does not introduce a second asset store.
+
+Durable v1 intelligence:
+
+- normalized tags keyed by artifact ID
+- idempotent usage records keyed by artifact + usage kind + portable usage key
+- last-used and 30-day used-recently facts derived from usage history
+- exact duplicate groups derived from canonical artifact SHA-256
+- source-reuse groups derived from portable `source_provider` + `source_asset_id` provenance when available
+
+Only media artifacts (`audio`, `image`, `thumbnail`, `video`) appear in the Asset Library projection. Reports, subtitles, JSON analysis and interchange artifacts remain canonical artifacts but are not presented as reusable media assets.
+
+Tags and usage rows live in the same portable SQLite state as artifacts. Paths remain logical URIs; no absolute Data Root path is persisted. A moved Data Root reconstructs the same library projection, including when opened read-only.
+
+`AssetV1` remains unchanged. Library-specific tags, usage counts and duplicate/reuse facts are projection fields rather than new provider-specific fields on the frozen media contract.
