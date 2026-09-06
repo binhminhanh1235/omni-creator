@@ -955,7 +955,7 @@ fn target_matches_contract_v1(
     let id_match = target
         .plugin_id
         .as_deref()
-        .is_none_or(|required| required == plugin_id);
+        .map_or(true, |required| required == plugin_id);
     id_match
         && types.iter().any(|value| value == &target.plugin_type)
         && capabilities.iter().any(|value| value == &target.capability)
