@@ -676,13 +676,15 @@ mod tests {
         assert!(registry.get("generated-image-reference").is_some());
         assert!(registry
             .plugin_ids_for_capability(STICK_FIGURE_VISUAL_CAPABILITY_V1)
-            .is_empty());
+            .iter()
+            .any(|plugin_id| plugin_id == "stick-figure-reference"));
 
         for pack_id in [
             "christian-cinematic",
             "bible-illustrated",
             "night-devotional",
             "sleep-scripture",
+            "christian-stick-explainer",
         ] {
             assert_eq!(
                 catalog
