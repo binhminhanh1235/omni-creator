@@ -1,0 +1,43 @@
+{
+  "type": "object",
+  "title": "Unsplash Visuals",
+  "description": "Preview-first Unsplash photo search with API-compliant hotlink previews, attribution and selected-use download tracking. The access key stays machine-local.",
+  "properties": {
+    "per_query": {
+      "type": "integer",
+      "title": "Candidates per query",
+      "minimum": 1,
+      "maximum": 30,
+      "default": 8
+    },
+    "orientation": {
+      "type": "string",
+      "title": "Orientation",
+      "description": "Auto derives landscape, portrait or squarish from SceneIntent.",
+      "enum": ["auto", "all", "landscape", "portrait", "squarish"],
+      "default": "auto",
+      "x-omnicreator-visibility": "advanced"
+    },
+    "order_by": {
+      "type": "string",
+      "title": "Result order",
+      "enum": ["relevant", "latest"],
+      "default": "relevant",
+      "x-omnicreator-visibility": "advanced"
+    },
+    "content_filter": {
+      "type": "string",
+      "title": "Content safety",
+      "enum": ["low", "high"],
+      "default": "high",
+      "x-omnicreator-visibility": "advanced"
+    },
+    "api_key_env": {
+      "type": "string",
+      "title": "Access key environment variable",
+      "description": "Name of the machine-local environment variable containing the Unsplash access key. The secret value is never stored in OmniCreator project data.",
+      "default": "UNSPLASH_ACCESS_KEY",
+      "x-omnicreator-visibility": "advanced"
+    }
+  }
+}
