@@ -11,11 +11,12 @@ use omnicreator_core::{
     build_studio_review_center_v1, compile_creator_workflow_plan_v1, dispatch_gpu_burst_v1,
     initial_studio_pack_catalog_v1, inspect_local_plugin_update_v1, install_local_plugin_folder_v1,
     load_latest_creator_production_pack_v1, materialize_creator_workflow_plan_v1,
+    run_creator_content_scene_v1,
     load_plugin_settings_ui, preview_plugin_capability_impact_v1, project_board_projection_v1,
     reconcile_remote_session_v1, scan_plugin_inventory_v1, uninstall_user_plugin_v1,
     update_local_plugin_folder_v1, ArtifactStore, AssetLibrarySnapshotV1,
     ComputeProviderConnectionState, ComputeProviderLivenessPolicyV1, ComputeProviderRuntime,
-    CreatorProductionPackOptionsV1,
+    CreatorContentSceneOptionsV1, CreatorInputV1, CreatorProductionPackOptionsV1,
     ComputeProviderSchedulingSnapshotV1, ComputeRunningAssignmentV1, Error as CoreError,
     GpuBatchBudgetOverviewV1, GpuBatchPlanRequestV1, GpuBatchPlanV1, GpuBurstDispatchSummaryV1,
     GpuBurstPlanV1, GpuJobPreparationV1, GpuWorkbenchQueueSnapshotV1, HandoffManifest,
@@ -806,6 +807,46 @@ fn retry_review_job(
     store.prepare_job_retry(&job_id).map_err(error_string)?;
     drop(store);
     studio_review_center_view_v1(&app, &state)
+}
+
+#[tauri::command]
+fn start_creator_production(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    project_id: String,
+    input_kind: String,
+    input_text: String,
+) -> Result<AppSnapshot, String> {
+    let input_text = input_text.trim();
+    if input_text.is_empty() {
+        return Err("Creator topic or script must not be empty.".to_owned());
+    }
+    let input = match input_kind.trim().to_ascii_uppercase().as_str() {
+        "TOPIC" => CreatorInputV1::topic(input_text),
+        "SCRIPT" => CreatorInputV1::script(input_text),
+        _ => return Err("Creator input kind must be TOPIC or SCRIPT.".to_owned()),
+    };
+
+    let data_root = active_data_root(&state)?;
+    let mut store = writable_store(&state)?;
+    let project = store.get_project(&project_id).map_err(error_string)?;
+    if project.studio_pack.as_deref().is_none() {
+        return Err("Bind a Studio Pack before starting creator production.".to_owned());
+    }
+
+    let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
+    let llm = LlmGatewayClient::new(load_llmgateway_config(&app)?).map_err(error_string)?;
+    run_creator_content_scene_v1(
+        &mut store,
+        &artifacts,
+        &llm,
+        &project_id,
+        &input,
+        &CreatorContentSceneOptionsV1::default(),
+    )
+    .map_err(error_string)?;
+    drop(store);
+    snapshot_from_active(&state)
 }
 
 #[tauri::command]
@@ -2242,6 +2283,7 @@ fn main() {
             remove_asset_tag,
             review_center,
             retry_review_job,
+            start_creator_production,
             rename_project,
             delete_project,
             production_export_status,
