@@ -1145,8 +1145,10 @@ impl CreatorVisualAssetExecutorV1 for DesktopVisualRuntimeV1<'_> {
             BTreeMap::new(),
         )?;
 
-        let started =
-            state_store.start_attempt(request.job_id, Some(&format!("plugin:{}", plugin.manifest.id)))?;
+        let started = state_store.start_attempt(
+            request.job_id,
+            Some(&format!("plugin:{}", plugin.manifest.id)),
+        )?;
         let result = (|| {
             let call = process.execute("visual.generate", serde_json::to_value(&generated)?)?;
             let value = Self::process_result_v1(plugin, call.response, "visual.generate")?;
