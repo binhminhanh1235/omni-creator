@@ -7,8 +7,9 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    deterministic_input_hash, Artifact, ArtifactStore, AttemptOutputPromotion,
-    AttemptPromotionRequest, CreatorContentOptions, Error, LlmGatewayClient, LogicalUri, Result,
+    artifact_store::{AttemptOutputPromotion, AttemptPromotionRequest},
+    deterministic_input_hash, Artifact, ArtifactStore, CreatorContentOptions, Error,
+    LlmGatewayClient, LogicalUri, Result,
     SceneIntentGenerationOptions, SceneIntentV1, SegmentV1, StateStore, StepStatus,
     VoiceDirectionV1, WorkflowStep, CREATOR_STEP_CONTENT_PREPARE_V1, CREATOR_STEP_SCENE_PLAN_V1,
     CREATOR_WORKFLOW_UNIT_PROJECT_V1, SCENE_INTENT_SCHEMA, SCENE_INTENT_SCHEMA_VERSION,
@@ -996,7 +997,7 @@ mod tests {
     ) {
         let temp = tempfile::tempdir().unwrap();
         let workspace = Workspace::create(temp.path().join("data")).unwrap();
-        let mut state = StateStore::open(workspace.sqlite_path()).unwrap();
+        let state = StateStore::open(workspace.sqlite_path()).unwrap();
         let pack = initial_studio_pack_catalog_v1()
             .unwrap()
             .resolve_v1("christian-cinematic")
