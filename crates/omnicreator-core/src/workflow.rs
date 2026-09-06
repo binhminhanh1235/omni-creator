@@ -527,7 +527,18 @@ impl StateStore {
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         if !job_statuses.is_empty() {
-            return Ok(derive_display_status(&job_statuses));
+            let status = derive_display_status(&job_statuses);
+            if status == ProjectDisplayStatus::ReadyForEdit {
+                let exported: i64 = self.connection.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM jobs WHERE project_id=?1 AND step_key='export.production-pack' AND status='SUCCEEDED')",
+                    [project_id],
+                    |row| row.get(0),
+                )?;
+                if exported != 0 {
+                    return Ok(ProjectDisplayStatus::Done);
+                }
+            }
+            return Ok(status);
         }
 
         let mut statement = self
