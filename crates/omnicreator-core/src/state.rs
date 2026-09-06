@@ -595,6 +595,13 @@ impl StateStore {
                 &artifact.input_hash,
             ],
         )?;
+        crate::asset_library::record_selected_artifact_usage_v1(
+            &transaction,
+            artifact,
+            artifact_project_id,
+            "job_output",
+            job_id,
+        )?;
 
         transaction.execute(
             "UPDATE jobs SET status='SUCCEEDED', selected_artifact_id=?1 WHERE id=?2",
