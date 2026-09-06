@@ -368,6 +368,17 @@ Implementation slices:
 
 - P0 — deterministic versioned creator workflow plan compiled from Project + resolved Studio Pack and materialized into the existing WorkflowStep dependency DAG
 - P1 — creator topic/script input plus LLMGateway content and SceneIntent orchestration with canonical artifacts/hashes
+
+P1 implementation boundary:
+
+- creator input is a versioned portable `CreatorInputV1` with only TOPIC or SCRIPT text, never provider/account/model/session fields
+- topic mode uses the existing LLMGateway creator content helper; script mode preserves creator text without an unnecessary rewrite call
+- deterministic segmentation produces canonical `SegmentV1` identities before Scene Intelligence
+- SceneIntent generation reuses the existing structured LLMGateway helper and preserves segment identity/narration exactly
+- content and scene-plan outputs are canonical project artifacts committed through existing Job / Attempt / ArtifactStore state
+- verified identical artifacts are reused without new provider calls; changed creator input invalidates downstream workflow state through the existing DAG
+- LLMGateway configuration/credential absence is a retryable setup condition surfaced through Review Center, not provider state persisted in the Project
+- P1 does not execute visual, voice, GPU or export stages
 - P2 — visual discovery/routing/review/fallback orchestration through existing stock/generated/stick provider boundaries
 - P3 — voice/TTS + ComputeProvider orchestration through existing Job/Attempt/GPU readiness contracts
 - P4 — ProductionPack assembly plus creator Start/Resume/Review/Export UX and end-to-end restart/read-only/portability hardening
