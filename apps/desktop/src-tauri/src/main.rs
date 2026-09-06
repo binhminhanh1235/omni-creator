@@ -1360,6 +1360,7 @@ fn snapshot_from_active(state: &State<'_, DesktopState>) -> Result<AppSnapshot, 
         StateStore::open(workspace.sqlite_path()).map_err(error_string)?
     };
 
+    let artifacts = ArtifactStore::new(workspace.data_root()).map_err(error_string)?;
     let projects = store
         .list_projects()
         .map_err(error_string)?
@@ -1373,11 +1374,16 @@ fn snapshot_from_active(state: &State<'_, DesktopState>) -> Result<AppSnapshot, 
                 .list_project_steps(&project.id)
                 .map_err(error_string)?;
             let board = project_board_projection_v1(status, &jobs, &steps);
+            let run = project
+                .studio_pack
+                .as_ref()
+                .and_then(|_| derive_creator_run_coordinator_v1(&store, &artifacts, &project.id).ok());
             Ok(ProjectView {
                 project,
                 status,
                 board,
                 steps,
+                run,
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
