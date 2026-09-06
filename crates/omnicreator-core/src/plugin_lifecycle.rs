@@ -690,7 +690,9 @@ mod tests {
         let result = install_local_plugin_folder_v1(source_root.join("future"), &[], &user_root);
 
         assert!(matches!(result, Err(Error::InvalidContract(_))));
-        assert!(scan_plugin_roots(std::slice::from_ref(&user_root)).registry.is_empty());
+        assert!(scan_plugin_roots(std::slice::from_ref(&user_root))
+            .registry
+            .is_empty());
         assert!(!user_root.join(".install-staging").exists());
     }
 
@@ -724,7 +726,9 @@ mod tests {
         );
 
         assert!(matches!(result, Err(Error::InvalidContract(_))));
-        assert!(scan_plugin_roots(std::slice::from_ref(&user_root)).registry.is_empty());
+        assert!(scan_plugin_roots(std::slice::from_ref(&user_root))
+            .registry
+            .is_empty());
         assert!(scan_plugin_roots(&[built_in])
             .registry
             .get("same-id")
@@ -759,7 +763,9 @@ mod tests {
 
         assert!(matches!(result, Err(Error::InvalidContract(_))));
         assert!(outside.exists());
-        assert!(scan_plugin_roots(std::slice::from_ref(&user_root)).registry.is_empty());
+        assert!(scan_plugin_roots(std::slice::from_ref(&user_root))
+            .registry
+            .is_empty());
         assert!(!user_root.join(".install-staging").exists());
     }
 
@@ -793,7 +799,9 @@ mod tests {
             fs::read_to_string(project_state).unwrap(),
             r#"{"id":"project-1"}"#
         );
-        assert!(scan_plugin_roots(std::slice::from_ref(&user_root)).registry.is_empty());
+        assert!(scan_plugin_roots(std::slice::from_ref(&user_root))
+            .registry
+            .is_empty());
         assert!(!user_root.join(".uninstall-staging").exists());
     }
 
@@ -812,7 +820,11 @@ mod tests {
             "stock_video",
         );
 
-        let result = uninstall_user_plugin_v1("shipped-plugin", std::slice::from_ref(&built_in), &user_root);
+        let result = uninstall_user_plugin_v1(
+            "shipped-plugin",
+            std::slice::from_ref(&built_in),
+            &user_root,
+        );
 
         assert!(matches!(result, Err(Error::InvalidContract(_))));
         assert!(scan_plugin_roots(&[built_in])
