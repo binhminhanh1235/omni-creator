@@ -811,7 +811,7 @@ fn creator_error_code_v1(error: &Error) -> &'static str {
         Error::MissingLlmGatewayCredential(_) | Error::InvalidLlmGatewayConfig(_) => {
             LLMGATEWAY_SETUP_REQUIRED_ERROR_V1
         }
-        Error::LlmGatewayTransport(_) => "PROVIDER_UNAVAILABLE",
+        Error::LlmGatewayTransport(_) => LLMGATEWAY_SETUP_REQUIRED_ERROR_V1,
         Error::LlmGatewayApi { status: 429, .. } => "RATE_LIMITED",
         Error::LlmGatewayApi { .. } => "PROVIDER_UNAVAILABLE",
         Error::InvalidStructuredOutput { .. } => "INVALID_LLM_OUTPUT",
