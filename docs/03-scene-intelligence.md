@@ -341,3 +341,17 @@ Studio/Channel profiles should define reusable visual rules:
 - cliché rules
 
 Scene resolution inherits these rules automatically.
+
+## Phase 11 stick figure semantic projection
+
+The first stick-figure provider consumes the existing `SceneIntentV1` embedded in the existing `visual.generate` request. It does not introduce a new scene schema.
+
+For each scene it deterministically derives a renderer-local semantic plan:
+
+- `characters`: small archetypal roles such as person, friend, parent, child, guide or builder
+- `actions`: explanatory actions such as explain, repair, rebuild trust, set boundary, support, walk, wait or pray
+- `objects`: simple visual metaphors such as bridge, fence, door, path, book, heart, boundary, box or light
+
+The plan is plugin metadata only. Core persists the resulting artifact/provenance through the existing ArtifactStore boundary and does not adopt these renderer-local fields as canonical workflow state.
+
+The checked-in reference renderer is procedural SVG, deterministic for identical request + seed, offline and restricted to the granted job workspace. `christian-stick-explainer` / `stick-figure-minimal-motion` use a minimal animated SVG treatment. `stick-figure-thumbnail` is a thumbnail-specific composition preset. A richer whiteboard renderer remains deferred.
