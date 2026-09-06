@@ -299,3 +299,16 @@ Assisted and Balanced modes require explicit stock selection. Autopilot may acce
 Resolved scene execution uses per-scene canonical Job/Attempt records under the existing `visual.prepare` semantic stage. An executor may wrap the already-implemented stock provider plugins or generated/stick execution paths, but it must commit the final result through ArtifactStore. Core verifies the returned artifact belongs to the canonical job, is physically hash-valid, preserves the exact `visual_routing` decision, and for stock media preserves the reviewed provider/asset/selection identity.
 
 **Reason:** Existing phases already provide stock providers, deterministic ranking, Review UI contracts, generated-image execution, stick-figure generation and ArtifactStore promotion. P2 needs to compose those primitives without downloading unselected media, overriding Studio Pack policy, or introducing provider-specific durable Project state.
+
+
+## ADR-037: Creator voice orchestration refines the canonical DAG per segment
+
+**Decision:** Phase 15 P3 materializes deterministic `tts/<segment_id>` WorkflowSteps and logical Jobs from canonical `CreatorContentV1` segments, then connects them as `content.prepare/project -> tts/<segment_id> -> voice.prepare/project`. These are refinements of the existing canonical DAG, not a second workflow engine.
+
+Each segment reuses the Phase 6 `SegmentTtsProductionInputV1`, normalization/pronunciation locks, immutable voice/model versions, preflight contract, take history and timing artifact semantics. The segment TTS input hash is therefore the cache/invalidation authority. Changing voice, model, pronunciation, voice direction or resolved settings stales only the affected voice work and its canonical downstream ProductionPack dependency.
+
+Runtime plugin/provider choice, ComputeProvider session/device identity and credentials remain machine-local execution concerns. P3 feeds eligible segment Jobs into the existing GPU readiness evaluation and deterministic Voice Burst scheduler. Remote dispatch uses the existing voice-take path so retries create additional Attempts/takes rather than overwriting history, while restart and worker loss continue to reconcile through the existing remote journal.
+
+The aggregate `voice.prepare/project` stage is complete only when every segment has a selected successful take with physically verified audio and timing artifacts. RUNNING remote work is in-flight and is never blindly redispatched during creator re-planning.
+
+**Reason:** Phase 6 and Phase 7 already own TTS preflight, take history, GPU scheduling, remote execution, retry and reconciliation. P3's job is to connect canonical creator segments to those contracts. Refining the DAG per segment preserves resumability and selective invalidation while avoiding a shadow queue, provider-specific Project fields or duplicate scheduler state.
