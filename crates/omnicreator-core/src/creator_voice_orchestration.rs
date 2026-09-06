@@ -41,9 +41,15 @@ impl CreatorVoiceRuntimeV1 {
             ("creator voice plugin_id", self.plugin_id.as_str()),
             ("creator voice provider_id", self.provider_id.as_str()),
             ("creator voice voice_id", self.voice.voice_id.as_str()),
-            ("creator voice voice_version", self.voice.voice_version.as_str()),
+            (
+                "creator voice voice_version",
+                self.voice.voice_version.as_str(),
+            ),
             ("creator voice model_id", self.model.model_id.as_str()),
-            ("creator voice model_version", self.model.model_version.as_str()),
+            (
+                "creator voice model_version",
+                self.model.model_version.as_str(),
+            ),
             (
                 "creator voice settings_fingerprint",
                 self.settings_fingerprint.as_str(),
@@ -218,7 +224,10 @@ pub fn plan_creator_voice_orchestration_v1(
             )?;
             existing_jobs.push(job.clone());
             completed = false;
-        } else if !existing_jobs.iter().any(|candidate| candidate.job_id == job.job_id) {
+        } else if !existing_jobs
+            .iter()
+            .any(|candidate| candidate.job_id == job.job_id)
+        {
             existing_jobs.push(job.clone());
         }
 
@@ -308,15 +317,8 @@ pub fn plan_creator_voice_orchestration_v1(
 
         let readiness = state_store.voice_gpu_readiness_facts_v1(&segment.job)?;
         let preparation = segment.tts.to_gpu_job_preparation_v1(&segment.job.job_id)?;
-        let decision = evaluate_gpu_queue(
-            &segment.job,
-            &readiness,
-            &preparation,
-            providers,
-            &[],
-        )?;
-        if decision.status == GpuQueueEligibilityStatusV1::GpuReady
-            || !decision.reasons.is_empty()
+        let decision = evaluate_gpu_queue(&segment.job, &readiness, &preparation, providers, &[])?;
+        if decision.status == GpuQueueEligibilityStatusV1::GpuReady || !decision.reasons.is_empty()
         {
             candidates.push(VoiceBurstCandidateV1 {
                 job: segment.job.clone(),
@@ -372,9 +374,7 @@ pub fn dispatch_creator_voice_burst_v1(
                 )));
             }
 
-            let preparation = segment
-                .tts
-                .to_gpu_job_preparation_v1(&segment.job.job_id)?;
+            let preparation = segment.tts.to_gpu_job_preparation_v1(&segment.job.job_id)?;
             let eligibility = crate::GpuQueueEligibilityV1 {
                 job_id: segment.job.job_id.clone(),
                 status: GpuQueueEligibilityStatusV1::GpuReady,
@@ -493,10 +493,7 @@ fn ensure_segment_step_v1(
     Ok(step)
 }
 
-fn normalize_stale_step_to_not_ready_v1(
-    state_store: &StateStore,
-    step_id: &str,
-) -> Result<()> {
+fn normalize_stale_step_to_not_ready_v1(state_store: &StateStore, step_id: &str) -> Result<()> {
     let step = state_store.get_step(step_id)?;
     if step.status == StepStatus::Stale {
         state_store.set_step_status(step_id, StepStatus::NotReady)?;
