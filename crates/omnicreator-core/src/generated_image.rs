@@ -8,7 +8,7 @@ use crate::{
     Artifact, ArtifactStore, ComputeRequirements, DiscoveredPlugin, Error, GpuJobPreparationV1,
     LogicalUri, PluginJobWorkspace, PluginProcess, PluginProcessOptions, PluginResponse,
     ResourceRequirement, Result, SceneIntentV1, StateStore, VisualRouteV1, VisualRoutingDecisionV1,
-    VisualUseCaseV1,
+    VisualUseCaseV1, STICK_FIGURE_VISUAL_CAPABILITY_V1,
 };
 
 pub const GENERATED_IMAGE_REQUEST_SCHEMA_V1: &str = "omnicreator.generated-image-request";
@@ -263,21 +263,20 @@ impl GeneratedImagePreparationV1 {
                 "Selected plugin does not declare the visual plugin type.",
             );
         }
-        if !plugin
+        let has_supported_visual_capability = plugin.manifest.capabilities.iter().any(|value| {
+            value == GENERATED_STILL_CAPABILITY_V1
+                || value == STICK_FIGURE_VISUAL_CAPABILITY_V1
+        });
+        let has_visual_generate = plugin
             .manifest
             .capabilities
             .iter()
-            .any(|value| value == GENERATED_STILL_CAPABILITY_V1)
-            || !plugin
-                .manifest
-                .capabilities
-                .iter()
-                .any(|value| value == VISUAL_GENERATE_CAPABILITY_V1)
-        {
+            .any(|value| value == VISUAL_GENERATE_CAPABILITY_V1);
+        if !has_supported_visual_capability || !has_visual_generate {
             push_issue(
                 &mut issues,
                 GeneratedImagePreflightIssueCodeV1::GenerateCapabilityMissing,
-                "Selected plugin does not declare generated-still visual.generate capability.",
+                "Selected plugin does not declare a supported visual generation capability plus visual_generate.",
             );
         }
         if self.request.seed.is_some()
@@ -1094,8 +1093,10 @@ pub fn default_generated_image_compute_requirements_v1(
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
-    use crate::{SCENE_INTENT_SCHEMA, SCENE_INTENT_SCHEMA_VERSION};
+    use crate::{scan_plugin_roots, SCENE_INTENT_SCHEMA, SCENE_INTENT_SCHEMA_VERSION};
 
     fn scene() -> SceneIntentV1 {
         SceneIntentV1 {
@@ -1155,6 +1156,61 @@ mod tests {
         let scene_json = serde_json::to_value(&first.scene).unwrap();
         assert!(scene_json.get("provider").is_none());
         assert!(scene_json.get("model").is_none());
+    }
+
+    #[test]
+    fn stick_figure_visual_capability_can_use_visual_generate_without_generated_still() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins");
+        let report = scan_plugin_roots(&[root]);
+        assert!(
+            report.diagnostics.is_empty(),
+            "checked-in plugin manifests must scan cleanly: {:?}",
+            report.diagnostics
+        );
+        let plugin = report
+            .registry
+            .get("stick-figure-reference")
+            .expect("Phase 11 stick figure plugin must be discoverable");
+        assert!(
+            !plugin
+                .manifest
+                .capabilities
+                .iter()
+                .any(|value| value == GENERATED_STILL_CAPABILITY_V1)
+        );
+
+        let request = GeneratedImageRequestV1::from_scene_v1(
+            scene(),
+            GeneratedImageStyleV1 {
+                preset: "christian-stick-explainer".to_owned(),
+                description: None,
+            },
+            GeneratedImageResolutionV1 {
+                width: 1280,
+                height: 720,
+            },
+            Some(42),
+            BTreeMap::new(),
+        )
+        .unwrap();
+        let preparation = GeneratedImagePreparationV1 {
+            request,
+            output_uri: Some(LogicalUri::parse("project://visual/SC01.svg").unwrap()),
+            provider_id: None,
+            model_id: Some("stick-figure-reference-svg".to_owned()),
+            model_version: Some("1".to_owned()),
+            approval_required: false,
+            approval_complete: false,
+            production_lock_required: false,
+            gpu_execution_requested: false,
+        };
+
+        let preflight = preparation.preflight_v1(plugin);
+        assert!(
+            preflight.is_ready(),
+            "stick figure visual generation should pass preflight: {:?}",
+            preflight.issues
+        );
     }
 
     #[test]
