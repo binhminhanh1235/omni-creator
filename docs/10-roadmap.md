@@ -204,6 +204,16 @@ Use the existing SceneIntent contract.
 
 This phase validates that the plugin architecture actually supports a radically different visual production style.
 
+Phase 11 implementation notes:
+
+- checked-in `stick-figure-reference` is a process-isolated Plugin API v1 visual provider
+- exact capability is `stick_figure_visual`; it deliberately does not advertise `generated_still`
+- the existing `visual.generate` request/ArtifactStore execution path accepts either `generated_still` or `stick_figure_visual` when `visual_generate` is also present
+- SceneIntent is deterministically projected to plugin-local characters/actions/objects
+- the first renderer is offline procedural SVG with `minimal-motion` and thumbnail composition presets
+- full whiteboard-like rendering remains deferred
+- no Project / WorkflowStep / Job / Attempt state-machine change is required
+
 ## Phase 12 - Asset Library Intelligence
 
 Start simple:

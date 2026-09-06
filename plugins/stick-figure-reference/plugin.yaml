@@ -1,0 +1,39 @@
+schema: omnicreator.plugin-manifest
+schema_version: 1
+id: stick-figure-reference
+name: Stick Figure Reference Visuals
+version: 1.0.0
+api_version: 1
+
+types:
+  - visual
+
+entrypoint:
+  command: python3
+  args:
+    - plugin.py
+
+capabilities:
+  - stick_figure_visual
+  - visual_generate
+  - deterministic_seed
+  - stick_figure_minimal_motion
+  - stick_figure_thumbnail_style
+
+scene_types:
+  - literal
+  - emotional
+  - conceptual
+  - educational
+
+permissions:
+  filesystem:
+    - job-workspace
+  network: []
+
+settings: null
+
+resources:
+  gpu: none
+  parallelizable: true
+  cost_metric: scenes

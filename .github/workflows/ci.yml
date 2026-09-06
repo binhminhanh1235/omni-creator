@@ -32,6 +32,8 @@ jobs:
         run: python3 -m unittest discover -s plugins/generated-image-reference/tests -p 'test_*.py'
       - name: Generated image API offline tests
         run: python3 -m unittest discover -s plugins/generated-image-api/tests -p 'test_*.py'
+      - name: Stick figure offline tests
+        run: python3 -m unittest discover -s plugins/stick-figure-reference/tests -p 'test_*.py'
 
   desktop:
     runs-on: ubuntu-latest
