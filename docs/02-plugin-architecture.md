@@ -307,6 +307,9 @@ Stick Figure    READY
 - built-in + machine-local user-installed roots
 - enable/disable as machine-local lifecycle state
 - local package/folder install with pre-activation manifest validation
+- P1 local install copies into a hidden machine-local staging directory, rejects symlinks/special filesystem entries, validates through the canonical scanner, then atomically renames into the managed user plugin root
+- P1 uninstall is restricted to managed user-installed plugin directories and uses a hidden tombstone/rollback boundary; built-in plugins are not removable
+- install inspection never executes the plugin entrypoint or arbitrary package scripts
 - configuration + permission review
 - rollback-safe updates
 
