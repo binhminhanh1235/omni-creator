@@ -181,6 +181,38 @@ CREATE INDEX IF NOT EXISTS idx_compute_session_usage_window
 ON compute_session_usage(provider_id,connected_at,finished_at);
 "#;
 
+const MIGRATION_V8: &str = r#"
+CREATE INDEX IF NOT EXISTS idx_artifacts_sha256
+ON artifacts(sha256);
+
+CREATE TABLE IF NOT EXISTS artifact_tags (
+    artifact_id TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+    tag TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY(artifact_id,tag)
+);
+
+CREATE INDEX IF NOT EXISTS idx_artifact_tags_tag
+ON artifact_tags(tag,artifact_id);
+
+CREATE TABLE IF NOT EXISTS artifact_usages (
+    artifact_id TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+    project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+    usage_kind TEXT NOT NULL,
+    usage_key TEXT NOT NULL,
+    used_at TEXT NOT NULL,
+    metadata_json TEXT NOT NULL DEFAULT '{}',
+    PRIMARY KEY(artifact_id,usage_kind,usage_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_artifact_usages_artifact_time
+ON artifact_usages(artifact_id,used_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_artifact_usages_project_time
+ON artifact_usages(project_id,used_at DESC);
+"#;
+
+
 pub struct StateStore {
     pub(crate) connection: Connection,
 }
@@ -227,6 +259,7 @@ impl StateStore {
         self.apply_migration(5, MIGRATION_V5)?;
         self.apply_migration(6, MIGRATION_V6)?;
         self.apply_migration(7, MIGRATION_V7)?;
+        self.apply_migration(8, MIGRATION_V8)?;
         Ok(())
     }
 
@@ -611,7 +644,7 @@ pub(crate) fn job_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Job> {
     })
 }
 
-fn artifact_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Artifact> {
+pub(crate) fn artifact_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Artifact> {
     let uri: String = row.get(3)?;
     let created_at: String = row.get(7)?;
     let metadata_json: String = row.get(8)?;
