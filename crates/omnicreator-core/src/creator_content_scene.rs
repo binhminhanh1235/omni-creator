@@ -303,7 +303,10 @@ pub fn run_creator_content_scene_v1(
     input.validate_v1()?;
     options.validate_v1()?;
     let project = state_store.get_project(project_id)?;
-    if project.studio_pack.as_deref().is_none_or(str::is_empty) {
+    if !matches!(
+        project.studio_pack.as_deref(),
+        Some(studio_pack) if !studio_pack.is_empty()
+    ) {
         return Err(Error::InvalidContract(
             "creator content orchestration requires a Project bound to a Studio Pack".to_owned(),
         ));
@@ -335,10 +338,12 @@ pub fn run_creator_content_scene_v1(
         artifact_store,
         llm,
         &scene_step,
-        &content,
-        &content_artifact,
-        options,
-        &scene_hash,
+        SceneStageInputV1 {
+            content: &content,
+            content_artifact: &content_artifact,
+            options,
+            input_hash: &scene_hash,
+        },
     )?;
 
     state_store.refresh_ready_steps(project_id)?;
@@ -405,17 +410,19 @@ fn run_content_stage_v1(
         let artifact = promote_json_for_attempt_v1(
             artifact_store,
             state_store,
-            &attempt.attempt_id,
-            &job.job_id,
-            &content,
-            content_target_uri_v1(&job.job_id)?,
-            CREATOR_CONTENT_ARTIFACT_TYPE_V1,
-            serde_json::json!({
-                "schema": CREATOR_CONTENT_SCHEMA_V1,
-                "schema_version": CREATOR_CONTENT_VERSION_V1,
-                "stage": CREATOR_STEP_CONTENT_PREPARE_V1,
-                "input_kind": input.kind,
-            }),
+            CreatorJsonPromotionV1 {
+                attempt_id: &attempt.attempt_id,
+                job_id: &job.job_id,
+                value: &content,
+                target_uri: content_target_uri_v1(&job.job_id)?,
+                artifact_type: CREATOR_CONTENT_ARTIFACT_TYPE_V1,
+                metadata: serde_json::json!({
+                    "schema": CREATOR_CONTENT_SCHEMA_V1,
+                    "schema_version": CREATOR_CONTENT_VERSION_V1,
+                    "stage": CREATOR_STEP_CONTENT_PREPARE_V1,
+                    "input_kind": input.kind,
+                }),
+            },
         )?;
         Ok((content, artifact))
     })();
@@ -432,16 +439,26 @@ fn run_content_stage_v1(
     }
 }
 
+struct SceneStageInputV1<'a> {
+    content: &'a CreatorContentV1,
+    content_artifact: &'a Artifact,
+    options: &'a CreatorContentSceneOptionsV1,
+    input_hash: &'a str,
+}
+
 fn run_scene_stage_v1(
     state_store: &mut StateStore,
     artifact_store: &ArtifactStore,
     llm: &impl CreatorLlmExecutorV1,
     step: &WorkflowStep,
-    content: &CreatorContentV1,
-    content_artifact: &Artifact,
-    options: &CreatorContentSceneOptionsV1,
-    input_hash: &str,
+    input: SceneStageInputV1<'_>,
 ) -> Result<(CreatorScenePlanV1, Artifact, bool)> {
+    let SceneStageInputV1 {
+        content,
+        content_artifact,
+        options,
+        input_hash,
+    } = input;
     if let Some(artifact) = find_project_cache_v1(
         state_store,
         artifact_store,
@@ -502,17 +519,19 @@ fn run_scene_stage_v1(
         let artifact = promote_json_for_attempt_v1(
             artifact_store,
             state_store,
-            &attempt.attempt_id,
-            &job.job_id,
-            &scene_plan,
-            scene_target_uri_v1(&job.job_id)?,
-            CREATOR_SCENE_PLAN_ARTIFACT_TYPE_V1,
-            serde_json::json!({
-                "schema": CREATOR_SCENE_PLAN_SCHEMA_V1,
-                "schema_version": CREATOR_SCENE_PLAN_VERSION_V1,
-                "stage": CREATOR_STEP_SCENE_PLAN_V1,
-                "scene_count": scene_plan.scenes.len(),
-            }),
+            CreatorJsonPromotionV1 {
+                attempt_id: &attempt.attempt_id,
+                job_id: &job.job_id,
+                value: &scene_plan,
+                target_uri: scene_target_uri_v1(&job.job_id)?,
+                artifact_type: CREATOR_SCENE_PLAN_ARTIFACT_TYPE_V1,
+                metadata: serde_json::json!({
+                    "schema": CREATOR_SCENE_PLAN_SCHEMA_V1,
+                    "schema_version": CREATOR_SCENE_PLAN_VERSION_V1,
+                    "stage": CREATOR_STEP_SCENE_PLAN_V1,
+                    "scene_count": scene_plan.scenes.len(),
+                }),
+            },
         )?;
         Ok((scene_plan, artifact))
     })();
@@ -818,27 +837,31 @@ fn creator_error_code_v1(error: &Error) -> &'static str {
     }
 }
 
+struct CreatorJsonPromotionV1<'a, T> {
+    attempt_id: &'a str,
+    job_id: &'a str,
+    value: &'a T,
+    target_uri: LogicalUri,
+    artifact_type: &'a str,
+    metadata: serde_json::Value,
+}
+
 fn promote_json_for_attempt_v1<T: Serialize>(
     artifact_store: &ArtifactStore,
     state_store: &mut StateStore,
-    attempt_id: &str,
-    job_id: &str,
-    value: &T,
-    target_uri: LogicalUri,
-    artifact_type: &str,
-    metadata: serde_json::Value,
+    promotion: CreatorJsonPromotionV1<'_, T>,
 ) -> Result<Artifact> {
-    let staging = write_staging_json_v1(artifact_store, value)?;
+    let staging = write_staging_json_v1(artifact_store, promotion.value)?;
     let result = artifact_store.promote_attempt_outputs(
         state_store,
         AttemptPromotionRequest {
-            attempt_id: attempt_id.to_owned(),
-            job_id: job_id.to_owned(),
+            attempt_id: promotion.attempt_id.to_owned(),
+            job_id: promotion.job_id.to_owned(),
             outputs: vec![AttemptOutputPromotion {
                 source: staging.clone(),
-                target_uri,
-                artifact_type: artifact_type.to_owned(),
-                metadata,
+                target_uri: promotion.target_uri,
+                artifact_type: promotion.artifact_type.to_owned(),
+                metadata: promotion.metadata,
                 expected_sha256: None,
             }],
             selected_output_index: 0,
