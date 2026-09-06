@@ -380,6 +380,19 @@ P1 implementation boundary:
 - LLMGateway configuration/credential absence is a retryable setup condition surfaced through Review Center, not provider state persisted in the Project
 - P1 does not execute visual, voice, GPU or export stages
 - P2 — visual discovery/routing/review/fallback orchestration through existing stock/generated/stick provider boundaries
+
+P2 implementation boundary:
+
+- resolved Studio Pack route order is authoritative: generated/stick-first routes do not perform speculative stock search
+- stock-first routes use preview-only candidate discovery and existing deterministic ranking before `VisualRoutingDecisionV1`
+- resolved Studio Pack `quality_thresholds.visual` supplies the stock acceptance threshold
+- Assisted and Balanced stock routes stop at an explicit review/selection gate; Autopilot may select the deterministic recommendation
+- Assisted generated/stick routes require generation approval; Balanced/Autopilot may advance when no blocking condition exists
+- full stock download is forbidden until candidate selection resolves; generated/stick execution is forbidden until its approval gate resolves
+- selected execution is per-scene canonical Job/Attempt work; aggregate `visual.prepare/project` succeeds only when all scene outputs are verified
+- identical scene action/selection/routing hashes reuse verified artifacts without provider work
+- stock artifacts must preserve the reviewed provider asset identity plus the canonical `visual_routing` provenance
+- generated/stick targets reuse the existing Studio Pack capabilities `generated_still` and `stick_figure_visual`; no provider-specific fields are added to Project state
 - P3 — voice/TTS + ComputeProvider orchestration through existing Job/Attempt/GPU readiness contracts
 - P4 — ProductionPack assembly plus creator Start/Resume/Review/Export UX and end-to-end restart/read-only/portability hardening
 
