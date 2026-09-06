@@ -9,14 +9,14 @@ use chrono::{DateTime, Utc};
 use omnicreator_core::{
     build_studio_pack_ux_view_v1, build_studio_review_center_v1, dispatch_gpu_burst_v1,
     initial_studio_pack_catalog_v1, load_plugin_settings_ui, project_board_projection_v1,
-    reconcile_remote_session_v1, scan_plugin_roots, ArtifactStore, AssetLibrarySnapshotV1,
+    reconcile_remote_session_v1, scan_plugin_inventory_v1, ArtifactStore, AssetLibrarySnapshotV1,
     ComputeProviderConnectionState, ComputeProviderLivenessPolicyV1, ComputeProviderRuntime,
     ComputeProviderSchedulingSnapshotV1, ComputeRunningAssignmentV1, Error as CoreError,
     GpuBatchBudgetOverviewV1, GpuBatchPlanRequestV1, GpuBatchPlanV1, GpuBurstDispatchSummaryV1,
     GpuBurstPlanV1, GpuJobPreparationV1, GpuWorkbenchQueueSnapshotV1, HandoffManifest,
     HttpComputeProvider, HttpComputeProviderConfigV1, LlmGatewayClient, LlmGatewayConfig,
-    LlmGatewayModel, MachineBinding, PluginRegistry, PluginRuntimeReadinessV1,
-    PortableStudioPackCatalogV1, ProductionExportHistoryEntryV1, ProductionPackV1,
+    LlmGatewayModel, MachineBinding, PluginInventoryEntryV1, PluginInventoryReportV1,
+    PluginLifecycleStateV1, PluginRegistry, PluginRuntimeReadinessV1, PortableStudioPackCatalogV1, ProductionExportHistoryEntryV1, ProductionPackV1,
     ProductionPackageExportOutcomeV1, ProductionPackageExporterV1, Project,
     ProjectBoardProjectionV1, ProjectDisplayStatus, RemoteComputeJobSpecV1,
     RemoteReconciliationSummaryV1, RuntimeWorkloadEstimateV1, StateStore,
@@ -80,6 +80,19 @@ enum AppSnapshot {
         revision: u64,
         snapshot_sha256: String,
     },
+}
+
+#[derive(Debug, Serialize)]
+struct PluginInventoryDesktopViewV1 {
+    plugins: Vec<PluginInventoryEntryV1>,
+    diagnostics: Vec<PluginDiagnosticDesktopViewV1>,
+}
+
+#[derive(Debug, Serialize)]
+struct PluginDiagnosticDesktopViewV1 {
+    code: String,
+    path: String,
+    message: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -351,6 +364,48 @@ fn delete_project(
 }
 
 #[tauri::command]
+fn plugin_inventory(app: AppHandle) -> Result<PluginInventoryDesktopViewV1, String> {
+    let report = plugin_inventory_report_v1(&app)?;
+    Ok(PluginInventoryDesktopViewV1 {
+        plugins: report.inventory,
+        diagnostics: report
+            .diagnostics
+            .into_iter()
+            .map(|diagnostic| PluginDiagnosticDesktopViewV1 {
+                code: diagnostic.code.as_str().to_owned(),
+                path: diagnostic.path.to_string_lossy().into_owned(),
+                message: diagnostic.message,
+            })
+            .collect(),
+    })
+}
+
+#[tauri::command]
+fn set_plugin_enabled(
+    app: AppHandle,
+    plugin_id: String,
+    enabled: bool,
+) -> Result<PluginInventoryDesktopViewV1, String> {
+    let plugin_id = plugin_id.trim();
+    if plugin_id.is_empty() {
+        return Err("Plugin id must not be empty.".to_owned());
+    }
+
+    let current = plugin_inventory_report_v1(&app)?;
+    if current.registry.get(plugin_id).is_none() {
+        return Err(format!("Plugin {plugin_id} is not installed on this machine."));
+    }
+
+    let path = plugin_lifecycle_path_v1(&app)?;
+    let mut lifecycle = PluginLifecycleStateV1::load_v1(&path).map_err(error_string)?;
+    lifecycle
+        .set_enabled_v1(plugin_id, enabled)
+        .map_err(error_string)?;
+    lifecycle.save_v1(path).map_err(error_string)?;
+    plugin_inventory(app)
+}
+
+#[tauri::command]
 fn studio_pack_catalog(
     app: AppHandle,
     state: State<'_, DesktopState>,
@@ -374,8 +429,8 @@ fn create_project_from_studio_pack(
     let mut catalog = load_studio_pack_catalog_v1(&data_root)?;
     validate_desktop_studio_pack_overrides_v1(&catalog, &pack_id, &overrides)?;
 
-    let registry = studio_pack_plugin_registry_v1(&app);
-    let runtime = studio_pack_runtime_snapshot_v1(&registry);
+    let registry = studio_pack_plugin_registry_v1(&app)?;
+    let runtime = studio_pack_runtime_snapshot_v1(&app, &registry)?;
     let selected_id = if overrides == StudioPackOverridesV1::default() {
         pack_id.clone()
     } else {
@@ -481,8 +536,8 @@ fn update_project_studio_pack(
         custom_id
     };
 
-    let registry = studio_pack_plugin_registry_v1(&app);
-    let runtime = studio_pack_runtime_snapshot_v1(&registry);
+    let registry = studio_pack_plugin_registry_v1(&app)?;
+    let runtime = studio_pack_runtime_snapshot_v1(&app, &registry)?;
     let availability = catalog
         .evaluate_availability_v1(&selected_id, &registry, &runtime)
         .map_err(error_string)?;
@@ -1109,7 +1164,7 @@ fn save_studio_pack_catalog_v1(
         .map_err(|error| format!("Cannot commit portable Studio Pack catalog: {error}"))
 }
 
-fn studio_pack_plugin_registry_v1(app: &AppHandle) -> PluginRegistry {
+fn plugin_built_in_roots_v1(app: &AppHandle) -> Vec<PathBuf> {
     let mut roots = BTreeSet::new();
     if let Ok(current) = env::current_dir() {
         roots.insert(current.join("plugins"));
@@ -1119,12 +1174,63 @@ fn studio_pack_plugin_registry_v1(app: &AppHandle) -> PluginRegistry {
     if let Ok(resources) = app.path().resource_dir() {
         roots.insert(resources.join("plugins"));
     }
-    scan_plugin_roots(&roots.into_iter().collect::<Vec<_>>()).registry
+    roots.into_iter().collect()
 }
 
-fn studio_pack_runtime_snapshot_v1(registry: &PluginRegistry) -> StudioPackRuntimeSnapshotV1 {
+fn plugin_user_root_v1(app: &AppHandle) -> Result<PathBuf, String> {
+    let app_data = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("Cannot resolve app data directory: {error}"))?;
+    Ok(app_data.join("plugins"))
+}
+
+fn plugin_lifecycle_path_v1(app: &AppHandle) -> Result<PathBuf, String> {
+    let config_dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|error| format!("Cannot resolve app config directory: {error}"))?;
+    fs::create_dir_all(&config_dir)
+        .map_err(|error| format!("Cannot create app config directory: {error}"))?;
+    Ok(config_dir.join("plugin-lifecycle.json"))
+}
+
+fn load_plugin_lifecycle_v1(app: &AppHandle) -> Result<PluginLifecycleStateV1, String> {
+    PluginLifecycleStateV1::load_v1(plugin_lifecycle_path_v1(app)?).map_err(error_string)
+}
+
+fn plugin_inventory_report_v1(app: &AppHandle) -> Result<PluginInventoryReportV1, String> {
+    let lifecycle = load_plugin_lifecycle_v1(app)?;
+    let built_in_roots = plugin_built_in_roots_v1(app);
+    let user_root = plugin_user_root_v1(app)?;
+    Ok(scan_plugin_inventory_v1(
+        &built_in_roots,
+        &[user_root],
+        &lifecycle,
+    ))
+}
+
+fn studio_pack_plugin_registry_v1(app: &AppHandle) -> Result<PluginRegistry, String> {
+    Ok(plugin_inventory_report_v1(app)?.registry)
+}
+
+fn studio_pack_runtime_snapshot_v1(
+    app: &AppHandle,
+    registry: &PluginRegistry,
+) -> Result<StudioPackRuntimeSnapshotV1, String> {
+    let lifecycle = load_plugin_lifecycle_v1(app)?;
     let mut runtime = StudioPackRuntimeSnapshotV1::default();
     for plugin in registry.plugins() {
+        if !lifecycle.is_enabled_v1(&plugin.manifest.id) {
+            runtime.set_v1(
+                plugin.manifest.id.clone(),
+                PluginRuntimeReadinessV1::Unavailable {
+                    reason_code: "PLUGIN_DISABLED".to_owned(),
+                },
+            );
+            continue;
+        }
+
         let report = load_plugin_settings_ui(plugin);
         if !report.diagnostics.is_empty() {
             runtime.set_v1(
@@ -1160,7 +1266,7 @@ fn studio_pack_runtime_snapshot_v1(registry: &PluginRegistry) -> StudioPackRunti
         };
         runtime.set_v1(plugin.manifest.id.clone(), readiness);
     }
-    runtime
+    Ok(runtime)
 }
 
 fn studio_pack_catalog_view_v1(
@@ -1175,8 +1281,8 @@ fn studio_pack_catalog_view_v1(
         .iter()
         .map(|pack| pack.id.clone())
         .collect::<BTreeSet<_>>();
-    let registry = studio_pack_plugin_registry_v1(app);
-    let runtime = studio_pack_runtime_snapshot_v1(&registry);
+    let registry = studio_pack_plugin_registry_v1(app)?;
+    let runtime = studio_pack_runtime_snapshot_v1(app, &registry)?;
 
     let mut packs = Vec::new();
     for definition in catalog.list_definitions_v1().map_err(error_string)? {
@@ -1259,8 +1365,8 @@ fn studio_review_center_view_v1(
     let data_root = active_data_root(state)?;
     let store = readable_store(state)?;
     let catalog = load_studio_pack_catalog_v1(&data_root)?;
-    let registry = studio_pack_plugin_registry_v1(app);
-    let runtime = studio_pack_runtime_snapshot_v1(&registry);
+    let registry = studio_pack_plugin_registry_v1(app)?;
+    let runtime = studio_pack_runtime_snapshot_v1(app, &registry)?;
     let mut projects = Vec::new();
 
     for project in store.list_projects().map_err(error_string)? {
@@ -1864,6 +1970,8 @@ fn main() {
             create_project,
             create_project_from_studio_pack,
             update_project_studio_pack,
+            plugin_inventory,
+            set_plugin_enabled,
             studio_pack_catalog,
             asset_library,
             add_asset_tag,
