@@ -89,6 +89,14 @@ enum AppSnapshot {
 struct PluginInventoryDesktopViewV1 {
     plugins: Vec<PluginInventoryEntryV1>,
     diagnostics: Vec<PluginDiagnosticDesktopViewV1>,
+    readiness: Vec<PluginRuntimeReadinessDesktopViewV1>,
+}
+
+#[derive(Debug, Serialize)]
+struct PluginRuntimeReadinessDesktopViewV1 {
+    plugin_id: String,
+    status: String,
+    reason_code: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -241,6 +249,14 @@ fn pick_data_root() -> Option<String> {
 }
 
 #[tauri::command]
+fn pick_plugin_folder() -> Option<String> {
+    rfd::FileDialog::new()
+        .set_title("Select OmniCreator Plugin Folder")
+        .pick_folder()
+        .map(|path| path.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
 fn bootstrap(app: AppHandle, state: State<'_, DesktopState>) -> Result<AppSnapshot, String> {
     if state.active.lock().map_err(lock_error)?.is_some() {
         return snapshot_from_active(&state);
@@ -369,6 +385,28 @@ fn delete_project(
 #[tauri::command]
 fn plugin_inventory(app: AppHandle) -> Result<PluginInventoryDesktopViewV1, String> {
     let report = plugin_inventory_report_v1(&app)?;
+    let runtime = studio_pack_runtime_snapshot_v1(&app, &report.registry)?;
+    let readiness = report
+        .inventory
+        .iter()
+        .map(|plugin| {
+            let (status, reason_code) = match runtime.get_v1(&plugin.id) {
+                PluginRuntimeReadinessV1::Ready => ("ready".to_owned(), None),
+                PluginRuntimeReadinessV1::SetupRequired { reason_code } => {
+                    ("setup_required".to_owned(), Some(reason_code))
+                }
+                PluginRuntimeReadinessV1::Unavailable { reason_code } => {
+                    ("unavailable".to_owned(), Some(reason_code))
+                }
+            };
+            PluginRuntimeReadinessDesktopViewV1 {
+                plugin_id: plugin.id.clone(),
+                status,
+                reason_code,
+            }
+        })
+        .collect();
+
     Ok(PluginInventoryDesktopViewV1 {
         plugins: report.inventory,
         diagnostics: report
@@ -380,6 +418,7 @@ fn plugin_inventory(app: AppHandle) -> Result<PluginInventoryDesktopViewV1, Stri
                 message: diagnostic.message,
             })
             .collect(),
+        readiness,
     })
 }
 
@@ -2142,6 +2181,7 @@ fn main() {
         .manage(DesktopState::default())
         .invoke_handler(tauri::generate_handler![
             pick_data_root,
+            pick_plugin_folder,
             bootstrap,
             create_data_root,
             use_existing_data_root,
