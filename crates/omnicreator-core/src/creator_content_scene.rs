@@ -284,13 +284,17 @@ pub fn load_latest_creator_content_scene_v1(
         Ok(matches.into_iter().next())
     };
 
-    let Some(content_artifact) =
-        latest_artifact(CREATOR_STEP_CONTENT_PREPARE_V1, CREATOR_CONTENT_ARTIFACT_TYPE_V1)?
+    let Some(content_artifact) = latest_artifact(
+        CREATOR_STEP_CONTENT_PREPARE_V1,
+        CREATOR_CONTENT_ARTIFACT_TYPE_V1,
+    )?
     else {
         return Ok(None);
     };
-    let Some(scene_plan_artifact) =
-        latest_artifact(CREATOR_STEP_SCENE_PLAN_V1, CREATOR_SCENE_PLAN_ARTIFACT_TYPE_V1)?
+    let Some(scene_plan_artifact) = latest_artifact(
+        CREATOR_STEP_SCENE_PLAN_V1,
+        CREATOR_SCENE_PLAN_ARTIFACT_TYPE_V1,
+    )?
     else {
         return Ok(None);
     };
