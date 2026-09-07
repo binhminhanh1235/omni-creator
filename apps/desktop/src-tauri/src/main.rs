@@ -38,12 +38,12 @@ use omnicreator_core::{
     ProductionPackageExporterV1, Project, ProjectBoardProjectionV1, ProjectDisplayStatus,
     RemoteComputeJobSpecV1, RemoteReconciliationSummaryV1, Result as CoreResult,
     RuntimeWorkloadEstimateV1, SegmentTtsLockStateV1, SelectedVisualOutput, StateStore,
-    StockDiscoveryStatusV1, StudioAutomationLevelV1, StudioJobReviewSnapshotV1,
+    StockDiscoveryStatusV1, StudioJobReviewSnapshotV1,
     StudioPackAvailabilityStatusV1, StudioPackOverridesV1, StudioPackRouteTargetV1,
     StudioPackRuntimeSnapshotV1, StudioPackUxViewV1, StudioPackV1, StudioReviewCenterV1,
     VisualCandidate, VisualCandidateRankingInput, VisualCandidateSignals, VisualReviewSet,
     VoiceIdentityV1, VoiceModelIdentityV1, WorkflowStep, Workspace, WorkspaceSession,
-    CREATOR_STEP_VISUAL_PREPARE_V1, STICK_FIGURE_VISUAL_CAPABILITY_V1, STUDIO_PACK_SCHEMA_V1,
+    CREATOR_STEP_VISUAL_PREPARE_V1, STUDIO_PACK_SCHEMA_V1,
     STUDIO_PACK_VERSION_V1,
 };
 use serde::{Deserialize, Serialize};
@@ -1080,7 +1080,8 @@ impl CreatorVisualAssetExecutorV1 for DesktopVisualRuntimeV1<'_> {
                     "selected stock plugin output does not match reviewed candidate".to_owned(),
                 ));
             }
-            let verified = workspace.verify_output_file(&selected.relative_output)?;
+            workspace.verify_output_file(&selected.relative_output)?;
+            let verified_path = workspace.resolve_output(&selected.relative_output)?;
             let mut promotion = selected.promotion(Self::target_uri_v1(
                 &request.scene.id,
                 request.job_id,
@@ -1104,7 +1105,7 @@ impl CreatorVisualAssetExecutorV1 for DesktopVisualRuntimeV1<'_> {
                     attempt_id: started.attempt_id.clone(),
                     job_id: request.job_id.to_owned(),
                     outputs: vec![omnicreator_core::artifact_store::AttemptOutputPromotion {
-                        source: verified.path().to_path_buf(),
+                        source: verified_path,
                         target_uri: promotion.target_uri,
                         artifact_type: promotion.artifact_type,
                         metadata: promotion.metadata,
@@ -1172,7 +1173,8 @@ impl CreatorVisualAssetExecutorV1 for DesktopVisualRuntimeV1<'_> {
             let call = process.execute("visual.generate", serde_json::to_value(&generated)?)?;
             let value = Self::process_result_v1(plugin, call.response, "visual.generate")?;
             let generated_result: GeneratedImagePluginResultV1 = serde_json::from_value(value)?;
-            let verified = workspace.verify_output_file(&generated_result.relative_output)?;
+            workspace.verify_output_file(&generated_result.relative_output)?;
+            let verified_path = workspace.resolve_output(&generated_result.relative_output)?;
 
             let target_uri = Self::target_uri_v1(
                 &request.scene.id,
@@ -1185,7 +1187,7 @@ impl CreatorVisualAssetExecutorV1 for DesktopVisualRuntimeV1<'_> {
                     attempt_id: started.attempt_id.clone(),
                     job_id: request.job_id.to_owned(),
                     outputs: vec![omnicreator_core::artifact_store::AttemptOutputPromotion {
-                        source: verified.path().to_path_buf(),
+                        source: verified_path,
                         target_uri,
                         artifact_type: "image".to_owned(),
                         metadata: serde_json::json!({
