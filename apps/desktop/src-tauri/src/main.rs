@@ -38,13 +38,12 @@ use omnicreator_core::{
     ProductionPackageExporterV1, Project, ProjectBoardProjectionV1, ProjectDisplayStatus,
     RemoteComputeJobSpecV1, RemoteReconciliationSummaryV1, Result as CoreResult,
     RuntimeWorkloadEstimateV1, SegmentTtsLockStateV1, SelectedVisualOutput, StateStore,
-    StockDiscoveryStatusV1, StudioJobReviewSnapshotV1,
-    StudioPackAvailabilityStatusV1, StudioPackOverridesV1, StudioPackRouteTargetV1,
-    StudioPackRuntimeSnapshotV1, StudioPackUxViewV1, StudioPackV1, StudioReviewCenterV1,
-    VisualCandidate, VisualCandidateRankingInput, VisualCandidateSignals, VisualReviewSet,
-    VoiceIdentityV1, VoiceModelIdentityV1, WorkflowStep, Workspace, WorkspaceSession,
-    CREATOR_STEP_VISUAL_PREPARE_V1, STUDIO_PACK_SCHEMA_V1,
-    STUDIO_PACK_VERSION_V1,
+    StockDiscoveryStatusV1, StudioJobReviewSnapshotV1, StudioPackAvailabilityStatusV1,
+    StudioPackOverridesV1, StudioPackRouteTargetV1, StudioPackRuntimeSnapshotV1,
+    StudioPackUxViewV1, StudioPackV1, StudioReviewCenterV1, VisualCandidate,
+    VisualCandidateRankingInput, VisualCandidateSignals, VisualReviewSet, VoiceIdentityV1,
+    VoiceModelIdentityV1, WorkflowStep, Workspace, WorkspaceSession,
+    CREATOR_STEP_VISUAL_PREPARE_V1, STUDIO_PACK_SCHEMA_V1, STUDIO_PACK_VERSION_V1,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
