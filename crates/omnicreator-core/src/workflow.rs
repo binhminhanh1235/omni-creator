@@ -526,9 +526,6 @@ impl StateStore {
                 parse_step_status(&raw, 0)
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
-        if !job_statuses.is_empty() {
-            return Ok(derive_display_status(&job_statuses));
-        }
 
         let mut statement = self
             .connection
@@ -539,10 +536,71 @@ impl StateStore {
                 parse_step_status(&raw, 0)
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
-        if step_statuses.is_empty() {
+
+        if job_statuses.is_empty() && step_statuses.is_empty() {
             return Ok(ProjectDisplayStatus::Draft);
         }
-        Ok(derive_display_status(&step_statuses))
+
+        // Legacy/non-creator projects may only have Jobs. Preserve their existing status semantics.
+        if step_statuses.is_empty() {
+            let status = derive_display_status(&job_statuses);
+            if status == ProjectDisplayStatus::ReadyForEdit
+                && self.has_successful_production_export_v1(project_id)?
+            {
+                return Ok(ProjectDisplayStatus::Done);
+            }
+            return Ok(status);
+        }
+
+        let all_statuses = job_statuses
+            .iter()
+            .chain(step_statuses.iter())
+            .copied()
+            .collect::<Vec<_>>();
+
+        if all_statuses
+            .iter()
+            .any(|status| matches!(status, StepStatus::Failed | StepStatus::Fatal))
+        {
+            return Ok(ProjectDisplayStatus::NeedsReview);
+        }
+        if all_statuses.contains(&StepStatus::Running) {
+            return Ok(ProjectDisplayStatus::GpuRunning);
+        }
+        if all_statuses.contains(&StepStatus::Retryable) {
+            return Ok(ProjectDisplayStatus::GpuPartial);
+        }
+        if job_statuses
+            .iter()
+            .any(|status| matches!(status, StepStatus::Ready | StepStatus::Queued))
+        {
+            return Ok(ProjectDisplayStatus::GpuReady);
+        }
+
+        let semantic_complete = step_statuses
+            .iter()
+            .all(|status| matches!(status, StepStatus::Succeeded | StepStatus::Skipped));
+        let jobs_complete = job_statuses
+            .iter()
+            .all(|status| matches!(status, StepStatus::Succeeded | StepStatus::Skipped));
+
+        if semantic_complete && jobs_complete {
+            if self.has_successful_production_export_v1(project_id)? {
+                return Ok(ProjectDisplayStatus::Done);
+            }
+            return Ok(ProjectDisplayStatus::ReadyForEdit);
+        }
+
+        Ok(ProjectDisplayStatus::Preparing)
+    }
+
+    fn has_successful_production_export_v1(&self, project_id: &str) -> Result<bool> {
+        let exported: i64 = self.connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM jobs WHERE project_id=?1 AND step_key='export.production-pack' AND status='SUCCEEDED')",
+            [project_id],
+            |row| row.get(0),
+        )?;
+        Ok(exported != 0)
     }
 }
 
@@ -915,6 +973,60 @@ mod tests {
             state.add_dependency(&c.step_id, &a.step_id),
             Err(Error::DependencyCycle(_, _))
         ));
+    }
+
+    #[test]
+    fn creator_semantic_steps_prevent_premature_ready_for_edit() {
+        let temp = tempfile::tempdir().unwrap();
+        let workspace = Workspace::create(temp.path().join("data")).unwrap();
+        let mut state = StateStore::open(workspace.sqlite_path()).unwrap();
+        let project = state.create_project("Creator status").unwrap();
+
+        let content = state
+            .create_step(
+                &project.id,
+                "content.prepare",
+                "project",
+                StepStatus::Ready,
+                Some("content-step"),
+            )
+            .unwrap();
+        state
+            .create_step(
+                &project.id,
+                "visual.prepare",
+                "project",
+                StepStatus::NotReady,
+                Some("visual-step"),
+            )
+            .unwrap();
+        let job = state
+            .create_job(&project.id, "content.prepare", "project", "content-job")
+            .unwrap();
+        let attempt = state.start_attempt(&job.job_id, Some("llm")).unwrap();
+        let artifact = Artifact {
+            artifact_id: "content-artifact".to_owned(),
+            project_id: Some(project.id.clone()),
+            artifact_type: "creator_content".to_owned(),
+            uri: crate::LogicalUri::parse("project://content/content.json").unwrap(),
+            sha256: "0".repeat(64),
+            size_bytes: 1,
+            input_hash: Some(job.input_hash.clone()),
+            producer_job: Some(job.job_id.clone()),
+            created_at: Utc::now(),
+            metadata: serde_json::json!({}),
+        };
+        state
+            .commit_attempt_artifact_success(&attempt.attempt_id, &artifact)
+            .unwrap();
+        state
+            .set_step_status(&content.step_id, StepStatus::Succeeded)
+            .unwrap();
+
+        assert_eq!(
+            state.derive_project_status(&project.id).unwrap(),
+            ProjectDisplayStatus::Preparing
+        );
     }
 
     #[test]

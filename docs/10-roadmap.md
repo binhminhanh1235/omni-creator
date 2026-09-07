@@ -410,6 +410,18 @@ P3 implementation boundary:
 
 - P4 — ProductionPack assembly plus creator Start/Resume/Review/Export UX and end-to-end restart/read-only/portability hardening
 
+P4 implementation boundary:
+
+- creator projects created from a Studio Pack immediately materialize the canonical Phase 15 workflow DAG; the desktop does not maintain a parallel run-state object
+- Start / Resume sends TOPIC or SCRIPT into the existing P1 content + SceneIntent Job/Attempt/Artifact orchestration and lets cache/retry semantics remain canonical
+- project-board state is derived from both semantic WorkflowSteps and execution Jobs so completed early jobs cannot make an incomplete creator workflow appear READY_TO_EDIT
+- ProductionPack assembly reads only physically verified selected canonical content, SceneIntent, per-scene visual, narration and voice-timing artifacts
+- voice timing is the authoritative stable timeline clock for narration/visual duration and subtitle offsets
+- the assembled ProductionPack is itself committed as a `production.pack/project` Job/Attempt/Artifact and may be loaded after restart or Data Root movement, including read-only sessions
+- normal desktop flow never asks the creator to hand-author ProductionPack JSON; canonical JSON may be inspected read-only for diagnostics
+- Resolve export reuses the existing Phase 9 `ProductionPackageExporterV1`; a successful `export.production-pack` Job is the terminal signal for the project-board DONE state
+- Review Center and existing GPU/compute state remain the surfaces for blockers and retries; P4 adds no shadow scheduler, workflow DB or machine-specific portable state
+
 P0 architecture rules:
 
 - `CreatorWorkflowPlanV1` is a provider-neutral deterministic plan, not a second workflow engine

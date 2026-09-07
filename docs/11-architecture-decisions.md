@@ -312,3 +312,16 @@ Runtime plugin/provider choice, ComputeProvider session/device identity and cred
 The aggregate `voice.prepare/project` stage is complete only when every segment has a selected successful take with physically verified audio and timing artifacts. RUNNING remote work is in-flight and is never blindly redispatched during creator re-planning.
 
 **Reason:** Phase 6 and Phase 7 already own TTS preflight, take history, GPU scheduling, remote execution, retry and reconciliation. P3's job is to connect canonical creator segments to those contracts. Refining the DAG per segment preserves resumability and selective invalidation while avoiding a shadow queue, provider-specific Project fields or duplicate scheduler state.
+
+
+## ADR-038: Creator completion is assembled and exported from canonical artifacts
+
+**Decision:** Phase 15 P4 does not introduce a new creator-run database or a mutable UI-owned ProductionPack draft. Creator projects created from a Studio Pack materialize the existing Phase 15 semantic DAG immediately, and Start / Resume advances canonical Job / Attempt / Artifact state.
+
+ProductionPack assembly reads the selected, physically verified creator content, SceneIntent, per-scene visual and per-segment narration/timing artifacts. Voice timing is the authoritative timeline clock for visual and narration clip duration and subtitle offsets. The deterministic assembled `ProductionPackV1` is committed as a `production.pack/project` Job/Attempt/Artifact, which makes it portable across restart and Data Root movement and inspectable in read-only mode.
+
+The desktop normal flow never requires hand-authored ProductionPack JSON. Export calls the existing Phase 9 `ProductionPackageExporterV1` with the canonical assembled pack. Project-board projection derives progress from both semantic WorkflowSteps and execution Jobs, and only reports DONE after a successful `export.production-pack` Job.
+
+Provider credentials, machine-local runtime readiness and temporary UI drafts remain outside portable Project state. Review Center and existing GPU/compute contracts remain responsible for blocking setup, retries and execution diagnostics.
+
+**Reason:** The final creator workflow must be explainable and resumable from the same canonical state that already owns every expensive operation. Persisting an assembled ProductionPack artifact closes the hand-authored-JSON gap without turning the desktop into a second orchestration engine or editor.

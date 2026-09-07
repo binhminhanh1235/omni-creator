@@ -32,7 +32,7 @@ for (const column of columns) {
 const appMarkers = [
   "renderProjectKanban",
   "project-action-summary",
-  "Review Issues",
+  "Review blockers",
   "studio-pack-creator",
   "review-center",
   "gpu-workbench",
