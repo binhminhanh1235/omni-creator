@@ -457,7 +457,6 @@ fn asset_from_artifact_v1(artifact: &Artifact) -> Result<AssetV1> {
     let metadata = artifact.metadata.as_object();
     let source_provider = metadata_field_v1(metadata, "source_provider")
         .and_then(Value::as_str)
-        .and_then(Value::as_str)
         .map(str::to_owned)
         .or_else(|| {
             metadata
