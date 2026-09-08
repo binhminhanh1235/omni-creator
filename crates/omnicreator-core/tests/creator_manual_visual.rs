@@ -8,8 +8,8 @@ use omnicreator_core::{
     provide_manual_creator_scene_plan_v1, provide_manual_creator_visual_file_v1, ArtifactStore,
     LogicalUri, ManualResultProvenanceV1, ManualScenePlanDraftV1, ManualVisualMediaKindV1,
     StateStore, StepStatus, Workspace, CREATOR_STEP_PRODUCTION_PACK_V1,
-    CREATOR_STEP_VISUAL_PREPARE_V1,
-    CREATOR_STEP_VOICE_PREPARE_V1, CREATOR_WORKFLOW_UNIT_PROJECT_V1,
+    CREATOR_STEP_VISUAL_PREPARE_V1, CREATOR_STEP_VOICE_PREPARE_V1,
+    CREATOR_WORKFLOW_UNIT_PROJECT_V1,
 };
 
 struct Fixture {
