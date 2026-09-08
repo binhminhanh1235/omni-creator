@@ -493,6 +493,8 @@ Manual takeover must never mutate SQLite directly, fake WorkflowStep success, cr
 
 ### P0 - Universal Manual Result foundation
 
+**Status: DONE / VERIFIED** via PR #85, exact-head CI #373 and post-merge CI #374.
+
 - provider-neutral manual/external producer and provenance contract
 - deterministic input/result hashes
 - canonical Job/Attempt execution history for ingest, retry and replacement
@@ -503,6 +505,8 @@ Manual takeover must never mutate SQLite directly, fake WorkflowStep success, cr
 - no separate manual-state model
 
 ### P1 - Content + Scene Plan takeover
+
+**Status: IN PROGRESS** on `feat/phase16-p1-content-scene-takeover`.
 
 - paste/edit script and optional TXT/Markdown import without LLMGateway
 - manual SceneIntent editor and portable ScenePlan import

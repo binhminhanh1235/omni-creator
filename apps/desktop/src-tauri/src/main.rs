@@ -12,9 +12,11 @@ use omnicreator_core::{
     default_segment_tts_compute_requirements_v1, derive_creator_run_coordinator_v1,
     dispatch_creator_voice_burst_v1, dispatch_gpu_burst_v1, execute_creator_visual_plan_v1,
     initial_studio_pack_catalog_v1, inspect_local_plugin_update_v1, install_local_plugin_folder_v1,
+    import_manual_creator_scene_plan_file_v1, import_manual_creator_script_file_v1,
     load_latest_creator_content_scene_v1, load_latest_creator_content_v1,
     load_latest_creator_production_pack_v1, load_plugin_settings_ui,
     materialize_creator_workflow_plan_v1, plan_creator_visuals_v1,
+    provide_manual_creator_content_v1, provide_manual_creator_scene_plan_v1,
     plan_creator_voice_orchestration_v1, preview_plugin_capability_impact_v1,
     project_board_projection_v1, reconcile_remote_session_v1, run_creator_content_scene_v1,
     scan_plugin_inventory_v1, select_creator_stock_candidate_v1, uninstall_user_plugin_v1,
@@ -22,6 +24,7 @@ use omnicreator_core::{
     ComputeProviderConnectionState, ComputeProviderLivenessPolicyV1, ComputeProviderRuntime,
     ComputeProviderSchedulingSnapshotV1, ComputeRunningAssignmentV1, CreatorContentSceneOptionsV1,
     CreatorContentSceneOutcomeV1, CreatorInputV1, CreatorProductionPackOptionsV1,
+    ManualResultProvenanceV1, ManualScenePlanDraftV1,
     CreatorRunCoordinatorV1, CreatorStockDiscoveryV1, CreatorVisualActionV1,
     CreatorVisualAssetExecutorV1, CreatorVisualDiscoveryExecutorV1,
     CreatorVisualGenerationRequestV1, CreatorVisualPlanV1, CreatorVisualPlanningOptionsV1,
@@ -275,6 +278,21 @@ struct CreatorVisualReviewDesktopViewV1 {
     project_id: String,
     complete: bool,
     scenes: Vec<CreatorVisualReviewSceneDesktopViewV1>,
+}
+
+#[derive(Debug, Serialize)]
+struct CreatorManualSceneEditorSegmentDesktopViewV1 {
+    id: String,
+    order: u32,
+    narration: String,
+}
+
+#[derive(Debug, Serialize)]
+struct CreatorManualSceneEditorDesktopViewV1 {
+    project_id: String,
+    content_sha256: String,
+    segments: Vec<CreatorManualSceneEditorSegmentDesktopViewV1>,
+    draft: ManualScenePlanDraftV1,
 }
 
 #[tauri::command]
@@ -1508,6 +1526,126 @@ fn creator_voice_runtime_v1(
         gpu_execution_requested: true,
         requirements: default_segment_tts_compute_requirements_v1(model_group, 12_000),
     })
+}
+
+#[tauri::command]
+fn provide_creator_script_manually(
+    state: State<'_, DesktopState>,
+    project_id: String,
+    script: String,
+) -> Result<AppSnapshot, String> {
+    let data_root = active_data_root(&state)?;
+    let artifacts = ArtifactStore::new(&data_root).map_err(error_string)?;
+    let mut store = writable_store(&state)?;
+    provide_manual_creator_content_v1(
+        &mut store,
+        &artifacts,
+        &project_id,
+        &script,
+        ManualResultProvenanceV1::manual_editor(),
+    )
+    .map_err(error_string)?;
+    drop(store);
+    snapshot_from_active(&state)
+}
+
+#[tauri::command]
+fn import_creator_script_manually(
+    state: State<'_, DesktopState>,
+    project_id: String,
+) -> Result<AppSnapshot, String> {
+    let Some(path) = rfd::FileDialog::new()
+        .set_title("Import creator script")
+        .add_filter("Script", &["txt", "md", "markdown"])
+        .pick_file()
+    else {
+        return snapshot_from_active(&state);
+    };
+    let data_root = active_data_root(&state)?;
+    let artifacts = ArtifactStore::new(&data_root).map_err(error_string)?;
+    let mut store = writable_store(&state)?;
+    import_manual_creator_script_file_v1(&mut store, &artifacts, &project_id, &path)
+        .map_err(error_string)?;
+    drop(store);
+    snapshot_from_active(&state)
+}
+
+#[tauri::command]
+fn creator_manual_scene_editor(
+    state: State<'_, DesktopState>,
+    project_id: String,
+) -> Result<CreatorManualSceneEditorDesktopViewV1, String> {
+    let data_root = active_data_root(&state)?;
+    let artifacts = ArtifactStore::new(&data_root).map_err(error_string)?;
+    let store = readable_store(&state)?;
+    let (content, content_artifact) =
+        load_latest_creator_content_v1(&store, &artifacts, &project_id)
+            .map_err(error_string)?
+            .ok_or_else(|| "Provide a verified script before editing SceneIntent.".to_owned())?;
+    let existing =
+        load_latest_creator_content_scene_v1(&store, &artifacts, &project_id).map_err(error_string)?;
+    let draft = existing
+        .as_ref()
+        .filter(|value| value.content_artifact.artifact_id == content_artifact.artifact_id)
+        .map(|value| ManualScenePlanDraftV1::from_canonical_v1(&value.scene_plan))
+        .unwrap_or(ManualScenePlanDraftV1::for_content_v1(&content).map_err(error_string)?);
+    let segments = content
+        .segments
+        .iter()
+        .map(|segment| CreatorManualSceneEditorSegmentDesktopViewV1 {
+            id: segment.id.clone(),
+            order: segment.order,
+            narration: segment.text.clone(),
+        })
+        .collect();
+    Ok(CreatorManualSceneEditorDesktopViewV1 {
+        project_id,
+        content_sha256: content_artifact.sha256,
+        segments,
+        draft,
+    })
+}
+
+#[tauri::command]
+fn provide_creator_scene_plan_manually(
+    state: State<'_, DesktopState>,
+    project_id: String,
+    draft: ManualScenePlanDraftV1,
+) -> Result<AppSnapshot, String> {
+    let data_root = active_data_root(&state)?;
+    let artifacts = ArtifactStore::new(&data_root).map_err(error_string)?;
+    let mut store = writable_store(&state)?;
+    provide_manual_creator_scene_plan_v1(
+        &mut store,
+        &artifacts,
+        &project_id,
+        &draft,
+        ManualResultProvenanceV1::manual_editor(),
+    )
+    .map_err(error_string)?;
+    drop(store);
+    snapshot_from_active(&state)
+}
+
+#[tauri::command]
+fn import_creator_scene_plan_manually(
+    state: State<'_, DesktopState>,
+    project_id: String,
+) -> Result<AppSnapshot, String> {
+    let Some(path) = rfd::FileDialog::new()
+        .set_title("Import portable ScenePlan")
+        .add_filter("ScenePlan", &["json"])
+        .pick_file()
+    else {
+        return snapshot_from_active(&state);
+    };
+    let data_root = active_data_root(&state)?;
+    let artifacts = ArtifactStore::new(&data_root).map_err(error_string)?;
+    let mut store = writable_store(&state)?;
+    import_manual_creator_scene_plan_file_v1(&mut store, &artifacts, &project_id, &path)
+        .map_err(error_string)?;
+    drop(store);
+    snapshot_from_active(&state)
 }
 
 #[tauri::command]
@@ -3127,6 +3265,11 @@ fn main() {
             creator_visual_review_status,
             select_creator_visual_candidate,
             approve_creator_generated_visual,
+            provide_creator_script_manually,
+            import_creator_script_manually,
+            creator_manual_scene_editor,
+            provide_creator_scene_plan_manually,
+            import_creator_scene_plan_manually,
             start_creator_production,
             rename_project,
             delete_project,

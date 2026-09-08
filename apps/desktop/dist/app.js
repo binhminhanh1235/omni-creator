@@ -19,6 +19,8 @@ const creatorRunState = {
   kindByProject: new Map(),
   reviewByProject: new Map(),
   reviewLoadingProjects: new Set(),
+  manualSceneByProject: new Map(),
+  manualSceneLoadingProjects: new Set(),
 };
 const studioPackState = {
   catalog: null,
@@ -456,6 +458,126 @@ async function loadCreatorVisualReview(item, readOnly) {
   }
 }
 
+function manualLines(value) {
+  return Array.isArray(value) ? value.join("\n") : "";
+}
+
+function manualSceneEditorMarkup(editor, readOnly) {
+  if (!editor || !Array.isArray(editor.segments) || !editor.draft) return "";
+  const drafts = Array.isArray(editor.draft.scenes) ? editor.draft.scenes : [];
+  return (
+    '<div class="manual-scene-editor"><div class="panel-heading"><div><p class="eyebrow">MANUAL TAKEOVER</p><h4>SceneIntent editor</h4></div></div>' +
+    '<p class="muted compact">IDs, segment linkage, narration and content hash are derived automatically. Edit semantic intent only.</p>' +
+    editor.segments
+      .map(function (segment, index) {
+        const draft = drafts[index] || {};
+        return (
+          '<div class="card manual-scene-card" data-manual-scene-index="' +
+          index +
+          '"><div class="info-row"><div class="info-label">' +
+          escapeHtml(segment.id) +
+          '</div><div class="info-value">' +
+          escapeHtml(segment.narration) +
+          '</div></div>' +
+          '<div class="field compact-field"><label>PURPOSE</label><input data-manual-field="purpose" value="' +
+          escapeHtml(draft.purpose || "Support the narration beat") +
+          '"' +
+          (readOnly ? " readonly" : "") +
+          ' /></div>' +
+          '<div class="field compact-field"><label>SCENE TYPE</label><input data-manual-field="scene_type" value="' +
+          escapeHtml(draft.scene_type || "b-roll") +
+          '"' +
+          (readOnly ? " readonly" : "") +
+          ' /></div>' +
+          '<div class="field compact-field"><label>ASPECT RATIO</label><input data-manual-field="aspect_ratio" value="' +
+          escapeHtml(draft.aspect_ratio || "16:9") +
+          '"' +
+          (readOnly ? " readonly" : "") +
+          ' /></div>' +
+          '<div class="field compact-field"><label>DURATION HINT (SECONDS)</label><input type="number" min="0.1" step="0.1" data-manual-field="duration_hint" value="' +
+          escapeHtml(draft.duration_hint == null ? "" : String(draft.duration_hint)) +
+          '"' +
+          (readOnly ? " readonly" : "") +
+          ' /></div>' +
+          '<div class="field compact-field"><label>EMOTION BEFORE</label><input data-manual-field="emotion_before" value="' +
+          escapeHtml(draft.emotion_before || "") +
+          '"' +
+          (readOnly ? " readonly" : "") +
+          ' /></div>' +
+          '<div class="field compact-field"><label>EMOTION AFTER</label><input data-manual-field="emotion_after" value="' +
+          escapeHtml(draft.emotion_after || "") +
+          '"' +
+          (readOnly ? " readonly" : "") +
+          ' /></div>' +
+          '<div class="field"><label>VISUAL IDEAS · ONE PER LINE</label><textarea rows="3" data-manual-field="visual_ideas"' +
+          (readOnly ? " readonly" : "") +
+          ">" +
+          escapeHtml(manualLines(draft.visual_ideas)) +
+          "</textarea></div>" +
+          '<div class="field"><label>SEARCH QUERIES · ONE PER LINE</label><textarea rows="2" data-manual-field="search_queries"' +
+          (readOnly ? " readonly" : "") +
+          ">" +
+          escapeHtml(manualLines(draft.search_queries)) +
+          "</textarea></div>" +
+          '<div class="field"><label>AVOID · ONE PER LINE</label><textarea rows="2" data-manual-field="avoid"' +
+          (readOnly ? " readonly" : "") +
+          ">" +
+          escapeHtml(manualLines(draft.avoid)) +
+          "</textarea></div></div>"
+        );
+      })
+      .join("") +
+    '<div class="actions"><button class="btn primary" id="creator-save-manual-scenes"' +
+    (readOnly ? " disabled" : "") +
+    ">Use Manual Scene Plan</button>" +
+    '<button class="btn" id="creator-import-manual-scenes"' +
+    (readOnly ? " disabled" : "") +
+    ">Import ScenePlan JSON</button></div></div>"
+  );
+}
+
+function collectManualSceneDraft(editor) {
+  const original = editor && editor.draft ? editor.draft : { schema: "omnicreator.manual-scene-plan-draft", version: 1, scenes: [] };
+  const scenes = Array.from(document.querySelectorAll("[data-manual-scene-index]")).map(function (card, index) {
+    const prior = (original.scenes || [])[index] || {};
+    const value = function (field) {
+      const input = card.querySelector('[data-manual-field="' + field + '"]');
+      return input ? input.value.trim() : "";
+    };
+    const lines = function (field) {
+      const text = value(field);
+      return text ? text.split("\n").map(function (line) { return line.trim(); }).filter(Boolean) : [];
+    };
+    const duration = value("duration_hint");
+    return Object.assign({}, prior, {
+      purpose: value("purpose"),
+      scene_type: value("scene_type"),
+      aspect_ratio: value("aspect_ratio"),
+      duration_hint: duration ? Number(duration) : null,
+      emotion_before: value("emotion_before") || null,
+      emotion_after: value("emotion_after") || null,
+      visual_ideas: lines("visual_ideas"),
+      search_queries: lines("search_queries"),
+      avoid: lines("avoid"),
+    });
+  });
+  return { schema: original.schema, version: original.version, scenes: scenes };
+}
+
+async function loadCreatorManualSceneEditor(item, readOnly) {
+  if (!item || !item.project || creatorRunState.manualSceneLoadingProjects.has(item.project.id)) return;
+  creatorRunState.manualSceneLoadingProjects.add(item.project.id);
+  try {
+    const editor = await call("creator_manual_scene_editor", { projectId: item.project.id });
+    creatorRunState.manualSceneByProject.set(item.project.id, editor);
+    if (creatorRunState.selectedProjectId === item.project.id) renderCreatorRunPanel(item, readOnly);
+  } catch (_error) {
+    creatorRunState.manualSceneByProject.delete(item.project.id);
+  } finally {
+    creatorRunState.manualSceneLoadingProjects.delete(item.project.id);
+  }
+}
+
 function renderCreatorRunPanel(item, readOnly) {
   const panel = document.getElementById("creator-run-panel");
   if (!panel) return;
@@ -475,10 +597,14 @@ function renderCreatorRunPanel(item, readOnly) {
   const contentStep = (item.steps || []).find(function (step) {
     return step.step === "content.prepare" && step.unit === "project";
   });
+  const sceneStep = (item.steps || []).find(function (step) {
+    return step.step === "scene.plan" && step.unit === "project";
+  });
   const inputRequired = !contentStep || contentStep.status !== "SUCCEEDED";
   const kind = creatorRunState.kindByProject.get(project.id) || "TOPIC";
   const draft = creatorRunState.draftByProject.get(project.id) || "";
   const visualReview = creatorRunState.reviewByProject.get(project.id) || null;
+  const manualSceneEditor = creatorRunState.manualSceneByProject.get(project.id) || null;
 
   panel.hidden = false;
   panel.innerHTML =
@@ -513,6 +639,17 @@ function renderCreatorRunPanel(item, readOnly) {
     ">" +
     escapeHtml(draft) +
     "</textarea></div>" +
+    '<div class="actions compact-actions"><button class="btn" id="creator-use-script-manual"' +
+    (readOnly ? " disabled" : "") +
+    ">Provide Script Manually</button>" +
+    '<button class="btn" id="creator-import-script-manual"' +
+    (readOnly ? " disabled" : "") +
+    ">Import TXT/Markdown</button>" +
+    (contentStep && contentStep.status === "SUCCEEDED"
+      ? '<button class="btn" id="creator-open-manual-scenes">Edit Scene Plan Manually</button>'
+      : "") +
+    "</div>" +
+    (manualSceneEditor ? manualSceneEditorMarkup(manualSceneEditor, readOnly) : "") +
     (run.stage === "VISUAL"
       ? visualReview
         ? creatorVisualReviewMarkup(visualReview, readOnly)
@@ -588,6 +725,75 @@ function renderCreatorRunPanel(item, readOnly) {
     };
   });
 
+  const manualScriptButton = document.getElementById("creator-use-script-manual");
+  if (manualScriptButton) {
+    manualScriptButton.onclick = async function () {
+      const script = textInput.value.trim();
+      if (!script) {
+        showToast("Paste a script before manual takeover.");
+        return;
+      }
+      manualScriptButton.disabled = true;
+      try {
+        creatorRunState.manualSceneByProject.delete(project.id);
+        render(await call("provide_creator_script_manually", { projectId: project.id, script: script }));
+        showToast("Manual script promoted to the canonical Content artifact.");
+      } catch (_error) {
+        render(await call("list_projects"));
+      }
+    };
+  }
+
+  const importScriptButton = document.getElementById("creator-import-script-manual");
+  if (importScriptButton) {
+    importScriptButton.onclick = async function () {
+      importScriptButton.disabled = true;
+      try {
+        creatorRunState.manualSceneByProject.delete(project.id);
+        render(await call("import_creator_script_manually", { projectId: project.id }));
+        showToast("Imported script promoted to canonical Content.");
+      } catch (_error) {
+        render(await call("list_projects"));
+      }
+    };
+  }
+
+  const openManualScenes = document.getElementById("creator-open-manual-scenes");
+  if (openManualScenes) {
+    openManualScenes.onclick = function () {
+      loadCreatorManualSceneEditor(item, readOnly);
+    };
+  }
+
+  const saveManualScenes = document.getElementById("creator-save-manual-scenes");
+  if (saveManualScenes && manualSceneEditor) {
+    saveManualScenes.onclick = async function () {
+      saveManualScenes.disabled = true;
+      try {
+        const draft = collectManualSceneDraft(manualSceneEditor);
+        creatorRunState.manualSceneByProject.delete(project.id);
+        render(await call("provide_creator_scene_plan_manually", { projectId: project.id, draft: draft }));
+        showToast("Manual ScenePlan validated, promoted and unlocked downstream work.");
+      } catch (_error) {
+        loadCreatorManualSceneEditor(item, readOnly);
+      }
+    };
+  }
+
+  const importManualScenes = document.getElementById("creator-import-manual-scenes");
+  if (importManualScenes) {
+    importManualScenes.onclick = async function () {
+      importManualScenes.disabled = true;
+      try {
+        creatorRunState.manualSceneByProject.delete(project.id);
+        render(await call("import_creator_scene_plan_manually", { projectId: project.id }));
+        showToast("Portable ScenePlan normalized to canonical identities.");
+      } catch (_error) {
+        loadCreatorManualSceneEditor(item, readOnly);
+      }
+    };
+  }
+
   const runButton = document.getElementById("run-creator-production");
   runButton.onclick = async function () {
     const inputText = textInput.value.trim();
@@ -611,6 +817,10 @@ function renderCreatorRunPanel(item, readOnly) {
       render(await call("list_projects"));
     }
   };
+
+  if ((!contentStep || contentStep.status !== "SUCCEEDED") && manualSceneEditor) {
+    creatorRunState.manualSceneByProject.delete(project.id);
+  }
 
   if (
     run.stage === "VISUAL" &&
