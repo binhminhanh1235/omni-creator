@@ -40,8 +40,6 @@ fn fixture() -> Fixture {
 fn request(
     project_id: &str,
     workflow_step: &str,
-    workflow_unit: &str,
-    job_step: &str,
     job_unit: &str,
     target: &str,
     replace_existing: bool,
@@ -52,8 +50,8 @@ fn request(
         version: MANUAL_RESULT_VERSION_V1,
         project_id: project_id.to_owned(),
         workflow_step: workflow_step.to_owned(),
-        workflow_unit: workflow_unit.to_owned(),
-        job_step: job_step.to_owned(),
+        workflow_unit: CREATOR_WORKFLOW_UNIT_PROJECT_V1.to_owned(),
+        job_step: workflow_step.to_owned(),
         job_unit: job_unit.to_owned(),
         artifact_type: "manual-test".to_owned(),
         target_uri: LogicalUri::parse(target).unwrap(),
@@ -80,8 +78,6 @@ fn p0_manual_ingest_is_canonical_portable_and_read_only_inspectable() {
     fs::write(&source, b"Creator authored script").unwrap();
     let req = request(
         &fx.project_id,
-        CREATOR_STEP_CONTENT_PREPARE_V1,
-        CREATOR_WORKFLOW_UNIT_PROJECT_V1,
         CREATOR_STEP_CONTENT_PREPARE_V1,
         CREATOR_WORKFLOW_UNIT_PROJECT_V1,
         "project://manual-results/content/result.txt",
@@ -171,8 +167,6 @@ fn p0_replacement_invalidates_only_owner_dependency_cone_and_preserves_history()
     let first = request(
         &fx.project_id,
         CREATOR_STEP_VISUAL_PREPARE_V1,
-        CREATOR_WORKFLOW_UNIT_PROJECT_V1,
-        CREATOR_STEP_VISUAL_PREPARE_V1,
         "SC001",
         "project://manual-results/visual/SC001-a.png",
         false,
@@ -200,8 +194,6 @@ fn p0_replacement_invalidates_only_owner_dependency_cone_and_preserves_history()
     fs::write(&visual_b, b"visual B").unwrap();
     let second = request(
         &fx.project_id,
-        CREATOR_STEP_VISUAL_PREPARE_V1,
-        CREATOR_WORKFLOW_UNIT_PROJECT_V1,
         CREATOR_STEP_VISUAL_PREPARE_V1,
         "SC001",
         "project://manual-results/visual/SC001-b.png",
@@ -264,8 +256,6 @@ fn p0_rejects_machine_paths_and_secret_shaped_metadata_before_attempt() {
     let artifacts = ArtifactStore::new(fx.workspace.data_root()).unwrap();
     let mut req = request(
         &fx.project_id,
-        CREATOR_STEP_CONTENT_PREPARE_V1,
-        CREATOR_WORKFLOW_UNIT_PROJECT_V1,
         CREATOR_STEP_CONTENT_PREPARE_V1,
         CREATOR_WORKFLOW_UNIT_PROJECT_V1,
         "project://manual-results/content/rejected.txt",
