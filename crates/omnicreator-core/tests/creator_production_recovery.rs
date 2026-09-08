@@ -154,16 +154,16 @@ fn missing_visual_relinks_through_canonical_replacement_and_rebuilds_export() {
     let mut fx = fixture();
     let (scene_id, _) = prepare(&mut fx);
     let artifacts = ArtifactStore::new(fx.workspace.data_root()).unwrap();
-    let before = inspect_creator_production_recovery_v1(&fx.store, &artifacts, &fx.project_id)
-        .unwrap();
+    let before =
+        inspect_creator_production_recovery_v1(&fx.store, &artifacts, &fx.project_id).unwrap();
     assert!(before.ready_for_rebuild);
     let visual = item(&before, ProductionRecoveryArtifactKindV1::Visual);
     let old_id = visual.artifact_id.clone().unwrap();
     let old_artifact = fx.store.get_artifact(&old_id).unwrap();
     fs::remove_file(artifacts.resolve_artifact_path(&old_artifact).unwrap()).unwrap();
 
-    let broken = inspect_creator_production_recovery_v1(&fx.store, &artifacts, &fx.project_id)
-        .unwrap();
+    let broken =
+        inspect_creator_production_recovery_v1(&fx.store, &artifacts, &fx.project_id).unwrap();
     assert_eq!(
         item(&broken, ProductionRecoveryArtifactKindV1::Visual).state,
         ProductionRecoveryArtifactStateV1::Missing
@@ -207,8 +207,8 @@ fn audio_then_timing_recovery_preserves_segment_identity_and_survives_data_root_
     let mut fx = fixture();
     let (_, segment_id) = prepare(&mut fx);
     let artifacts = ArtifactStore::new(fx.workspace.data_root()).unwrap();
-    let initial = inspect_creator_production_recovery_v1(&fx.store, &artifacts, &fx.project_id)
-        .unwrap();
+    let initial =
+        inspect_creator_production_recovery_v1(&fx.store, &artifacts, &fx.project_id).unwrap();
     let audio_id = item(&initial, ProductionRecoveryArtifactKindV1::Audio)
         .artifact_id
         .clone()

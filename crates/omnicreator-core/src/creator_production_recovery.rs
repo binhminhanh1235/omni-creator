@@ -3,15 +3,15 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    assemble_creator_production_pack_v1, inspect_manual_voice_audio_v1,
-    load_latest_creator_content_scene_v1, import_manual_voice_timing_file_v1,
+    assemble_creator_production_pack_v1, import_manual_voice_timing_file_v1,
+    inspect_manual_voice_audio_v1, load_latest_creator_content_scene_v1,
     provide_manual_creator_visual_file_v1, provide_manual_creator_voice_bundle_v1,
-    replace_manual_creator_voice_timing_v1, Artifact, ArtifactStore, CreatorProductionPackOptionsV1,
-    CreatorProductionPackOutcomeV1, Error, FcpxmlExportProfileV1, Job, ManualCreatorVisualOutcomeV1,
-    ManualCreatorVoiceOutcomeV1, ManualCreatorVoiceRequestV1, ManualResultProvenanceV1,
-    ProductionPackageExportOutcomeV1, ProductionPackageExporterV1, Result, StateStore, StepStatus,
-    VoiceTakeV1, CREATOR_STEP_VISUAL_PREPARE_V1, CREATOR_TTS_STEP_V1,
-    VOICE_AUDIO_ARTIFACT_TYPE_V1, VOICE_TIMING_ARTIFACT_TYPE_V1,
+    replace_manual_creator_voice_timing_v1, Artifact, ArtifactStore,
+    CreatorProductionPackOptionsV1, CreatorProductionPackOutcomeV1, Error, FcpxmlExportProfileV1,
+    Job, ManualCreatorVisualOutcomeV1, ManualCreatorVoiceOutcomeV1, ManualCreatorVoiceRequestV1,
+    ManualResultProvenanceV1, ProductionPackageExportOutcomeV1, ProductionPackageExporterV1,
+    Result, StateStore, StepStatus, VoiceTakeV1, CREATOR_STEP_VISUAL_PREPARE_V1,
+    CREATOR_TTS_STEP_V1, VOICE_AUDIO_ARTIFACT_TYPE_V1, VOICE_TIMING_ARTIFACT_TYPE_V1,
 };
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -222,7 +222,9 @@ pub fn repair_creator_production_timing_v1(
             ))
         })?;
     let audio = take.artifact.ok_or_else(|| {
-        Error::InvalidArtifact(format!("segment {segment_id} selected take has no audio artifact"))
+        Error::InvalidArtifact(format!(
+            "segment {segment_id} selected take has no audio artifact"
+        ))
     })?;
     if !artifact_store.verify_artifact(&audio)? {
         return Err(Error::InvalidArtifact(format!(
@@ -231,11 +233,8 @@ pub fn repair_creator_production_timing_v1(
     }
     let audio_path = artifact_store.resolve_artifact_path(&audio)?;
     let audio_metadata = inspect_manual_voice_audio_v1(&audio_path)?;
-    let timing = import_manual_voice_timing_file_v1(
-        timing_path,
-        segment_id,
-        audio_metadata.duration_ms,
-    )?;
+    let timing =
+        import_manual_voice_timing_file_v1(timing_path, segment_id, audio_metadata.duration_ms)?;
     replace_manual_creator_voice_timing_v1(
         state_store,
         artifact_store,
@@ -328,11 +327,17 @@ fn classify_artifact_v1(
             Ok(true) => (ProductionRecoveryArtifactStateV1::Verified, None),
             Ok(false) => (
                 ProductionRecoveryArtifactStateV1::Missing,
-                Some("Canonical artifact file is missing at the current Data Root binding.".to_owned()),
+                Some(
+                    "Canonical artifact file is missing at the current Data Root binding."
+                        .to_owned(),
+                ),
             ),
             Err(_) => (
                 ProductionRecoveryArtifactStateV1::Invalid,
-                Some("Canonical artifact file no longer matches its recorded hash/metadata.".to_owned()),
+                Some(
+                    "Canonical artifact file no longer matches its recorded hash/metadata."
+                        .to_owned(),
+                ),
             ),
         }
     };
@@ -456,7 +461,12 @@ fn require_scene_identity_v1(
                 "Production recovery requires verified canonical Content + ScenePlan".to_owned(),
             )
         })?;
-    if creator.scene_plan.scenes.iter().any(|scene| scene.id == scene_id) {
+    if creator
+        .scene_plan
+        .scenes
+        .iter()
+        .any(|scene| scene.id == scene_id)
+    {
         Ok(())
     } else {
         Err(Error::InvalidContract(format!(
