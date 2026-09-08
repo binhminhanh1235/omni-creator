@@ -325,3 +325,16 @@ The desktop normal flow never requires hand-authored ProductionPack JSON. Export
 Provider credentials, machine-local runtime readiness and temporary UI drafts remain outside portable Project state. Review Center and existing GPU/compute contracts remain responsible for blocking setup, retries and execution diagnostics.
 
 **Reason:** The final creator workflow must be explainable and resumable from the same canonical state that already owns every expensive operation. Persisting an assembled ProductionPack artifact closes the hand-authored-JSON gap without turning the desktop into a second orchestration engine or editor.
+
+
+## ADR-039: Manual and external producers converge on canonical execution
+
+**Decision:** Phase 16 manual takeover does not introduce a second workflow state model. Manual editor input, local-file import and external-result import are producer modes for the existing canonical Job / Attempt / ArtifactStore path.
+
+A manual result is validated before execution, assigned a deterministic input hash, recorded as a normal logical Job, executed through an Attempt with a symbolic manual producer worker, copied into a portable `project://` destination, hash-verified and promoted through ArtifactStore. Portable artifact metadata records versioned provider-neutral manual provenance. Source machine paths are transient call inputs only and are never persisted.
+
+Replacement is explicit. The owning WorkflowStep invalidates its existing downstream dependency cone through the canonical DAG, while only prior Jobs for the same logical step/unit are superseded to STALE. Historical Attempts and Artifacts remain inspectable. Unrelated verified branches therefore remain reusable.
+
+Read-only sessions use the same StateStore and ArtifactStore to inspect manual-result history and physical verification, but mutation naturally fails at the SQLite writer boundary. Restart and Data Root movement remain portable because durable references are logical URIs and hashes rather than absolute paths.
+
+**Reason:** Automatic providers, plugins and compute runtimes can fail independently. Treating manual/external work as first-class producers preserves creator progress without falsifying provider execution, bypassing validation, or fragmenting workflow ownership.

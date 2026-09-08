@@ -477,3 +477,85 @@ Do not prioritize:
 - distributed microservice infrastructure
 
 The system is initially for one creator, one Mac, temporary remote workers and a local editor. Keep it that simple.
+
+
+## Phase 16 - Universal Manual Takeover & Recovery
+
+**Tracking:** #84
+
+Goal: automatic execution is an accelerator, never a single point of failure. Every creator stage accepts one or more producer paths, but every accepted result converges on the existing canonical Project / WorkflowStep / Job / Attempt / ArtifactStore contracts.
+
+Canonical ingestion boundary:
+
+`manual or external input -> validate -> canonical Job -> Attempt with producer provenance -> ArtifactStore promotion -> verified Artifact -> WorkflowStep SUCCEEDED -> downstream DAG unlocked`
+
+Manual takeover must never mutate SQLite directly, fake WorkflowStep success, create a shadow workflow database, keep canonical truth in browser storage, bypass validation, or persist absolute machine paths/secrets.
+
+### P0 - Universal Manual Result foundation
+
+- provider-neutral manual/external producer and provenance contract
+- deterministic input/result hashes
+- canonical Job/Attempt execution history for ingest, retry and replacement
+- ArtifactStore verification/promotion only
+- restart/resume and read-only inspection
+- portable logical URIs under the Data Root
+- precise downstream invalidation when a canonical result is replaced
+- no separate manual-state model
+
+### P1 - Content + Scene Plan takeover
+
+- paste/edit script and optional TXT/Markdown import without LLMGateway
+- manual SceneIntent editor and portable ScenePlan import
+- canonical IDs/schema/hash/linkage are derived and validated
+- narration/segment identity is preserved
+- manual Script + ScenePlan can unlock Visual with no LLMGateway configured
+
+### P2 - Visual takeover per scene
+
+- Choose From Asset Library, Use My Image, Use My Video, Replace Existing Visual
+- imported media is copied into a granted/canonical workspace, hashed, verified, minimally inspected and promoted through ArtifactStore
+- canonical scene binding + provenance are preserved
+- replacement invalidates ProductionPack dependencies without discarding unrelated verified scenes
+- automatic and manual visual producers may be mixed scene-by-scene
+
+### P3 - Voice + Timing takeover per segment
+
+- automatic OmniVoice/TTS or manual audio import per segment
+- replace one segment without redoing unrelated voice work
+- SRT/timing sidecar import and manual timing correction
+- validate non-negative ordered timing, duration and segment linkage
+- manual WAV/MP3 can replace TTS when OmniVoice/GPU is unavailable
+
+### P4 - Compute/generated external handoff
+
+- expose a safe provider-neutral prepared request for generated visual/voice work
+- Copy/Export Request and Provide External Result
+- imported external output rejoins the same logical stage/job, is verified/promoted canonically, and records truthful external/manual provenance
+- never claim a remote provider ran when the user fulfilled the request elsewhere
+
+### P5 - ProductionPack + export recovery
+
+- repair/relink visual, audio and timing before export
+- rebuild canonical ProductionPack and regenerate export
+- normal UX never requires hand-editing canonical ProductionPack JSON
+
+### P6 - Review Center universal recovery UX
+
+- actionable blockers expose only applicable actions from Retry, Configure, Choose Alternative Provider, Provide Manually, Replace Result and Details
+- Review Center remains a projection/controller over canonical state
+- read-only sessions may inspect recovery state but may not import/replace
+
+### Phase 16 critical acceptance
+
+A. Existing all-automatic Phase 15 golden path still passes.
+B. No LLM: manual Script + manual ScenePlan -> Visual -> Voice -> ProductionPack -> Export.
+C. No stock provider: manual image/video per scene continues.
+D. No voice provider/GPU: manual audio per segment + timing continues.
+E. No generated-image ComputeProvider: prepared request -> external result import continues.
+F. Mixed project: Pexels + Pixabay + Stick Figure + manual video + external image + OmniVoice/manual WAV -> canonical ProductionPack + Resolve export.
+G. Replacement invalidates only the correct dependency cone.
+H. Restart / Data Root move or rebind keeps manual outputs canonical and resumable.
+I. Read-only can inspect but cannot replace/import.
+J. With all external services unavailable, complete manual inputs can still reach ProductionPack and DaVinci export.
+
+Verification discipline: implement P0-P6 as guarded slices. Each slice requires exact-head CI PASS before merge and post-merge CI PASS on the exact merge SHA before it is marked DONE / VERIFIED in #84 and roadmap tracking #1.

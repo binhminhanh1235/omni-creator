@@ -87,6 +87,7 @@ impl FailureDisposition {
             | "LOCAL_RUNTIME_CONTEXT_ERROR"
             | "LLMGATEWAY_SETUP_REQUIRED"
             | "LOCAL_EXPORT_ERROR"
+            | "MANUAL_RESULT_IMPORT_ERROR"
             | "LOCAL_RESTART_PENDING_RECONCILIATION" => Self::Retryable,
             _ => Self::Fatal,
         }
@@ -730,6 +731,46 @@ impl StateStore {
         transaction.commit()?;
 
         self.get_attempt(attempt_id)
+    }
+}
+
+impl StateStore {
+    pub fn supersede_logical_job_results_v1(
+        &self,
+        project_id: &str,
+        step: &str,
+        unit: &str,
+        keep_input_hash: Option<&str>,
+    ) -> Result<usize> {
+        self.get_project(project_id)?;
+        if step.trim().is_empty() || unit.trim().is_empty() {
+            return Err(Error::InvalidJobState(
+                "logical job step and unit must not be empty".to_owned(),
+            ));
+        }
+
+        let active: i64 = self.connection.query_row(
+            "SELECT COUNT(*) FROM jobs
+             WHERE project_id=?1 AND step_key=?2 AND unit_key=?3
+               AND status IN ('RUNNING','QUEUED')
+               AND (?4 IS NULL OR input_hash<>?4)",
+            params![project_id, step, unit, keep_input_hash],
+            |row| row.get(0),
+        )?;
+        if active != 0 {
+            return Err(Error::InvalidTransition(format!(
+                "cannot replace {step}/{unit} while an existing logical job is active"
+            )));
+        }
+
+        let changed = self.connection.execute(
+            "UPDATE jobs SET status='STALE'
+             WHERE project_id=?1 AND step_key=?2 AND unit_key=?3
+               AND status NOT IN ('CANCELLED','STALE','RUNNING','QUEUED')
+               AND (?4 IS NULL OR input_hash<>?4)",
+            params![project_id, step, unit, keep_input_hash],
+        )?;
+        Ok(changed)
     }
 }
 
