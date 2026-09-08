@@ -3,7 +3,8 @@ use std::fs;
 use omnicreator_core::{
     compile_creator_workflow_plan_v1, creator_segment_voice_states_v1,
     derive_manual_voice_timing_v1, initial_studio_pack_catalog_v1, inspect_manual_voice_audio_v1,
-    materialize_creator_workflow_plan_v1, parse_manual_voice_timing_bytes_v1,
+    load_latest_creator_content_v1, materialize_creator_workflow_plan_v1,
+    parse_manual_voice_timing_bytes_v1,
     provide_manual_creator_content_v1, provide_manual_creator_voice_bundle_v1,
     replace_manual_creator_voice_timing_v1, voice_timing_to_srt_v1, ArtifactStore,
     ManualCreatorVoiceRequestV1, ManualResultProvenanceV1, StateStore, StepStatus,
@@ -51,6 +52,18 @@ fn prepare_content(fx: &mut Fixture) {
     .unwrap();
 }
 
+fn content_segments(fx: &Fixture) -> Vec<(String, String)> {
+    let artifacts = ArtifactStore::new(fx.workspace.data_root()).unwrap();
+    let (content, _) = load_latest_creator_content_v1(&fx.store, &artifacts, &fx.project_id)
+        .unwrap()
+        .unwrap();
+    content
+        .segments
+        .into_iter()
+        .map(|segment| (segment.id, segment.narration))
+        .collect()
+}
+
 fn wav(duration_ms: u64, marker: u8) -> Vec<u8> {
     let sample_rate = 8_000u32;
     let channels = 1u16;
@@ -91,25 +104,17 @@ fn no_voice_provider_or_gpu_manual_wav_segments_complete_voice_stage() {
     prepare_content(&mut fx);
     let artifacts = ArtifactStore::new(fx.workspace.data_root()).unwrap();
 
-    for (index, segment_id) in ["SEG001", "SEG002"].into_iter().enumerate() {
+    for (index, (segment_id, narration)) in content_segments(&fx).into_iter().enumerate() {
         let audio = fx.temp.path().join(format!("{segment_id}.wav"));
         fs::write(&audio, wav(1_000, index as u8 + 1)).unwrap();
-        let timing = derive_manual_voice_timing_v1(
-            segment_id,
-            if index == 0 {
-                "First voice segment."
-            } else {
-                "Second voice segment."
-            },
-            1_000,
-        )
-        .unwrap();
+        let timing =
+            derive_manual_voice_timing_v1(&segment_id, &narration, 1_000).unwrap();
         let outcome = provide_manual_creator_voice_bundle_v1(
             &mut fx.store,
             &artifacts,
             ManualCreatorVoiceRequestV1 {
                 project_id: &fx.project_id,
-                segment_id,
+                segment_id: &segment_id,
                 audio_path: &audio,
                 timing,
                 provenance: ManualResultProvenanceV1::local_file(),
@@ -170,12 +175,13 @@ fn timing_replacement_reuses_audio_and_preserves_other_segment_work() {
     prepare_content(&mut fx);
     let artifacts = ArtifactStore::new(fx.workspace.data_root()).unwrap();
 
+    let segments = content_segments(&fx);
     let mut original_jobs = Vec::new();
-    for (index, segment_id) in ["SEG001", "SEG002"].into_iter().enumerate() {
+    for (index, (segment_id, narration)) in segments.iter().enumerate() {
         let audio = fx.temp.path().join(format!("replace-{segment_id}.wav"));
         fs::write(&audio, wav(1_000, index as u8 + 3)).unwrap();
         let timing =
-            derive_manual_voice_timing_v1(segment_id, "Original narration", 1_000).unwrap();
+            derive_manual_voice_timing_v1(segment_id, narration, 1_000).unwrap();
         let outcome = provide_manual_creator_voice_bundle_v1(
             &mut fx.store,
             &artifacts,
@@ -204,7 +210,7 @@ fn timing_replacement_reuses_audio_and_preserves_other_segment_work() {
     let corrected = VoiceTimingV1 {
         schema: VOICE_TIMING_SCHEMA_V1.to_owned(),
         version: 1,
-        segment_id: "SEG001".to_owned(),
+        segment_id: segments[0].0.clone(),
         duration_ms: 1_000,
         cues: vec![
             VoiceTimingCueV1 {
@@ -225,7 +231,7 @@ fn timing_replacement_reuses_audio_and_preserves_other_segment_work() {
         &mut fx.store,
         &artifacts,
         &fx.project_id,
-        "SEG001",
+        &segments[0].0,
         corrected,
         ManualResultProvenanceV1::manual_editor(),
     )
