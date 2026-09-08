@@ -21,6 +21,8 @@ const creatorRunState = {
   reviewLoadingProjects: new Set(),
   manualSceneByProject: new Map(),
   manualSceneLoadingProjects: new Set(),
+  manualVisualByProject: new Map(),
+  manualVisualLoadingProjects: new Set(),
 };
 const studioPackState = {
   catalog: null,
@@ -434,6 +436,120 @@ function creatorVisualReviewMarkup(view, readOnly) {
   );
 }
 
+function creatorManualVisualMarkup(view, readOnly) {
+  if (!view || !Array.isArray(view.scenes) || !view.scenes.length) return "";
+  const library = Array.isArray(view.library) ? view.library : [];
+  const options = library
+    .map(function (entry) {
+      const asset = entry.asset || {};
+      const label = [
+        asset.asset_type || "MEDIA",
+        asset.width && asset.height ? asset.width + "×" + asset.height : "",
+        entry.tags && entry.tags.length ? entry.tags.slice(0, 2).join(", ") : "",
+        asset.asset_id || "",
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      return (
+        '<option value="' +
+        escapeHtml(asset.asset_id || "") +
+        '">' +
+        escapeHtml(label) +
+        "</option>"
+      );
+    })
+    .join("");
+
+  return (
+    '<div class="creator-visual-review manual-visual-takeover"><div class="creator-review-head"><strong>MANUAL VISUAL TAKEOVER</strong>' +
+    '<span>Automatic and manual sources can be mixed scene-by-scene</span></div>' +
+    view.scenes
+      .map(function (scene) {
+        const current = scene.selected_artifact || null;
+        const replacing = Boolean(current);
+        const currentText = current
+          ? '<div class="notice subtle"><strong>CURRENT · ' +
+            escapeHtml(String(current.artifact_type || "media").toUpperCase()) +
+            "</strong><code>" +
+            escapeHtml(current.artifact_id) +
+            "</code><span>" +
+            escapeHtml(current.uri || "") +
+            "</span></div>"
+          : '<div class="notice subtle">No verified visual selected yet.</div>';
+        return (
+          '<article class="creator-review-scene manual-visual-scene" data-manual-visual-scene="' +
+          escapeHtml(scene.scene_id) +
+          '"><div><strong>' +
+          escapeHtml(scene.scene_id) +
+          "</strong><p>" +
+          escapeHtml(scene.narration) +
+          "</p><small>" +
+          escapeHtml(scene.purpose) +
+          "</small>" +
+          currentText +
+          '</div><div class="creator-review-decision">' +
+          (replacing
+            ? '<strong class="asset-badge">Replace Existing Visual</strong>'
+            : '<strong class="asset-badge">Provide Manually</strong>') +
+          '<select class="creator-manual-library-select" data-scene-id="' +
+          escapeHtml(scene.scene_id) +
+          '"' +
+          (readOnly || !library.length ? " disabled" : "") +
+          ">" +
+          (library.length ? options : '<option value="">Asset Library is empty</option>') +
+          "</select>" +
+          '<button class="btn creator-use-library-visual" data-scene-id="' +
+          escapeHtml(scene.scene_id) +
+          '" data-replace="' +
+          (replacing ? "true" : "false") +
+          '"' +
+          (readOnly || !library.length ? " disabled" : "") +
+          ">Choose From Asset Library</button>" +
+          '<button class="btn creator-use-image-manual" data-scene-id="' +
+          escapeHtml(scene.scene_id) +
+          '" data-replace="' +
+          (replacing ? "true" : "false") +
+          '"' +
+          (readOnly ? " disabled" : "") +
+          ">Use My Image</button>" +
+          '<button class="btn creator-use-video-manual" data-scene-id="' +
+          escapeHtml(scene.scene_id) +
+          '" data-replace="' +
+          (replacing ? "true" : "false") +
+          '"' +
+          (readOnly ? " disabled" : "") +
+          ">Use My Video</button></div></article>"
+        );
+      })
+      .join("") +
+    "</div>"
+  );
+}
+
+async function loadCreatorManualVisual(item, readOnly) {
+  if (
+    !item ||
+    !item.project ||
+    creatorRunState.manualVisualLoadingProjects.has(item.project.id)
+  ) {
+    return;
+  }
+  creatorRunState.manualVisualLoadingProjects.add(item.project.id);
+  try {
+    const view = await call("creator_manual_visual_status", {
+      projectId: item.project.id,
+    });
+    creatorRunState.manualVisualByProject.set(item.project.id, view);
+    if (creatorRunState.selectedProjectId === item.project.id) {
+      renderCreatorRunPanel(item, readOnly);
+    }
+  } catch (_error) {
+    creatorRunState.manualVisualByProject.delete(item.project.id);
+  } finally {
+    creatorRunState.manualVisualLoadingProjects.delete(item.project.id);
+  }
+}
+
 async function loadCreatorVisualReview(item, readOnly) {
   if (
     !item ||
@@ -605,6 +721,7 @@ function renderCreatorRunPanel(item, readOnly) {
   const draft = creatorRunState.draftByProject.get(project.id) || "";
   const visualReview = creatorRunState.reviewByProject.get(project.id) || null;
   const manualSceneEditor = creatorRunState.manualSceneByProject.get(project.id) || null;
+  const manualVisual = creatorRunState.manualVisualByProject.get(project.id) || null;
 
   panel.hidden = false;
   panel.innerHTML =
@@ -650,6 +767,11 @@ function renderCreatorRunPanel(item, readOnly) {
       : "") +
     "</div>" +
     (manualSceneEditor ? manualSceneEditorMarkup(manualSceneEditor, readOnly) : "") +
+    (sceneStep && sceneStep.status === "SUCCEEDED"
+      ? manualVisual
+        ? creatorManualVisualMarkup(manualVisual, readOnly)
+        : '<div class="notice subtle">Loading manual visual takeover options from canonical scene and Asset Library state…</div>'
+      : "") +
     (run.stage === "VISUAL"
       ? visualReview
         ? creatorVisualReviewMarkup(visualReview, readOnly)
@@ -794,6 +916,76 @@ function renderCreatorRunPanel(item, readOnly) {
     };
   }
 
+  document.querySelectorAll(".creator-use-library-visual").forEach(function (button) {
+    button.onclick = async function () {
+      const sceneId = button.dataset.sceneId;
+      const select = document.querySelector(
+        '.creator-manual-library-select[data-scene-id="' + sceneId + '"]',
+      );
+      const artifactId = select ? select.value : "";
+      if (!artifactId) {
+        showToast("Choose an Asset Library item first.");
+        return;
+      }
+      button.disabled = true;
+      try {
+        creatorRunState.manualVisualByProject.delete(project.id);
+        creatorRunState.reviewByProject.delete(project.id);
+        render(
+          await call("choose_creator_asset_library_visual", {
+            projectId: project.id,
+            sceneId: sceneId,
+            artifactId: artifactId,
+            replaceExisting: button.dataset.replace === "true",
+          }),
+        );
+        showToast("Asset Library visual copied, verified and bound to the canonical scene job.");
+      } catch (_error) {
+        loadCreatorManualVisual(item, readOnly);
+      }
+    };
+  });
+
+  document.querySelectorAll(".creator-use-image-manual").forEach(function (button) {
+    button.onclick = async function () {
+      button.disabled = true;
+      try {
+        creatorRunState.manualVisualByProject.delete(project.id);
+        creatorRunState.reviewByProject.delete(project.id);
+        render(
+          await call("use_creator_image_manually", {
+            projectId: project.id,
+            sceneId: button.dataset.sceneId,
+            replaceExisting: button.dataset.replace === "true",
+          }),
+        );
+        showToast("Manual image copied, inspected, verified and bound to the scene.");
+      } catch (_error) {
+        loadCreatorManualVisual(item, readOnly);
+      }
+    };
+  });
+
+  document.querySelectorAll(".creator-use-video-manual").forEach(function (button) {
+    button.onclick = async function () {
+      button.disabled = true;
+      try {
+        creatorRunState.manualVisualByProject.delete(project.id);
+        creatorRunState.reviewByProject.delete(project.id);
+        render(
+          await call("use_creator_video_manually", {
+            projectId: project.id,
+            sceneId: button.dataset.sceneId,
+            replaceExisting: button.dataset.replace === "true",
+          }),
+        );
+        showToast("Manual video copied, inspected, verified and bound to the scene.");
+      } catch (_error) {
+        loadCreatorManualVisual(item, readOnly);
+      }
+    };
+  });
+
   const runButton = document.getElementById("run-creator-production");
   runButton.onclick = async function () {
     const inputText = textInput.value.trim();
@@ -828,6 +1020,14 @@ function renderCreatorRunPanel(item, readOnly) {
     !creatorRunState.reviewLoadingProjects.has(project.id)
   ) {
     loadCreatorVisualReview(item, readOnly);
+  }
+  if (
+    sceneStep &&
+    sceneStep.status === "SUCCEEDED" &&
+    !manualVisual &&
+    !creatorRunState.manualVisualLoadingProjects.has(project.id)
+  ) {
+    loadCreatorManualVisual(item, readOnly);
   }
 }
 
