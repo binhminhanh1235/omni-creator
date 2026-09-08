@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use crate::{
     assemble_creator_production_pack_v1, import_manual_voice_timing_file_v1,
     inspect_manual_voice_audio_v1, load_latest_creator_content_scene_v1,
-    provide_manual_creator_visual_file_v1, provide_manual_creator_voice_bundle_v1,
-    replace_manual_creator_voice_timing_v1, Artifact, ArtifactStore,
+    provide_manual_creator_visual_file_v1, provide_manual_creator_voice_bundle_v1, Artifact,
+    ArtifactStore,
     CreatorProductionPackOptionsV1, CreatorProductionPackOutcomeV1, Error, FcpxmlExportProfileV1,
     Job, ManualCreatorVisualOutcomeV1, ManualCreatorVoiceOutcomeV1, ManualCreatorVoiceRequestV1,
     ManualResultProvenanceV1, ProductionPackageExportOutcomeV1, ProductionPackageExporterV1,
@@ -235,13 +235,17 @@ pub fn repair_creator_production_timing_v1(
     let audio_metadata = inspect_manual_voice_audio_v1(&audio_path)?;
     let timing =
         import_manual_voice_timing_file_v1(timing_path, segment_id, audio_metadata.duration_ms)?;
-    replace_manual_creator_voice_timing_v1(
+    provide_manual_creator_voice_bundle_v1(
         state_store,
         artifact_store,
-        project_id,
-        segment_id,
-        timing,
-        ManualResultProvenanceV1::local_file(),
+        ManualCreatorVoiceRequestV1 {
+            project_id,
+            segment_id,
+            audio_path: &audio_path,
+            timing,
+            provenance: ManualResultProvenanceV1::local_file(),
+            replace_existing: true,
+        },
     )
 }
 
