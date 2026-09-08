@@ -1162,8 +1162,8 @@ mod tests {
 
     #[test]
     fn script_segmentation_is_deterministic_and_preserves_order() {
-        let first = segment_script_v1("First beat. Second beat? Final beat!").unwrap();
-        let second = segment_script_v1("First beat. Second beat? Final beat!").unwrap();
+        let first = segment_creator_script_v1("First beat. Second beat? Final beat!").unwrap();
+        let second = segment_creator_script_v1("First beat. Second beat? Final beat!").unwrap();
 
         assert_eq!(first, second);
         assert_eq!(first.len(), 3);
