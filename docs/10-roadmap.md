@@ -506,7 +506,7 @@ Manual takeover must never mutate SQLite directly, fake WorkflowStep success, cr
 
 ### P1 - Content + Scene Plan takeover
 
-**Status: IN PROGRESS** on `feat/phase16-p1-content-scene-takeover`.
+**Status: DONE / VERIFIED** via PR #86, exact-head CI #378 and post-merge CI #379.
 
 - paste/edit script and optional TXT/Markdown import without LLMGateway
 - manual SceneIntent editor and portable ScenePlan import
@@ -515,6 +515,8 @@ Manual takeover must never mutate SQLite directly, fake WorkflowStep success, cr
 - manual Script + ScenePlan can unlock Visual with no LLMGateway configured
 
 ### P2 - Visual takeover per scene
+
+**Status: IN PROGRESS.**
 
 - Choose From Asset Library, Use My Image, Use My Video, Replace Existing Visual
 - imported media is copied into a granted/canonical workspace, hashed, verified, minimally inspected and promoted through ArtifactStore
