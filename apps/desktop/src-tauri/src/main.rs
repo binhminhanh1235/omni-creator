@@ -8,24 +8,27 @@ use std::{
 use chrono::{DateTime, Utc};
 use omnicreator_core::{
     approve_creator_generated_visual_v1, assemble_creator_production_pack_v1,
-    build_studio_pack_ux_view_v1, build_studio_review_center_v1, compile_creator_workflow_plan_v1,
-    default_segment_tts_compute_requirements_v1, derive_creator_run_coordinator_v1,
-    dispatch_creator_voice_burst_v1, dispatch_gpu_burst_v1, execute_creator_visual_plan_v1,
-    import_manual_creator_scene_plan_file_v1, import_manual_creator_script_file_v1,
-    initial_studio_pack_catalog_v1, inspect_local_plugin_update_v1, install_local_plugin_folder_v1,
+    build_studio_pack_ux_view_v1, build_studio_review_center_v1,
+    choose_creator_visual_from_asset_library_v1, compile_creator_workflow_plan_v1,
+    creator_scene_visual_states_v1, default_segment_tts_compute_requirements_v1,
+    derive_creator_run_coordinator_v1, dispatch_creator_voice_burst_v1, dispatch_gpu_burst_v1,
+    execute_creator_visual_plan_v1, import_manual_creator_scene_plan_file_v1,
+    import_manual_creator_script_file_v1, initial_studio_pack_catalog_v1,
+    inspect_local_plugin_update_v1, install_local_plugin_folder_v1,
     load_latest_creator_content_scene_v1, load_latest_creator_content_v1,
     load_latest_creator_production_pack_v1, load_plugin_settings_ui,
     materialize_creator_workflow_plan_v1, plan_creator_visuals_v1,
     plan_creator_voice_orchestration_v1, preview_plugin_capability_impact_v1,
     project_board_projection_v1, provide_manual_creator_content_v1,
-    provide_manual_creator_scene_plan_v1, reconcile_remote_session_v1,
-    run_creator_content_scene_v1, scan_plugin_inventory_v1, select_creator_stock_candidate_v1,
-    uninstall_user_plugin_v1, update_local_plugin_folder_v1, Artifact, ArtifactStore,
-    AssetLibrarySnapshotV1, ComputeProviderConnectionState, ComputeProviderLivenessPolicyV1,
-    ComputeProviderRuntime, ComputeProviderSchedulingSnapshotV1, ComputeRunningAssignmentV1,
-    CreatorContentSceneOptionsV1, CreatorContentSceneOutcomeV1, CreatorInputV1,
-    CreatorProductionPackOptionsV1, CreatorRunCoordinatorV1, CreatorStockDiscoveryV1,
-    CreatorVisualActionV1, CreatorVisualAssetExecutorV1, CreatorVisualDiscoveryExecutorV1,
+    provide_manual_creator_scene_plan_v1, provide_manual_creator_visual_file_v1,
+    reconcile_remote_session_v1, run_creator_content_scene_v1, scan_plugin_inventory_v1,
+    select_creator_stock_candidate_v1, uninstall_user_plugin_v1, update_local_plugin_folder_v1,
+    Artifact, ArtifactStore, AssetLibraryEntryV1, AssetLibrarySnapshotV1,
+    ComputeProviderConnectionState, ComputeProviderLivenessPolicyV1, ComputeProviderRuntime,
+    ComputeProviderSchedulingSnapshotV1, ComputeRunningAssignmentV1, CreatorContentSceneOptionsV1,
+    CreatorContentSceneOutcomeV1, CreatorInputV1, CreatorProductionPackOptionsV1,
+    CreatorRunCoordinatorV1, CreatorStockDiscoveryV1, CreatorVisualActionV1,
+    CreatorVisualAssetExecutorV1, CreatorVisualDiscoveryExecutorV1,
     CreatorVisualGenerationRequestV1, CreatorVisualPlanV1, CreatorVisualPlanningOptionsV1,
     CreatorVisualStockFetchRequestV1, CreatorVoiceRuntimeV1, DiscoveredPlugin, Error as CoreError,
     GeneratedImagePluginResultV1, GeneratedImageRequestV1, GeneratedImageResolutionV1,
@@ -278,6 +281,21 @@ struct CreatorVisualReviewDesktopViewV1 {
     project_id: String,
     complete: bool,
     scenes: Vec<CreatorVisualReviewSceneDesktopViewV1>,
+}
+
+#[derive(Debug, Serialize)]
+struct CreatorManualVisualSceneDesktopViewV1 {
+    scene_id: String,
+    narration: String,
+    purpose: String,
+    selected_artifact: Option<Artifact>,
+}
+
+#[derive(Debug, Serialize)]
+struct CreatorManualVisualDesktopViewV1 {
+    project_id: String,
+    scenes: Vec<CreatorManualVisualSceneDesktopViewV1>,
+    library: Vec<AssetLibraryEntryV1>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1644,6 +1662,144 @@ fn import_creator_scene_plan_manually(
     let mut store = writable_store(&state)?;
     import_manual_creator_scene_plan_file_v1(&mut store, &artifacts, &project_id, &path)
         .map_err(error_string)?;
+    drop(store);
+    snapshot_from_active(&state)
+}
+
+#[tauri::command]
+fn creator_manual_visual_status(
+    state: State<'_, DesktopState>,
+    project_id: String,
+) -> Result<CreatorManualVisualDesktopViewV1, String> {
+    let data_root = active_data_root(&state)?;
+    let artifacts = ArtifactStore::new(&data_root).map_err(error_string)?;
+    let store = readable_store(&state)?;
+    let creator = load_latest_creator_content_scene_v1(&store, &artifacts, &project_id)
+        .map_err(error_string)?
+        .ok_or_else(|| {
+            "Provide verified Content + ScenePlan before manual visual takeover.".to_owned()
+        })?;
+    let visual_states =
+        creator_scene_visual_states_v1(&store, &artifacts, &project_id).map_err(error_string)?;
+    let selected = visual_states
+        .into_iter()
+        .map(|state| (state.scene_id, state.selected_artifact))
+        .collect::<BTreeMap<_, _>>();
+
+    let mut library = Vec::new();
+    for entry in store
+        .asset_library_snapshot_v1(Utc::now())
+        .map_err(error_string)?
+        .entries
+    {
+        if !matches!(entry.asset.asset_type.as_str(), "IMAGE" | "VIDEO") {
+            continue;
+        }
+        let artifact = store
+            .get_artifact(&entry.asset.asset_id)
+            .map_err(error_string)?;
+        if artifacts.verify_artifact(&artifact).map_err(error_string)? {
+            library.push(entry);
+        }
+    }
+
+    let scenes = creator
+        .scene_plan
+        .scenes
+        .iter()
+        .map(|scene| CreatorManualVisualSceneDesktopViewV1 {
+            scene_id: scene.id.clone(),
+            narration: scene.narration.clone(),
+            purpose: scene.purpose.clone(),
+            selected_artifact: selected.get(&scene.id).cloned().flatten(),
+        })
+        .collect();
+
+    Ok(CreatorManualVisualDesktopViewV1 {
+        project_id,
+        scenes,
+        library,
+    })
+}
+
+fn import_creator_visual_file_v1(
+    state: &State<'_, DesktopState>,
+    project_id: &str,
+    scene_id: &str,
+    path: &Path,
+    replace_existing: bool,
+) -> Result<AppSnapshot, String> {
+    let data_root = active_data_root(state)?;
+    let artifacts = ArtifactStore::new(&data_root).map_err(error_string)?;
+    let mut store = writable_store(state)?;
+    provide_manual_creator_visual_file_v1(
+        &mut store,
+        &artifacts,
+        project_id,
+        scene_id,
+        path,
+        ManualResultProvenanceV1::local_file(),
+        replace_existing,
+    )
+    .map_err(error_string)?;
+    drop(store);
+    snapshot_from_active(state)
+}
+
+#[tauri::command]
+fn use_creator_image_manually(
+    state: State<'_, DesktopState>,
+    project_id: String,
+    scene_id: String,
+    replace_existing: bool,
+) -> Result<AppSnapshot, String> {
+    let Some(path) = rfd::FileDialog::new()
+        .set_title("Use My Image for creator scene")
+        .add_filter("Images", &["png", "jpg", "jpeg", "webp", "gif"])
+        .pick_file()
+    else {
+        return snapshot_from_active(&state);
+    };
+    import_creator_visual_file_v1(&state, &project_id, &scene_id, &path, replace_existing)
+}
+
+#[tauri::command]
+fn use_creator_video_manually(
+    state: State<'_, DesktopState>,
+    project_id: String,
+    scene_id: String,
+    replace_existing: bool,
+) -> Result<AppSnapshot, String> {
+    let Some(path) = rfd::FileDialog::new()
+        .set_title("Use My Video for creator scene")
+        .add_filter("Videos", &["mp4", "mov", "m4v", "webm", "mkv", "avi"])
+        .pick_file()
+    else {
+        return snapshot_from_active(&state);
+    };
+    import_creator_visual_file_v1(&state, &project_id, &scene_id, &path, replace_existing)
+}
+
+#[tauri::command]
+fn choose_creator_asset_library_visual(
+    state: State<'_, DesktopState>,
+    project_id: String,
+    scene_id: String,
+    artifact_id: String,
+    replace_existing: bool,
+) -> Result<AppSnapshot, String> {
+    let data_root = active_data_root(&state)?;
+    let artifacts = ArtifactStore::new(&data_root).map_err(error_string)?;
+    let mut store = writable_store(&state)?;
+    choose_creator_visual_from_asset_library_v1(
+        &mut store,
+        &artifacts,
+        &project_id,
+        &scene_id,
+        &artifact_id,
+        replace_existing,
+    )
+    .map_err(error_string)?;
     drop(store);
     snapshot_from_active(&state)
 }
@@ -3263,8 +3419,12 @@ fn main() {
             review_center,
             retry_review_job,
             creator_visual_review_status,
+            creator_manual_visual_status,
             select_creator_visual_candidate,
             approve_creator_generated_visual,
+            use_creator_image_manually,
+            use_creator_video_manually,
+            choose_creator_asset_library_visual,
             provide_creator_script_manually,
             import_creator_script_manually,
             creator_manual_scene_editor,

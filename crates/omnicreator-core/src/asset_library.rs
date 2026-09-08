@@ -441,10 +441,21 @@ fn usage_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<AssetUsageV1> {
     })
 }
 
+fn metadata_field_v1<'a>(
+    metadata: Option<&'a serde_json::Map<String, Value>>,
+    key: &str,
+) -> Option<&'a Value> {
+    metadata.and_then(|value| value.get(key)).or_else(|| {
+        metadata
+            .and_then(|value| value.get("stage"))
+            .and_then(Value::as_object)
+            .and_then(|value| value.get(key))
+    })
+}
+
 fn asset_from_artifact_v1(artifact: &Artifact) -> Result<AssetV1> {
     let metadata = artifact.metadata.as_object();
-    let source_provider = metadata
-        .and_then(|value| value.get("source_provider"))
+    let source_provider = metadata_field_v1(metadata, "source_provider")
         .and_then(Value::as_str)
         .map(str::to_owned)
         .or_else(|| {
@@ -455,17 +466,13 @@ fn asset_from_artifact_v1(artifact: &Artifact) -> Result<AssetV1> {
                 .and_then(Value::as_str)
                 .map(str::to_owned)
         });
-    let width = metadata
-        .and_then(|value| value.get("width"))
+    let width = metadata_field_v1(metadata, "width")
         .and_then(Value::as_u64)
         .and_then(|value| u32::try_from(value).ok());
-    let height = metadata
-        .and_then(|value| value.get("height"))
+    let height = metadata_field_v1(metadata, "height")
         .and_then(Value::as_u64)
         .and_then(|value| u32::try_from(value).ok());
-    let duration = metadata
-        .and_then(|value| value.get("duration"))
-        .and_then(Value::as_f64);
+    let duration = metadata_field_v1(metadata, "duration").and_then(Value::as_f64);
     let provenance = metadata
         .and_then(|value| value.get("provenance"))
         .and_then(Value::as_object)
