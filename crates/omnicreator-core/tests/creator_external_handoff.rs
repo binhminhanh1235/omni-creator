@@ -271,7 +271,7 @@ fn external_visual_replacement_invalidates_only_the_downstream_cone() {
 fn external_voice_audio_and_timing_rejoin_canonical_voice_take() {
     let mut fx = fixture("External voice");
     let artifacts = ArtifactStore::new(fx.workspace.data_root()).unwrap();
-    provide_manual_creator_content_v1(
+    let content = provide_manual_creator_content_v1(
         &mut fx.store,
         &artifacts,
         &fx.project_id,
@@ -279,9 +279,11 @@ fn external_voice_audio_and_timing_rejoin_canonical_voice_take() {
         ManualResultProvenanceV1::manual_editor(),
     )
     .unwrap();
+    let segment_id = content.content.segments[0].id.clone();
 
     let request =
-        prepare_external_voice_request_v1(&fx.store, &artifacts, &fx.project_id, "SEG001").unwrap();
+        prepare_external_voice_request_v1(&fx.store, &artifacts, &fx.project_id, &segment_id)
+            .unwrap();
     let serialized = request.to_pretty_json_v1().unwrap();
     assert!(!serialized.contains("provider_id"));
     assert!(!serialized.contains("plugin_id"));
@@ -290,7 +292,7 @@ fn external_voice_audio_and_timing_rejoin_canonical_voice_take() {
     let audio = fx.temp.path().join("external.wav");
     fs::write(&audio, wav(1_000, 7)).unwrap();
     let timing =
-        derive_manual_voice_timing_v1("SEG001", "Narrate this externally.", 1_000).unwrap();
+        derive_manual_voice_timing_v1(&segment_id, "Narrate this externally.", 1_000).unwrap();
     let outcome = provide_external_voice_result_v1(
         &mut fx.store,
         &artifacts,
@@ -308,7 +310,7 @@ fn external_voice_audio_and_timing_rejoin_canonical_voice_take() {
     let attempt = fx.store.get_attempt(&outcome.attempt_id).unwrap();
     assert_eq!(attempt.worker.as_deref(), Some("manual-result:external"));
     assert_eq!(outcome.job.step, CREATOR_TTS_STEP_V1);
-    assert_eq!(outcome.job.unit, "SEG001");
+    assert_eq!(outcome.job.unit, segment_id);
     assert_eq!(outcome.job.status, StepStatus::Succeeded);
     let states = creator_segment_voice_states_v1(&fx.store, &artifacts, &fx.project_id).unwrap();
     assert_eq!(states.len(), 1);
