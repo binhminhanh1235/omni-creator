@@ -1,14 +1,12 @@
 use std::fs;
 
 use omnicreator_core::{
-    compile_creator_workflow_plan_v1, ingest_manual_result_file_v1,
-    initial_studio_pack_catalog_v1, list_manual_result_history_v1,
-    materialize_creator_workflow_plan_v1, ArtifactStore, LogicalUri,
+    compile_creator_workflow_plan_v1, ingest_manual_result_file_v1, initial_studio_pack_catalog_v1,
+    list_manual_result_history_v1, materialize_creator_workflow_plan_v1, ArtifactStore, LogicalUri,
     ManualResultIngestRequestV1, ManualResultProvenanceV1, StateStore, StepStatus, Workspace,
-    CREATOR_STEP_CONTENT_PREPARE_V1, CREATOR_STEP_PRODUCTION_PACK_V1,
-    CREATOR_STEP_SCENE_PLAN_V1, CREATOR_STEP_VISUAL_PREPARE_V1,
-    CREATOR_STEP_VOICE_PREPARE_V1, CREATOR_WORKFLOW_UNIT_PROJECT_V1, MANUAL_RESULT_SCHEMA_V1,
-    MANUAL_RESULT_VERSION_V1,
+    CREATOR_STEP_CONTENT_PREPARE_V1, CREATOR_STEP_PRODUCTION_PACK_V1, CREATOR_STEP_SCENE_PLAN_V1,
+    CREATOR_STEP_VISUAL_PREPARE_V1, CREATOR_STEP_VOICE_PREPARE_V1,
+    CREATOR_WORKFLOW_UNIT_PROJECT_V1, MANUAL_RESULT_SCHEMA_V1, MANUAL_RESULT_VERSION_V1,
 };
 
 struct Fixture {
@@ -92,11 +90,13 @@ fn p0_manual_ingest_is_canonical_portable_and_read_only_inspectable() {
     );
 
     let artifacts = ArtifactStore::new(fx.workspace.data_root()).unwrap();
-    let outcome =
-        ingest_manual_result_file_v1(&mut fx.store, &artifacts, &req, &source).unwrap();
+    let outcome = ingest_manual_result_file_v1(&mut fx.store, &artifacts, &req, &source).unwrap();
     assert_eq!(outcome.job.status, StepStatus::Succeeded);
     assert_eq!(outcome.attempt.status, StepStatus::Succeeded);
-    assert_eq!(outcome.attempt.worker.as_deref(), Some("manual-result:local-file"));
+    assert_eq!(
+        outcome.attempt.worker.as_deref(),
+        Some("manual-result:local-file")
+    );
     assert!(artifacts.verify_artifact(&outcome.artifact).unwrap());
     assert_eq!(
         project_step(&fx.store, &fx.project_id, CREATOR_STEP_CONTENT_PREPARE_V1).status,
@@ -106,8 +106,7 @@ fn p0_manual_ingest_is_canonical_portable_and_read_only_inspectable() {
     assert!(!metadata.contains(source.to_string_lossy().as_ref()));
     assert!(!metadata.contains(fx.workspace.data_root().to_string_lossy().as_ref()));
 
-    let cached =
-        ingest_manual_result_file_v1(&mut fx.store, &artifacts, &req, &source).unwrap();
+    let cached = ingest_manual_result_file_v1(&mut fx.store, &artifacts, &req, &source).unwrap();
     assert!(cached.cache_hit);
     assert_eq!(cached.artifact.artifact_id, outcome.artifact.artifact_id);
 
@@ -133,11 +132,7 @@ fn p0_manual_ingest_is_canonical_portable_and_read_only_inspectable() {
     assert_eq!(history.len(), 1);
     assert!(history[0].verified);
     assert_eq!(
-        history[0]
-            .provenance
-            .as_ref()
-            .unwrap()
-            .producer,
+        history[0].provenance.as_ref().unwrap().producer,
         omnicreator_core::ManualResultProducerV1::LocalFileImport
     );
 
@@ -163,12 +158,11 @@ fn p0_replacement_invalidates_only_owner_dependency_cone_and_preserves_history()
     let mut fx = fixture();
     let artifacts = ArtifactStore::new(fx.workspace.data_root()).unwrap();
 
-    for key in [
-        CREATOR_STEP_CONTENT_PREPARE_V1,
-        CREATOR_STEP_SCENE_PLAN_V1,
-    ] {
+    for key in [CREATOR_STEP_CONTENT_PREPARE_V1, CREATOR_STEP_SCENE_PLAN_V1] {
         let step = project_step(&fx.store, &fx.project_id, key);
-        fx.store.set_step_status(&step.step_id, StepStatus::Succeeded).unwrap();
+        fx.store
+            .set_step_status(&step.step_id, StepStatus::Succeeded)
+            .unwrap();
         fx.store.refresh_ready_steps(&fx.project_id).unwrap();
     }
 
@@ -197,8 +191,7 @@ fn p0_replacement_invalidates_only_owner_dependency_cone_and_preserves_history()
         .set_step_status(&voice_step.step_id, StepStatus::Succeeded)
         .unwrap();
     fx.store.refresh_ready_steps(&fx.project_id).unwrap();
-    let production =
-        project_step(&fx.store, &fx.project_id, CREATOR_STEP_PRODUCTION_PACK_V1);
+    let production = project_step(&fx.store, &fx.project_id, CREATOR_STEP_PRODUCTION_PACK_V1);
     fx.store
         .set_step_status(&production.step_id, StepStatus::Succeeded)
         .unwrap();
@@ -285,5 +278,9 @@ fn p0_rejects_machine_paths_and_secret_shaped_metadata_before_attempt() {
     req.stage_metadata = serde_json::json!({"safe": "C:\\Users\\creator\\input.txt"});
     assert!(ingest_manual_result_file_v1(&mut fx.store, &artifacts, &req, &source).is_err());
 
-    assert!(fx.store.list_project_jobs(&fx.project_id).unwrap().is_empty());
+    assert!(fx
+        .store
+        .list_project_jobs(&fx.project_id)
+        .unwrap()
+        .is_empty());
 }

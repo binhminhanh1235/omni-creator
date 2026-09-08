@@ -189,11 +189,7 @@ pub fn ingest_manual_result_file_v1(
         )));
     }
 
-    let input_hash = manual_result_input_hash_v1(
-        request,
-        &source_sha256,
-        source_size_bytes,
-    )?;
+    let input_hash = manual_result_input_hash_v1(request, &source_sha256, source_size_bytes)?;
 
     if let Some((job, attempt, artifact)) =
         find_verified_cache_v1(state_store, artifact_store, request, &input_hash)?
@@ -289,10 +285,8 @@ pub fn ingest_manual_result_file_v1(
             Error::InvalidArtifact("manual-result promotion produced no artifact".to_owned())
         })?,
         Err(error) => {
-            let _ = state_store.finish_attempt_failure(
-                &attempt.attempt_id,
-                MANUAL_RESULT_IMPORT_ERROR_V1,
-            );
+            let _ = state_store
+                .finish_attempt_failure(&attempt.attempt_id, MANUAL_RESULT_IMPORT_ERROR_V1);
             if request.complete_workflow_step {
                 if let Ok(step) = state_store.get_step(&workflow_step.step_id) {
                     if step.status == StepStatus::Running {
@@ -390,7 +384,9 @@ pub fn list_manual_result_history_v1(
     entries.sort_by(|left, right| {
         let left_time = left.artifact.as_ref().map(|a| a.created_at);
         let right_time = right.artifact.as_ref().map(|a| a.created_at);
-        right_time.cmp(&left_time).then_with(|| right.job.job_id.cmp(&left.job.job_id))
+        right_time
+            .cmp(&left_time)
+            .then_with(|| right.job.job_id.cmp(&left.job.job_id))
     });
     Ok(entries)
 }
@@ -427,9 +423,7 @@ fn require_workflow_step_v1(
     state_store
         .list_project_steps(&request.project_id)?
         .into_iter()
-        .find(|step| {
-            step.step == request.workflow_step && step.unit == request.workflow_unit
-        })
+        .find(|step| step.step == request.workflow_step && step.unit == request.workflow_unit)
         .ok_or_else(|| {
             Error::InvalidContract(format!(
                 "manual-result workflow step {}/{} does not exist",
@@ -537,10 +531,7 @@ fn get_or_create_job_v1(
     }
 }
 
-fn normalize_step_for_execution_v1(
-    state_store: &StateStore,
-    step: &WorkflowStep,
-) -> Result<()> {
+fn normalize_step_for_execution_v1(state_store: &StateStore, step: &WorkflowStep) -> Result<()> {
     match step.status {
         StepStatus::Ready | StepStatus::Succeeded => Ok(()),
         StepStatus::Stale
@@ -586,10 +577,7 @@ fn normalize_invalidation_v1(
     Ok(())
 }
 
-fn mark_workflow_step_succeeded_v1(
-    state_store: &StateStore,
-    step: &WorkflowStep,
-) -> Result<()> {
+fn mark_workflow_step_succeeded_v1(state_store: &StateStore, step: &WorkflowStep) -> Result<()> {
     state_store.refresh_ready_steps(&step.project_id)?;
     let current = state_store.get_step(&step.step_id)?;
     match current.status {
@@ -608,9 +596,7 @@ fn mark_workflow_step_succeeded_v1(
     }
 }
 
-fn parse_provenance_v1(
-    metadata: &serde_json::Value,
-) -> Result<Option<ManualResultProvenanceV1>> {
+fn parse_provenance_v1(metadata: &serde_json::Value) -> Result<Option<ManualResultProvenanceV1>> {
     let Some(value) = metadata
         .get("manual_result")
         .and_then(|manual| manual.get("provenance"))
@@ -655,9 +641,16 @@ fn validate_portable_metadata_v1(value: &serde_json::Value) -> Result<()> {
         serde_json::Value::Object(map) => {
             for (key, child) in map {
                 let normalized = key.to_ascii_lowercase().replace('-', "_");
-                if ["secret", "password", "token", "api_key", "authorization", "cookie"]
-                    .iter()
-                    .any(|needle| normalized.contains(needle))
+                if [
+                    "secret",
+                    "password",
+                    "token",
+                    "api_key",
+                    "authorization",
+                    "cookie",
+                ]
+                .iter()
+                .any(|needle| normalized.contains(needle))
                 {
                     return Err(Error::InvalidContract(format!(
                         "manual-result stage metadata key {key} may contain secret material"
@@ -679,7 +672,8 @@ fn validate_portable_metadata_v1(value: &serde_json::Value) -> Result<()> {
                 || looks_like_windows_absolute_v1(trimmed)
             {
                 return Err(Error::InvalidContract(
-                    "manual-result stage metadata must not persist absolute machine paths".to_owned(),
+                    "manual-result stage metadata must not persist absolute machine paths"
+                        .to_owned(),
                 ));
             }
         }
