@@ -306,7 +306,7 @@ fn stale_external_visual_request_is_rejected_after_scene_plan_change() {
     let mut draft = ManualScenePlanDraftV1::for_content_v1(&content.content).unwrap();
     draft.scenes[0].scene_type = "literal".to_owned();
     draft.scenes[0].purpose = "Original visual purpose".to_owned();
-    provide_manual_creator_scene_plan_v1(
+    let first_scene_plan = provide_manual_creator_scene_plan_v1(
         &mut fx.store,
         &artifacts,
         &fx.project_id,
@@ -319,7 +319,7 @@ fn stale_external_visual_request_is_rejected_after_scene_plan_change() {
         &fx.store,
         &artifacts,
         &fx.project_id,
-        &draft.scenes[0].id,
+        &first_scene_plan.scene_plan.scenes[0].id,
     )
     .unwrap();
 
