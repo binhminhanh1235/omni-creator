@@ -700,7 +700,8 @@ impl ArtifactStore {
             metadata: timing_metadata,
         };
 
-        if let Err(error) = state_store.commit_voice_bundle_success_v1(request.attempt_id, &audio, &timing)
+        if let Err(error) =
+            state_store.commit_voice_bundle_success_v1(request.attempt_id, &audio, &timing)
         {
             let _ = fs::remove_file(&audio_destination);
             let _ = fs::remove_file(&timing_destination);
