@@ -1846,7 +1846,7 @@ fn creator_manual_voice_status(
             let state = states.get(&segment.id);
             CreatorManualVoiceSegmentDesktopViewV1 {
                 segment_id: segment.id.clone(),
-                narration: segment.narration.clone(),
+                narration: segment.text.clone(),
                 selected_audio: state.and_then(|value| value.audio.clone()),
                 timing_artifact: state.and_then(|value| value.timing_artifact.clone()),
                 timing: state.and_then(|value| value.timing.clone()),
@@ -1874,7 +1874,7 @@ fn creator_segment_narration_v1(
         .segments
         .iter()
         .find(|segment| segment.id == segment_id)
-        .map(|segment| segment.narration.clone())
+        .map(|segment| segment.text.clone())
         .ok_or_else(|| format!("Creator segment not found: {segment_id}"))
 }
 
