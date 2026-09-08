@@ -9,12 +9,11 @@ use uuid::Uuid;
 
 use crate::{
     deterministic_input_hash, fs_util::sha256_file, load_latest_creator_content_v1, Artifact,
-    ArtifactStore, Error, Job, LogicalUri,
-    ManualResultProducerV1, ManualResultProvenanceV1, PathResolver, Result, StateStore, StepStatus,
-    VoiceTimingCueV1, VoiceTimingV1, WorkflowStep, CREATOR_STEP_CONTENT_PREPARE_V1,
-    CREATOR_STEP_PRODUCTION_PACK_V1, CREATOR_STEP_VOICE_PREPARE_V1, CREATOR_TTS_STEP_V1,
-    CREATOR_WORKFLOW_UNIT_PROJECT_V1, VOICE_AUDIO_ARTIFACT_TYPE_V1, VOICE_TIMING_ARTIFACT_TYPE_V1,
-    VOICE_TIMING_SCHEMA_V1,
+    ArtifactStore, Error, Job, LogicalUri, ManualResultProducerV1, ManualResultProvenanceV1,
+    PathResolver, Result, StateStore, StepStatus, VoiceTimingCueV1, VoiceTimingV1, WorkflowStep,
+    CREATOR_STEP_CONTENT_PREPARE_V1, CREATOR_STEP_PRODUCTION_PACK_V1,
+    CREATOR_STEP_VOICE_PREPARE_V1, CREATOR_TTS_STEP_V1, CREATOR_WORKFLOW_UNIT_PROJECT_V1,
+    VOICE_AUDIO_ARTIFACT_TYPE_V1, VOICE_TIMING_ARTIFACT_TYPE_V1, VOICE_TIMING_SCHEMA_V1,
 };
 
 pub const MANUAL_VOICE_SCHEMA_V1: &str = "omnicreator.manual-voice";
@@ -570,7 +569,7 @@ pub fn reconcile_creator_voice_aggregate_v1(
 
     if voice.status != StepStatus::NotReady {
         let impact = state_store.invalidate_from(&voice.step_id, None)?;
-        normalize_stale_impact_v1(state_store, &voice.step_id, &impact)?;
+        normalize_stale_impact_v1(state_store, &impact)?;
     }
     Ok(false)
 }
@@ -763,7 +762,7 @@ fn ensure_manual_tts_step_v1(
             }
             let impact = state_store.invalidate_from(&step.step_id, Some(input_hash))?;
             invalidated = impact.iter().map(|item| item.step_id.clone()).collect();
-            normalize_stale_impact_v1(state_store, &step.step_id, &impact)?;
+            normalize_stale_impact_v1(state_store, &impact)?;
             state_store.get_step(&step.step_id)?
         }
         Some(step) => step,
@@ -783,7 +782,6 @@ fn ensure_manual_tts_step_v1(
 
 fn normalize_stale_impact_v1(
     state_store: &StateStore,
-    root_step_id: &str,
     impact: &[crate::InvalidationImpact],
 ) -> Result<()> {
     for affected in impact {
@@ -791,7 +789,6 @@ fn normalize_stale_impact_v1(
         if current.status != StepStatus::Stale {
             continue;
         }
-        let _ = root_step_id;
         state_store.set_step_status(&affected.step_id, StepStatus::NotReady)?;
     }
     Ok(())
