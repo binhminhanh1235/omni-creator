@@ -1,12 +1,14 @@
 use std::fs;
 
+use omnicreator_core::artifact_store::{AttemptOutputPromotion, AttemptPromotionRequest};
 use omnicreator_core::{
     choose_creator_visual_from_asset_library_v1, compile_creator_workflow_plan_v1,
     creator_scene_visual_states_v1, initial_studio_pack_catalog_v1, inspect_manual_visual_media_v1,
     materialize_creator_workflow_plan_v1, provide_manual_creator_content_v1,
     provide_manual_creator_scene_plan_v1, provide_manual_creator_visual_file_v1, ArtifactStore,
-    ManualResultProvenanceV1, ManualScenePlanDraftV1, ManualVisualMediaKindV1, StateStore,
-    StepStatus, Workspace, CREATOR_STEP_PRODUCTION_PACK_V1, CREATOR_STEP_VISUAL_PREPARE_V1,
+    LogicalUri, ManualResultProvenanceV1, ManualScenePlanDraftV1, ManualVisualMediaKindV1,
+    StateStore, StepStatus, Workspace, CREATOR_STEP_PRODUCTION_PACK_V1,
+    CREATOR_STEP_VISUAL_PREPARE_V1,
     CREATOR_STEP_VOICE_PREPARE_V1, CREATOR_WORKFLOW_UNIT_PROJECT_V1,
 };
 
@@ -72,6 +74,15 @@ fn png(width: u32, height: u32, marker: u8) -> Vec<u8> {
     bytes.extend_from_slice(&[8, 6, 0, 0, 0]);
     bytes.extend_from_slice(&[0, 0, 0, 0]);
     bytes.push(marker);
+    bytes
+}
+
+fn mp4() -> Vec<u8> {
+    let mut bytes = 20u32.to_be_bytes().to_vec();
+    bytes.extend_from_slice(b"ftyp");
+    bytes.extend_from_slice(b"isom");
+    bytes.extend_from_slice(&0u32.to_be_bytes());
+    bytes.extend_from_slice(b"isom");
     bytes
 }
 
@@ -267,6 +278,78 @@ fn replacing_one_visual_invalidates_pack_but_preserves_voice_and_other_scene() {
             .find(|job| job.job_id == other.ingestion.job.job_id)
             .unwrap()
             .status,
+        StepStatus::Succeeded
+    );
+}
+
+#[test]
+fn mixed_provider_image_and_manual_video_complete_visual_stage() {
+    let mut fx = fixture();
+    prepare_content_scene(&mut fx);
+    let artifacts = ArtifactStore::new(fx.workspace.data_root()).unwrap();
+
+    let provider_job = fx
+        .store
+        .create_job(
+            &fx.project_id,
+            CREATOR_STEP_VISUAL_PREPARE_V1,
+            "SC001",
+            "provider-sc001",
+        )
+        .unwrap();
+    let provider_attempt = fx
+        .store
+        .start_attempt(&provider_job.job_id, Some("plugin:pexels"))
+        .unwrap();
+    let provider_source = fx.temp.path().join("provider.png");
+    fs::write(&provider_source, png(1280, 720, 7)).unwrap();
+    let provider_artifact = artifacts
+        .promote_attempt_outputs(
+            &mut fx.store,
+            AttemptPromotionRequest {
+                attempt_id: provider_attempt.attempt_id,
+                job_id: provider_job.job_id.clone(),
+                outputs: vec![AttemptOutputPromotion {
+                    source: provider_source,
+                    target_uri: LogicalUri::parse("project://visual/provider/SC001.png").unwrap(),
+                    artifact_type: "image".to_owned(),
+                    metadata: serde_json::json!({
+                        "source_provider": "pexels",
+                        "source_asset_id": "fixture-pexels-1",
+                    }),
+                    expected_sha256: None,
+                }],
+                selected_output_index: 0,
+            },
+        )
+        .unwrap()
+        .pop()
+        .unwrap();
+
+    let manual_video = fx.temp.path().join("manual.mp4");
+    fs::write(&manual_video, mp4()).unwrap();
+    let manual = provide_manual_creator_visual_file_v1(
+        &mut fx.store,
+        &artifacts,
+        &fx.project_id,
+        "SC002",
+        &manual_video,
+        ManualResultProvenanceV1::local_file(),
+        false,
+    )
+    .unwrap();
+
+    assert_eq!(manual.media.media_kind, ManualVisualMediaKindV1::Video);
+    assert_eq!(manual.media.mime_type, "video/mp4");
+    assert!(manual.visual_stage_complete);
+    assert!(artifacts.verify_artifact(&provider_artifact).unwrap());
+    assert!(artifacts.verify_artifact(&manual.artifact).unwrap());
+    assert_eq!(
+        fx.store.get_job(&provider_job.job_id).unwrap().status,
+        StepStatus::Succeeded
+    );
+    assert_eq!(
+        project_step(&fx.store, &fx.project_id, CREATOR_STEP_VISUAL_PREPARE_V1).status,
         StepStatus::Succeeded
     );
 }
