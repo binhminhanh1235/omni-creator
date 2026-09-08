@@ -3,11 +3,13 @@ use std::{collections::BTreeMap, path::Path};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    deterministic_input_hash, load_latest_creator_content_scene_v1, load_latest_creator_content_v1,
-    provide_manual_creator_visual_file_v1, provide_manual_creator_voice_bundle_v1, ArtifactStore,
+    deterministic_input_hash, inspect_manual_visual_media_v1, load_latest_creator_content_scene_v1,
+    load_latest_creator_content_v1, provide_manual_creator_visual_file_v1,
+    provide_manual_creator_voice_bundle_v1, ArtifactStore,
     Error, GeneratedImageRequestV1, GeneratedImageResolutionV1, GeneratedImageStyleV1,
     ManualCreatorVisualOutcomeV1, ManualCreatorVoiceOutcomeV1, ManualCreatorVoiceRequestV1,
-    ManualResultProvenanceV1, Result, StateStore, VoiceDirectionV1, VoiceTimingV1,
+    ManualResultProvenanceV1, ManualVisualMediaKindV1, Result, StateStore, VoiceDirectionV1,
+    VoiceTimingV1,
     CREATOR_VOICE_OPERATION_V1, GENERATED_IMAGE_OPERATION_V1,
 };
 
@@ -137,7 +139,11 @@ impl ExternalVoiceResultContractV1 {
     }
 
     fn validate_v1(&self) -> Result<()> {
-        if self.accepted_audio_mime_types != ["audio/wav", "audio/mpeg"].into_iter().map(str::to_owned).collect::<Vec<_>>()
+        if self.accepted_audio_mime_types
+            != ["audio/wav", "audio/mpeg"]
+                .into_iter()
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
             || !self.timing_required
             || self.accepted_timing_formats
                 != ["srt", "voice-timing-json"]
@@ -146,7 +152,8 @@ impl ExternalVoiceResultContractV1 {
                     .collect::<Vec<_>>()
         {
             return Err(Error::InvalidContract(
-                "external voice result contract must require supported audio plus timing".to_owned(),
+                "external voice result contract must require supported audio plus timing"
+                    .to_owned(),
             ));
         }
         Ok(())
@@ -226,7 +233,8 @@ pub fn prepare_external_generated_visual_request_v1(
     let creator = load_latest_creator_content_scene_v1(state_store, artifact_store, project_id)?
         .ok_or_else(|| {
             Error::InvalidContract(
-                "external generated visual handoff requires verified Content + ScenePlan".to_owned(),
+                "external generated visual handoff requires verified Content + ScenePlan"
+                    .to_owned(),
             )
         })?;
     let scene = creator
@@ -343,16 +351,26 @@ pub fn provide_external_generated_visual_result_v1(
                 .to_owned(),
         ));
     }
+    let media = inspect_manual_visual_media_v1(source.as_ref())?;
+    if media.media_kind != ManualVisualMediaKindV1::Image
+        || !request
+            .result_contract
+            .accepted_mime_types
+            .iter()
+            .any(|mime| mime == &media.mime_type)
+    {
+        return Err(Error::InvalidContract(format!(
+            "external generated visual result {} does not satisfy the prepared still-image contract",
+            media.mime_type
+        )));
+    }
     provide_manual_creator_visual_file_v1(
         state_store,
         artifact_store,
         &request.project_id,
         &request.scene_id,
         source,
-        ManualResultProvenanceV1::external(
-            source_label,
-            Some(request.request_sha256.clone()),
-        ),
+        ManualResultProvenanceV1::external(source_label, Some(request.request_sha256.clone())),
         replace_existing,
     )
 }
