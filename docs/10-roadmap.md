@@ -516,7 +516,7 @@ Manual takeover must never mutate SQLite directly, fake WorkflowStep success, cr
 
 ### P2 - Visual takeover per scene
 
-**Status: IN PROGRESS.**
+**Status: DONE / VERIFIED** via PR #87, exact-head CI #386 and post-merge CI #387.
 
 - Choose From Asset Library, Use My Image, Use My Video, Replace Existing Visual
 - imported media is copied into a granted/canonical workspace, hashed, verified, minimally inspected and promoted through ArtifactStore
@@ -525,6 +525,8 @@ Manual takeover must never mutate SQLite directly, fake WorkflowStep success, cr
 - automatic and manual visual producers may be mixed scene-by-scene
 
 ### P3 - Voice + Timing takeover per segment
+
+**Status: IN PROGRESS.**
 
 - automatic OmniVoice/TTS or manual audio import per segment
 - replace one segment without redoing unrelated voice work
