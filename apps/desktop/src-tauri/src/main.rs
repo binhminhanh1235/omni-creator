@@ -1869,8 +1869,13 @@ fn provide_creator_external_visual_result(
     state: State<'_, DesktopState>,
     project_id: String,
     scene_id: String,
+    request: ExternalGeneratedVisualRequestV1,
     replace_existing: bool,
 ) -> Result<AppSnapshot, String> {
+    request.validate_v1().map_err(error_string)?;
+    if request.project_id != project_id || request.scene_id != scene_id {
+        return Err("External visual request identity does not match the selected project/scene.".to_owned());
+    }
     let Some(path) = rfd::FileDialog::new()
         .set_title(if replace_existing {
             "Replace External Generated Visual Result"
@@ -1885,9 +1890,6 @@ fn provide_creator_external_visual_result(
     let data_root = active_data_root(&state)?;
     let artifacts = ArtifactStore::new(&data_root).map_err(error_string)?;
     let mut store = writable_store(&state)?;
-    let request =
-        prepare_external_generated_visual_request_v1(&store, &artifacts, &project_id, &scene_id)
-            .map_err(error_string)?;
     provide_external_generated_visual_result_v1(
         &mut store,
         &artifacts,
@@ -2079,8 +2081,13 @@ fn provide_creator_external_voice_result(
     state: State<'_, DesktopState>,
     project_id: String,
     segment_id: String,
+    request: ExternalVoiceRequestV1,
     replace_existing: bool,
 ) -> Result<AppSnapshot, String> {
+    request.validate_v1().map_err(error_string)?;
+    if request.project_id != project_id || request.segment_id != segment_id {
+        return Err("External voice request identity does not match the selected project/segment.".to_owned());
+    }
     let Some(audio_path) = rfd::FileDialog::new()
         .set_title(if replace_existing {
             "Replace External Voice Audio"
@@ -2103,8 +2110,6 @@ fn provide_creator_external_voice_result(
     let data_root = active_data_root(&state)?;
     let artifacts = ArtifactStore::new(&data_root).map_err(error_string)?;
     let mut store = writable_store(&state)?;
-    let request = prepare_external_voice_request_v1(&store, &artifacts, &project_id, &segment_id)
-        .map_err(error_string)?;
     let audio = inspect_manual_voice_audio_v1(&audio_path).map_err(error_string)?;
     let timing = import_manual_voice_timing_file_v1(&timing_path, &segment_id, audio.duration_ms)
         .map_err(error_string)?;
