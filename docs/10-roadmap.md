@@ -526,7 +526,7 @@ Manual takeover must never mutate SQLite directly, fake WorkflowStep success, cr
 
 ### P3 - Voice + Timing takeover per segment
 
-**Status: IN PROGRESS.**
+**Status: DONE / VERIFIED** via PR #88, exact-head CI #406 and post-merge CI #407.
 
 - automatic OmniVoice/TTS or manual audio import per segment
 - replace one segment without redoing unrelated voice work
@@ -535,6 +535,8 @@ Manual takeover must never mutate SQLite directly, fake WorkflowStep success, cr
 - manual WAV/MP3 can replace TTS when OmniVoice/GPU is unavailable
 
 ### P4 - Compute/generated external handoff
+
+**Status: IN PROGRESS.**
 
 - expose a safe provider-neutral prepared request for generated visual/voice work
 - Copy/Export Request and Provide External Result
