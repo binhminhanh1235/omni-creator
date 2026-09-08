@@ -11,9 +11,10 @@ const backend = fs.readFileSync(
 
 const appMarkers = [
   "Production Recovery",
-  "Repair / Relink Visual",
-  "Repair / Relink Audio",
-  "Repair / Relink Timing",
+  "Repair / Relink ",
+  "production-repair-visual",
+  "production-repair-audio",
+  "production-repair-timing",
   "Repair Audio + Timing",
   "Rebuild + Regenerate Resolve",
   "production_recovery_status",

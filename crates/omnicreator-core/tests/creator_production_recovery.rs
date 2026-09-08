@@ -142,10 +142,10 @@ fn prepare(fx: &mut Fixture) -> (String, String) {
     (scene_id, segment_id)
 }
 
-fn item<'a>(
-    view: &'a omnicreator_core::ProductionRecoveryViewV1,
+fn item(
+    view: &omnicreator_core::ProductionRecoveryViewV1,
     kind: ProductionRecoveryArtifactKindV1,
-) -> &'a omnicreator_core::ProductionRecoveryItemV1 {
+) -> &omnicreator_core::ProductionRecoveryItemV1 {
     view.items.iter().find(|item| item.kind == kind).unwrap()
 }
 
