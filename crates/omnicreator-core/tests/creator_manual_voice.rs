@@ -4,12 +4,12 @@ use omnicreator_core::{
     compile_creator_workflow_plan_v1, creator_segment_voice_states_v1,
     derive_manual_voice_timing_v1, initial_studio_pack_catalog_v1, inspect_manual_voice_audio_v1,
     load_latest_creator_content_v1, materialize_creator_workflow_plan_v1,
-    parse_manual_voice_timing_bytes_v1,
-    provide_manual_creator_content_v1, provide_manual_creator_voice_bundle_v1,
-    replace_manual_creator_voice_timing_v1, voice_timing_to_srt_v1, ArtifactStore,
-    ManualCreatorVoiceRequestV1, ManualResultProvenanceV1, StateStore, StepStatus,
-    VoiceTimingCueV1, VoiceTimingV1, Workspace, CREATOR_STEP_PRODUCTION_PACK_V1,
-    CREATOR_STEP_VOICE_PREPARE_V1, CREATOR_WORKFLOW_UNIT_PROJECT_V1, VOICE_TIMING_SCHEMA_V1,
+    parse_manual_voice_timing_bytes_v1, provide_manual_creator_content_v1,
+    provide_manual_creator_voice_bundle_v1, replace_manual_creator_voice_timing_v1,
+    voice_timing_to_srt_v1, ArtifactStore, ManualCreatorVoiceRequestV1, ManualResultProvenanceV1,
+    StateStore, StepStatus, VoiceTimingCueV1, VoiceTimingV1, Workspace,
+    CREATOR_STEP_PRODUCTION_PACK_V1, CREATOR_STEP_VOICE_PREPARE_V1,
+    CREATOR_WORKFLOW_UNIT_PROJECT_V1, VOICE_TIMING_SCHEMA_V1,
 };
 
 struct Fixture {
@@ -107,8 +107,7 @@ fn no_voice_provider_or_gpu_manual_wav_segments_complete_voice_stage() {
     for (index, (segment_id, narration)) in content_segments(&fx).into_iter().enumerate() {
         let audio = fx.temp.path().join(format!("{segment_id}.wav"));
         fs::write(&audio, wav(1_000, index as u8 + 1)).unwrap();
-        let timing =
-            derive_manual_voice_timing_v1(&segment_id, &narration, 1_000).unwrap();
+        let timing = derive_manual_voice_timing_v1(&segment_id, &narration, 1_000).unwrap();
         let outcome = provide_manual_creator_voice_bundle_v1(
             &mut fx.store,
             &artifacts,
@@ -180,8 +179,7 @@ fn timing_replacement_reuses_audio_and_preserves_other_segment_work() {
     for (index, (segment_id, narration)) in segments.iter().enumerate() {
         let audio = fx.temp.path().join(format!("replace-{segment_id}.wav"));
         fs::write(&audio, wav(1_000, index as u8 + 3)).unwrap();
-        let timing =
-            derive_manual_voice_timing_v1(segment_id, narration, 1_000).unwrap();
+        let timing = derive_manual_voice_timing_v1(segment_id, narration, 1_000).unwrap();
         let outcome = provide_manual_creator_voice_bundle_v1(
             &mut fx.store,
             &artifacts,
