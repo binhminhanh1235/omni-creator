@@ -106,6 +106,23 @@ Worker/session loss follows the existing remote reconciliation path. An unfinish
 
 Multiple GPUs remain independent devices. A generated-image job must fit one selected device's declared memory; VRAM from multiple devices is never pooled. This bridge adds no provider-specific field to SceneIntent, no generated-image scheduler, and no Plugin API v1 wire-format change.
 
+### External generated/compute handoff
+
+Generated work may also leave OmniCreator intentionally when no compatible plugin or ComputeProvider is available. This is a fulfillment path for the same logical work, not another scheduler.
+
+OmniCreator prepares a provider-neutral external request from canonical inputs. A generated-visual request contains the canonical project/scene identity, SceneIntent-derived prompt, result media contract and deterministic request hash. A voice request contains the canonical project/segment identity, narration, voice direction, required audio/timing contract and deterministic request hash. Exported requests must not contain credentials, provider/session/device identifiers, provider-private runtime state or absolute machine paths.
+
+The request may be copied or exported and fulfilled with an external tool such as ChatGPT, Midjourney, ComfyUI or another renderer. When the result returns:
+
+1. recompute the prepared request from current canonical state and reject stale request hashes;
+2. validate the declared result contract, including still-image MIME for generated visuals and audio plus timing linkage for voice;
+3. reuse the existing manual-result canonical ingestion path;
+4. hash and physically verify ArtifactStore promotion before success;
+5. record the Attempt producer as external/manual provenance rather than a ComputeProvider or plugin worker;
+6. reconcile the existing aggregate visual or voice WorkflowStep and unlock only its normal downstream DAG.
+
+An externally fulfilled result must never mark a remote provider successful and must never imply that a plugin, GPU or ComputeProvider ran. Replacement reuses the existing dependency invalidation cone. Prepared requests are derived views, so there is no durable external-handoff queue/session/database to recover after restart.
+
 ## Group by model
 
 Avoid repeated model loading/unloading.

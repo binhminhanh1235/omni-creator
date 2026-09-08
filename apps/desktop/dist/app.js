@@ -76,6 +76,24 @@ async function call(command, args) {
   }
 }
 
+async function copyExternalRequest(request) {
+  const text = JSON.stringify(request || {}, null, 2);
+  if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const area = document.createElement("textarea");
+  area.value = text;
+  area.setAttribute("readonly", "");
+  area.style.position = "fixed";
+  area.style.opacity = "0";
+  document.body.appendChild(area);
+  area.select();
+  const copied = document.execCommand("copy");
+  area.remove();
+  if (!copied) throw new Error("Clipboard copy is unavailable.");
+}
+
 function setMode(text, className) {
   modePill.textContent = text;
   modePill.className = ("pill " + (className || "")).trim();
@@ -469,6 +487,7 @@ function creatorManualVisualMarkup(view, readOnly) {
       .map(function (scene) {
         const current = scene.selected_artifact || null;
         const replacing = Boolean(current);
+        const externalRequest = scene.external_request || null;
         const currentText = current
           ? '<div class="notice subtle"><strong>CURRENT · ' +
             escapeHtml(String(current.artifact_type || "media").toUpperCase()) +
@@ -520,7 +539,26 @@ function creatorManualVisualMarkup(view, readOnly) {
           (replacing ? "true" : "false") +
           '"' +
           (readOnly ? " disabled" : "") +
-          ">Use My Video</button></div></article>"
+          ">Use My Video</button>" +
+          '<div class="external-handoff-actions"><strong>EXTERNAL GENERATED HANDOFF</strong>' +
+          '<button class="btn creator-copy-external-request" data-request-kind="visual" data-unit-id="' +
+          escapeHtml(scene.scene_id) +
+          '">Copy Request</button>' +
+          '<button class="btn creator-export-external-request" data-request-kind="visual" data-unit-id="' +
+          escapeHtml(scene.scene_id) +
+          '">Export Request</button>' +
+          '<button class="btn creator-provide-external-visual" data-scene-id="' +
+          escapeHtml(scene.scene_id) +
+          '" data-replace="' +
+          (replacing ? "true" : "false") +
+          '"' +
+          (readOnly ? " disabled" : "") +
+          ">" +
+          (replacing ? "Replace External Result" : "Provide External Result") +
+          "</button>" +
+          '<details class="advanced-details external-request-details"><summary>Details</summary><pre>' +
+          escapeHtml(JSON.stringify(externalRequest, null, 2)) +
+          "</pre></details></div></div></article>"
         );
       })
       .join("") +
@@ -563,6 +601,7 @@ function creatorManualVoiceMarkup(view, readOnly) {
         const current = segment.selected_audio || null;
         const timing = segment.timing || null;
         const replacing = Boolean(current && segment.verified);
+        const externalRequest = segment.external_request || null;
         const currentText = replacing
           ? '<div class="notice subtle"><strong>CURRENT VOICE</strong><code>' +
             escapeHtml(current.artifact_id || "") +
@@ -610,7 +649,26 @@ function creatorManualVoiceMarkup(view, readOnly) {
           escapeHtml(segment.segment_id) +
           '"' +
           (readOnly || !replacing ? " disabled" : "") +
-          ">Replace Timing</button></div></article>"
+          ">Replace Timing</button>" +
+          '<div class="external-handoff-actions"><strong>EXTERNAL VOICE / COMPUTE HANDOFF</strong>' +
+          '<button class="btn creator-copy-external-request" data-request-kind="voice" data-unit-id="' +
+          escapeHtml(segment.segment_id) +
+          '">Copy Request</button>' +
+          '<button class="btn creator-export-external-request" data-request-kind="voice" data-unit-id="' +
+          escapeHtml(segment.segment_id) +
+          '">Export Request</button>' +
+          '<button class="btn creator-provide-external-voice" data-segment-id="' +
+          escapeHtml(segment.segment_id) +
+          '" data-replace="' +
+          (replacing ? "true" : "false") +
+          '"' +
+          (readOnly ? " disabled" : "") +
+          ">" +
+          (replacing ? "Replace External Result" : "Provide External Result") +
+          "</button>" +
+          '<details class="advanced-details external-request-details"><summary>Details</summary><pre>' +
+          escapeHtml(JSON.stringify(externalRequest, null, 2)) +
+          "</pre></details></div></div></article>"
         );
       })
       .join("") +
@@ -1015,6 +1073,111 @@ function renderCreatorRunPanel(item, readOnly) {
       }
     };
   }
+
+  function externalRequestFor(kind, unitId) {
+    if (kind === "visual" && manualVisual && Array.isArray(manualVisual.scenes)) {
+      const scene = manualVisual.scenes.find(function (candidate) {
+        return candidate.scene_id === unitId;
+      });
+      return scene ? scene.external_request : null;
+    }
+    if (kind === "voice" && manualVoice && Array.isArray(manualVoice.segments)) {
+      const segment = manualVoice.segments.find(function (candidate) {
+        return candidate.segment_id === unitId;
+      });
+      return segment ? segment.external_request : null;
+    }
+    return null;
+  }
+
+  document.querySelectorAll(".creator-copy-external-request").forEach(function (button) {
+    button.onclick = async function () {
+      const request = externalRequestFor(button.dataset.requestKind, button.dataset.unitId);
+      if (!request) {
+        showToast("Prepared external request is unavailable.");
+        return;
+      }
+      try {
+        await copyExternalRequest(request);
+        showToast("Prepared request copied. It contains no provider credential or machine path.");
+      } catch (error) {
+        showToast(error);
+      }
+    };
+  });
+
+  document.querySelectorAll(".creator-export-external-request").forEach(function (button) {
+    button.onclick = async function () {
+      button.disabled = true;
+      try {
+        const kind = button.dataset.requestKind;
+        const result =
+          kind === "visual"
+            ? await call("export_creator_external_visual_request", {
+                projectId: project.id,
+                sceneId: button.dataset.unitId,
+              })
+            : await call("export_creator_external_voice_request", {
+                projectId: project.id,
+                segmentId: button.dataset.unitId,
+              });
+        if (result) showToast("Portable external request exported.");
+      } finally {
+        button.disabled = false;
+      }
+    };
+  });
+
+  document.querySelectorAll(".creator-provide-external-visual").forEach(function (button) {
+    button.onclick = async function () {
+      const request = externalRequestFor("visual", button.dataset.sceneId);
+      if (!request) {
+        showToast("Prepared external visual request is unavailable.");
+        return;
+      }
+      button.disabled = true;
+      try {
+        creatorRunState.manualVisualByProject.delete(project.id);
+        creatorRunState.reviewByProject.delete(project.id);
+        render(
+          await call("provide_creator_external_visual_result", {
+            projectId: project.id,
+            sceneId: button.dataset.sceneId,
+            request: request,
+            replaceExisting: button.dataset.replace === "true",
+          }),
+        );
+        showToast("External image validated, hashed and promoted to the canonical scene job.");
+      } catch (_error) {
+        loadCreatorManualVisual(item, readOnly);
+      }
+    };
+  });
+
+  document.querySelectorAll(".creator-provide-external-voice").forEach(function (button) {
+    button.onclick = async function () {
+      const request = externalRequestFor("voice", button.dataset.segmentId);
+      if (!request) {
+        showToast("Prepared external voice request is unavailable.");
+        return;
+      }
+      button.disabled = true;
+      try {
+        creatorRunState.manualVoiceByProject.delete(project.id);
+        render(
+          await call("provide_creator_external_voice_result", {
+            projectId: project.id,
+            segmentId: button.dataset.segmentId,
+            request: request,
+            replaceExisting: button.dataset.replace === "true",
+          }),
+        );
+        showToast("External audio + timing validated and committed as a canonical VoiceTake.");
+      } catch (_error) {
+        loadCreatorManualVoice(item, readOnly);
+      }
+    };
+  });
 
   document.querySelectorAll(".creator-use-library-visual").forEach(function (button) {
     button.onclick = async function () {

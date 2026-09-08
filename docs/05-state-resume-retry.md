@@ -271,6 +271,16 @@ Take 3  selected
 Retry creates a new attempt/take and does not destroy previous artifacts.
 
 
+## External result handoff and resume
+
+An external generated/compute request is a derived projection of canonical state, not a persisted workflow object. Copy/Export Request may be repeated after restart because OmniCreator reconstructs the request from the current Content, SceneIntent or segment data and computes the same deterministic request hash while those inputs are unchanged.
+
+When an external result is provided, OmniCreator first recomputes the prepared request and rejects a stale hash if the canonical input changed while the user was rendering elsewhere. Accepted files then enter the same logical Job and Attempt path used by manual takeover, with truthful external producer provenance, physical media/timing validation, ArtifactStore hashing and verification, and the normal downstream dependency transition.
+
+The durable state after import consists only of the existing canonical Job, Attempt, Artifact and WorkflowStep records. There is no external-handoff session table, browser-storage queue or provider-success record to restore. Because promoted artifacts use logical Data Root URIs, an accepted external result remains resumable when the app restarts or the whole Data Root is moved/rebound to another machine.
+
+Read-only workspaces may derive, inspect, copy and export prepared requests. Import and replacement require the existing single-writer guard.
+
 ## Device handoff and cloud synchronization
 
 Portable workspaces support **handoff**, not concurrent multi-writer collaboration.

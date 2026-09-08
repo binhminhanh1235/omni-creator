@@ -19,8 +19,10 @@ use omnicreator_core::{
     install_local_plugin_folder_v1, load_latest_creator_content_scene_v1,
     load_latest_creator_content_v1, load_latest_creator_production_pack_v1,
     load_plugin_settings_ui, materialize_creator_workflow_plan_v1, plan_creator_visuals_v1,
-    plan_creator_voice_orchestration_v1, preview_plugin_capability_impact_v1,
-    project_board_projection_v1, provide_manual_creator_content_v1,
+    plan_creator_voice_orchestration_v1, prepare_external_generated_visual_request_v1,
+    prepare_external_voice_request_v1, preview_plugin_capability_impact_v1,
+    project_board_projection_v1, provide_external_generated_visual_result_v1,
+    provide_external_voice_result_v1, provide_manual_creator_content_v1,
     provide_manual_creator_scene_plan_v1, provide_manual_creator_visual_file_v1,
     provide_manual_creator_voice_bundle_v1, reconcile_remote_session_v1,
     replace_manual_creator_voice_timing_v1, run_creator_content_scene_v1, scan_plugin_inventory_v1,
@@ -33,25 +35,26 @@ use omnicreator_core::{
     CreatorVisualAssetExecutorV1, CreatorVisualDiscoveryExecutorV1,
     CreatorVisualGenerationRequestV1, CreatorVisualPlanV1, CreatorVisualPlanningOptionsV1,
     CreatorVisualStockFetchRequestV1, CreatorVoiceRuntimeV1, DiscoveredPlugin, Error as CoreError,
-    GeneratedImagePluginResultV1, GeneratedImageRequestV1, GeneratedImageResolutionV1,
-    GeneratedImageStyleV1, GpuBatchBudgetOverviewV1, GpuBatchPlanRequestV1, GpuBatchPlanV1,
-    GpuBurstDispatchSummaryV1, GpuBurstPlanV1, GpuJobPreparationV1, GpuWorkbenchQueueSnapshotV1,
-    HandoffManifest, HttpComputeProvider, HttpComputeProviderConfigV1, LlmGatewayClient,
-    LlmGatewayConfig, LlmGatewayModel, MachineBinding, ManualCreatorVoiceRequestV1,
-    ManualResultProvenanceV1, ManualScenePlanDraftV1, PluginCapabilityImpactV1,
-    PluginInventoryEntryV1, PluginInventoryReportV1, PluginJobWorkspace, PluginLifecycleStateV1,
-    PluginMutationKindV1, PluginProcess, PluginProcessOptions, PluginRegistry, PluginResponse,
-    PluginRuntimeReadinessV1, PluginUpdatePreviewV1, PortableStudioPackCatalogV1,
-    ProductionExportHistoryEntryV1, ProductionPackV1, ProductionPackageExportOutcomeV1,
-    ProductionPackageExporterV1, Project, ProjectBoardProjectionV1, ProjectDisplayStatus,
-    RemoteComputeJobSpecV1, RemoteReconciliationSummaryV1, Result as CoreResult,
-    RuntimeWorkloadEstimateV1, SegmentTtsLockStateV1, SelectedVisualOutput, StateStore,
-    StockDiscoveryStatusV1, StudioJobReviewSnapshotV1, StudioPackAvailabilityStatusV1,
-    StudioPackOverridesV1, StudioPackRouteTargetV1, StudioPackRuntimeSnapshotV1,
-    StudioPackUxViewV1, StudioPackV1, StudioReviewCenterV1, VisualCandidate,
-    VisualCandidateRankingInput, VisualCandidateSignals, VisualReviewSet, VoiceIdentityV1,
-    VoiceModelIdentityV1, VoiceTimingV1, WorkflowStep, Workspace, WorkspaceSession,
-    CREATOR_STEP_VISUAL_PREPARE_V1, STUDIO_PACK_SCHEMA_V1, STUDIO_PACK_VERSION_V1,
+    ExternalGeneratedVisualRequestV1, ExternalVoiceRequestV1, GeneratedImagePluginResultV1,
+    GeneratedImageRequestV1, GeneratedImageResolutionV1, GeneratedImageStyleV1,
+    GpuBatchBudgetOverviewV1, GpuBatchPlanRequestV1, GpuBatchPlanV1, GpuBurstDispatchSummaryV1,
+    GpuBurstPlanV1, GpuJobPreparationV1, GpuWorkbenchQueueSnapshotV1, HandoffManifest,
+    HttpComputeProvider, HttpComputeProviderConfigV1, LlmGatewayClient, LlmGatewayConfig,
+    LlmGatewayModel, MachineBinding, ManualCreatorVoiceRequestV1, ManualResultProvenanceV1,
+    ManualScenePlanDraftV1, PluginCapabilityImpactV1, PluginInventoryEntryV1,
+    PluginInventoryReportV1, PluginJobWorkspace, PluginLifecycleStateV1, PluginMutationKindV1,
+    PluginProcess, PluginProcessOptions, PluginRegistry, PluginResponse, PluginRuntimeReadinessV1,
+    PluginUpdatePreviewV1, PortableStudioPackCatalogV1, ProductionExportHistoryEntryV1,
+    ProductionPackV1, ProductionPackageExportOutcomeV1, ProductionPackageExporterV1, Project,
+    ProjectBoardProjectionV1, ProjectDisplayStatus, RemoteComputeJobSpecV1,
+    RemoteReconciliationSummaryV1, Result as CoreResult, RuntimeWorkloadEstimateV1,
+    SegmentTtsLockStateV1, SelectedVisualOutput, StateStore, StockDiscoveryStatusV1,
+    StudioJobReviewSnapshotV1, StudioPackAvailabilityStatusV1, StudioPackOverridesV1,
+    StudioPackRouteTargetV1, StudioPackRuntimeSnapshotV1, StudioPackUxViewV1, StudioPackV1,
+    StudioReviewCenterV1, VisualCandidate, VisualCandidateRankingInput, VisualCandidateSignals,
+    VisualReviewSet, VoiceIdentityV1, VoiceModelIdentityV1, VoiceTimingV1, WorkflowStep, Workspace,
+    WorkspaceSession, CREATOR_STEP_VISUAL_PREPARE_V1, STUDIO_PACK_SCHEMA_V1,
+    STUDIO_PACK_VERSION_V1,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
@@ -291,6 +294,7 @@ struct CreatorManualVisualSceneDesktopViewV1 {
     narration: String,
     purpose: String,
     selected_artifact: Option<Artifact>,
+    external_request: ExternalGeneratedVisualRequestV1,
 }
 
 #[derive(Debug, Serialize)]
@@ -308,6 +312,7 @@ struct CreatorManualVoiceSegmentDesktopViewV1 {
     timing_artifact: Option<Artifact>,
     timing: Option<VoiceTimingV1>,
     verified: bool,
+    external_request: ExternalVoiceRequestV1,
 }
 
 #[derive(Debug, Serialize)]
@@ -1725,13 +1730,25 @@ fn creator_manual_visual_status(
         .scene_plan
         .scenes
         .iter()
-        .map(|scene| CreatorManualVisualSceneDesktopViewV1 {
-            scene_id: scene.id.clone(),
-            narration: scene.narration.clone(),
-            purpose: scene.purpose.clone(),
-            selected_artifact: selected.get(&scene.id).cloned().flatten(),
-        })
-        .collect();
+        .map(
+            |scene| -> Result<CreatorManualVisualSceneDesktopViewV1, String> {
+                let external_request = prepare_external_generated_visual_request_v1(
+                    &store,
+                    &artifacts,
+                    &project_id,
+                    &scene.id,
+                )
+                .map_err(error_string)?;
+                Ok(CreatorManualVisualSceneDesktopViewV1 {
+                    scene_id: scene.id.clone(),
+                    narration: scene.narration.clone(),
+                    purpose: scene.purpose.clone(),
+                    selected_artifact: selected.get(&scene.id).cloned().flatten(),
+                    external_request,
+                })
+            },
+        )
+        .collect::<Result<Vec<_>, _>>()?;
 
     Ok(CreatorManualVisualDesktopViewV1 {
         project_id,
@@ -1823,6 +1840,73 @@ fn choose_creator_asset_library_visual(
 }
 
 #[tauri::command]
+fn export_creator_external_visual_request(
+    state: State<'_, DesktopState>,
+    project_id: String,
+    scene_id: String,
+) -> Result<Option<String>, String> {
+    let data_root = active_data_root(&state)?;
+    let artifacts = ArtifactStore::new(&data_root).map_err(error_string)?;
+    let store = readable_store(&state)?;
+    let request =
+        prepare_external_generated_visual_request_v1(&store, &artifacts, &project_id, &scene_id)
+            .map_err(error_string)?;
+    let Some(path) = rfd::FileDialog::new()
+        .set_title("Export Generated Visual Request")
+        .set_file_name(format!("{scene_id}-generated-visual-request.json"))
+        .add_filter("JSON", &["json"])
+        .save_file()
+    else {
+        return Ok(None);
+    };
+    fs::write(&path, request.to_pretty_json_v1().map_err(error_string)?)
+        .map_err(|error| format!("Cannot export generated visual request: {error}"))?;
+    Ok(Some(path_text(&path)))
+}
+
+#[tauri::command]
+fn provide_creator_external_visual_result(
+    state: State<'_, DesktopState>,
+    project_id: String,
+    scene_id: String,
+    request: ExternalGeneratedVisualRequestV1,
+    replace_existing: bool,
+) -> Result<AppSnapshot, String> {
+    request.validate_v1().map_err(error_string)?;
+    if request.project_id != project_id || request.scene_id != scene_id {
+        return Err(
+            "External visual request identity does not match the selected project/scene."
+                .to_owned(),
+        );
+    }
+    let Some(path) = rfd::FileDialog::new()
+        .set_title(if replace_existing {
+            "Replace External Generated Visual Result"
+        } else {
+            "Provide External Generated Visual Result"
+        })
+        .add_filter("Generated image", &["png", "jpg", "jpeg", "webp"])
+        .pick_file()
+    else {
+        return snapshot_from_active(&state);
+    };
+    let data_root = active_data_root(&state)?;
+    let artifacts = ArtifactStore::new(&data_root).map_err(error_string)?;
+    let mut store = writable_store(&state)?;
+    provide_external_generated_visual_result_v1(
+        &mut store,
+        &artifacts,
+        &request,
+        &path,
+        "external-generated",
+        replace_existing,
+    )
+    .map_err(error_string)?;
+    drop(store);
+    snapshot_from_active(&state)
+}
+
+#[tauri::command]
 fn creator_manual_voice_status(
     state: State<'_, DesktopState>,
     project_id: String,
@@ -1842,18 +1926,24 @@ fn creator_manual_voice_status(
     let segments = content
         .segments
         .iter()
-        .map(|segment| {
-            let state = states.get(&segment.id);
-            CreatorManualVoiceSegmentDesktopViewV1 {
-                segment_id: segment.id.clone(),
-                narration: segment.text.clone(),
-                selected_audio: state.and_then(|value| value.audio.clone()),
-                timing_artifact: state.and_then(|value| value.timing_artifact.clone()),
-                timing: state.and_then(|value| value.timing.clone()),
-                verified: state.is_some_and(|value| value.verified),
-            }
-        })
-        .collect();
+        .map(
+            |segment| -> Result<CreatorManualVoiceSegmentDesktopViewV1, String> {
+                let state = states.get(&segment.id);
+                let external_request =
+                    prepare_external_voice_request_v1(&store, &artifacts, &project_id, &segment.id)
+                        .map_err(error_string)?;
+                Ok(CreatorManualVoiceSegmentDesktopViewV1 {
+                    segment_id: segment.id.clone(),
+                    narration: segment.text.clone(),
+                    selected_audio: state.and_then(|value| value.audio.clone()),
+                    timing_artifact: state.and_then(|value| value.timing_artifact.clone()),
+                    timing: state.and_then(|value| value.timing.clone()),
+                    verified: state.is_some_and(|value| value.verified),
+                    external_request,
+                })
+            },
+        )
+        .collect::<Result<Vec<_>, _>>()?;
 
     Ok(CreatorManualVoiceDesktopViewV1 {
         project_id,
@@ -1959,6 +2049,84 @@ fn use_creator_audio_with_timing_manually(
             provenance: ManualResultProvenanceV1::local_file(),
             replace_existing,
         },
+    )
+    .map_err(error_string)?;
+    drop(store);
+    snapshot_from_active(&state)
+}
+
+#[tauri::command]
+fn export_creator_external_voice_request(
+    state: State<'_, DesktopState>,
+    project_id: String,
+    segment_id: String,
+) -> Result<Option<String>, String> {
+    let data_root = active_data_root(&state)?;
+    let artifacts = ArtifactStore::new(&data_root).map_err(error_string)?;
+    let store = readable_store(&state)?;
+    let request = prepare_external_voice_request_v1(&store, &artifacts, &project_id, &segment_id)
+        .map_err(error_string)?;
+    let Some(path) = rfd::FileDialog::new()
+        .set_title("Export External Voice Request")
+        .set_file_name(format!("{segment_id}-voice-request.json"))
+        .add_filter("JSON", &["json"])
+        .save_file()
+    else {
+        return Ok(None);
+    };
+    fs::write(&path, request.to_pretty_json_v1().map_err(error_string)?)
+        .map_err(|error| format!("Cannot export external voice request: {error}"))?;
+    Ok(Some(path_text(&path)))
+}
+
+#[tauri::command]
+fn provide_creator_external_voice_result(
+    state: State<'_, DesktopState>,
+    project_id: String,
+    segment_id: String,
+    request: ExternalVoiceRequestV1,
+    replace_existing: bool,
+) -> Result<AppSnapshot, String> {
+    request.validate_v1().map_err(error_string)?;
+    if request.project_id != project_id || request.segment_id != segment_id {
+        return Err(
+            "External voice request identity does not match the selected project/segment."
+                .to_owned(),
+        );
+    }
+    let Some(audio_path) = rfd::FileDialog::new()
+        .set_title(if replace_existing {
+            "Replace External Voice Audio"
+        } else {
+            "Provide External Voice Audio"
+        })
+        .add_filter("Audio", &["wav", "mp3"])
+        .pick_file()
+    else {
+        return snapshot_from_active(&state);
+    };
+    let Some(timing_path) = rfd::FileDialog::new()
+        .set_title("Select External SRT or VoiceTiming JSON")
+        .add_filter("Timing", &["srt", "json"])
+        .pick_file()
+    else {
+        return snapshot_from_active(&state);
+    };
+
+    let data_root = active_data_root(&state)?;
+    let artifacts = ArtifactStore::new(&data_root).map_err(error_string)?;
+    let mut store = writable_store(&state)?;
+    let audio = inspect_manual_voice_audio_v1(&audio_path).map_err(error_string)?;
+    let timing = import_manual_voice_timing_file_v1(&timing_path, &segment_id, audio.duration_ms)
+        .map_err(error_string)?;
+    provide_external_voice_result_v1(
+        &mut store,
+        &artifacts,
+        &request,
+        &audio_path,
+        timing,
+        "external-voice-render",
+        replace_existing,
     )
     .map_err(error_string)?;
     drop(store);
@@ -3625,8 +3793,12 @@ fn main() {
             use_creator_image_manually,
             use_creator_video_manually,
             choose_creator_asset_library_visual,
+            export_creator_external_visual_request,
+            provide_creator_external_visual_result,
             use_creator_wav_manually,
             use_creator_audio_with_timing_manually,
+            export_creator_external_voice_request,
+            provide_creator_external_voice_result,
             replace_creator_voice_timing_manually,
             provide_creator_script_manually,
             import_creator_script_manually,

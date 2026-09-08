@@ -536,12 +536,20 @@ Manual takeover must never mutate SQLite directly, fake WorkflowStep success, cr
 
 ### P4 - Compute/generated external handoff
 
-**Status: IN PROGRESS.**
+**Status: IN PROGRESS via PR #89.**
 
-- expose a safe provider-neutral prepared request for generated visual/voice work
-- Copy/Export Request and Provide External Result
-- imported external output rejoins the same logical stage/job, is verified/promoted canonically, and records truthful external/manual provenance
-- never claim a remote provider ran when the user fulfilled the request elsewhere
+Implementation boundary:
+
+- prepared generated-visual and voice/compute requests are derived from current canonical SceneIntent/Content and carry a deterministic request hash plus explicit result contract
+- exported requests are provider-neutral and reject secret/provider-private fields and absolute machine paths
+- Copy Request, Export Request and Details remain safe in read-only mode; Provide External Result and Replace External Result require the existing writable-workspace guard
+- generated visual fulfillment accepts only the prepared still-image media contract, then reuses canonical manual visual ingestion for validation, hash verification, ArtifactStore promotion and scene binding
+- voice fulfillment requires supported audio plus SRT/VoiceTiming, then reuses the canonical VoiceTake Job/Attempt/ArtifactStore path
+- external fulfillment records `EXTERNAL_RESULT_IMPORT` provenance and an external/manual Attempt worker; it never marks a plugin or ComputeProvider successful and never claims remote execution occurred
+- request hashes are recomputed before import so a result prepared for stale SceneIntent/Content cannot attach to newer canonical input
+- replacement uses the existing canonical supersede and dependency-invalidation cone
+- prepared requests are derived views only; no external-handoff scheduler, session table, browser storage or shadow workflow state is introduced
+- imported artifacts remain portable logical Data Root artifacts across restart and Data Root move/rebind
 
 ### P5 - ProductionPack + export recovery
 
