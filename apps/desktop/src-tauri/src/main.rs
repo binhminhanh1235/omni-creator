@@ -8,28 +8,27 @@ use std::{
 use chrono::{DateTime, Utc};
 use omnicreator_core::{
     approve_creator_generated_visual_v1, assemble_creator_production_pack_v1,
-    choose_creator_visual_from_asset_library_v1,
-    build_studio_pack_ux_view_v1, build_studio_review_center_v1, compile_creator_workflow_plan_v1,
-    default_segment_tts_compute_requirements_v1, derive_creator_run_coordinator_v1,
-    dispatch_creator_voice_burst_v1, dispatch_gpu_burst_v1, execute_creator_visual_plan_v1,
-    import_manual_creator_scene_plan_file_v1, import_manual_creator_script_file_v1,
-    initial_studio_pack_catalog_v1, inspect_local_plugin_update_v1, install_local_plugin_folder_v1,
+    build_studio_pack_ux_view_v1, build_studio_review_center_v1,
+    choose_creator_visual_from_asset_library_v1, compile_creator_workflow_plan_v1,
+    creator_scene_visual_states_v1, default_segment_tts_compute_requirements_v1,
+    derive_creator_run_coordinator_v1, dispatch_creator_voice_burst_v1, dispatch_gpu_burst_v1,
+    execute_creator_visual_plan_v1, import_manual_creator_scene_plan_file_v1,
+    import_manual_creator_script_file_v1, initial_studio_pack_catalog_v1,
+    inspect_local_plugin_update_v1, install_local_plugin_folder_v1,
     load_latest_creator_content_scene_v1, load_latest_creator_content_v1,
     load_latest_creator_production_pack_v1, load_plugin_settings_ui,
     materialize_creator_workflow_plan_v1, plan_creator_visuals_v1,
     plan_creator_voice_orchestration_v1, preview_plugin_capability_impact_v1,
     project_board_projection_v1, provide_manual_creator_content_v1,
     provide_manual_creator_scene_plan_v1, provide_manual_creator_visual_file_v1,
-    reconcile_remote_session_v1,
-    run_creator_content_scene_v1, scan_plugin_inventory_v1, select_creator_stock_candidate_v1,
-    uninstall_user_plugin_v1, update_local_plugin_folder_v1, Artifact, ArtifactStore,
-    AssetLibraryEntryV1, AssetLibrarySnapshotV1, ComputeProviderConnectionState,
-    ComputeProviderLivenessPolicyV1,
-    ComputeProviderRuntime, ComputeProviderSchedulingSnapshotV1, ComputeRunningAssignmentV1,
-    CreatorContentSceneOptionsV1, CreatorContentSceneOutcomeV1, CreatorInputV1,
-    creator_scene_visual_states_v1,
-    CreatorProductionPackOptionsV1, CreatorRunCoordinatorV1, CreatorStockDiscoveryV1,
-    CreatorVisualActionV1, CreatorVisualAssetExecutorV1, CreatorVisualDiscoveryExecutorV1,
+    reconcile_remote_session_v1, run_creator_content_scene_v1, scan_plugin_inventory_v1,
+    select_creator_stock_candidate_v1, uninstall_user_plugin_v1, update_local_plugin_folder_v1,
+    Artifact, ArtifactStore, AssetLibraryEntryV1, AssetLibrarySnapshotV1,
+    ComputeProviderConnectionState, ComputeProviderLivenessPolicyV1, ComputeProviderRuntime,
+    ComputeProviderSchedulingSnapshotV1, ComputeRunningAssignmentV1, CreatorContentSceneOptionsV1,
+    CreatorContentSceneOutcomeV1, CreatorInputV1, CreatorProductionPackOptionsV1,
+    CreatorRunCoordinatorV1, CreatorStockDiscoveryV1, CreatorVisualActionV1,
+    CreatorVisualAssetExecutorV1, CreatorVisualDiscoveryExecutorV1,
     CreatorVisualGenerationRequestV1, CreatorVisualPlanV1, CreatorVisualPlanningOptionsV1,
     CreatorVisualStockFetchRequestV1, CreatorVoiceRuntimeV1, DiscoveredPlugin, Error as CoreError,
     GeneratedImagePluginResultV1, GeneratedImageRequestV1, GeneratedImageResolutionV1,
@@ -1761,13 +1760,7 @@ fn use_creator_image_manually(
     else {
         return snapshot_from_active(&state);
     };
-    import_creator_visual_file_v1(
-        &state,
-        &project_id,
-        &scene_id,
-        &path,
-        replace_existing,
-    )
+    import_creator_visual_file_v1(&state, &project_id, &scene_id, &path, replace_existing)
 }
 
 #[tauri::command]
@@ -1784,13 +1777,7 @@ fn use_creator_video_manually(
     else {
         return snapshot_from_active(&state);
     };
-    import_creator_visual_file_v1(
-        &state,
-        &project_id,
-        &scene_id,
-        &path,
-        replace_existing,
-    )
+    import_creator_visual_file_v1(&state, &project_id, &scene_id, &path, replace_existing)
 }
 
 #[tauri::command]

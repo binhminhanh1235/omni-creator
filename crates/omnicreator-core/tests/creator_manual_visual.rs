@@ -2,12 +2,11 @@ use std::fs;
 
 use omnicreator_core::{
     choose_creator_visual_from_asset_library_v1, compile_creator_workflow_plan_v1,
-    creator_scene_visual_states_v1, initial_studio_pack_catalog_v1,
-    inspect_manual_visual_media_v1, materialize_creator_workflow_plan_v1,
-    provide_manual_creator_content_v1, provide_manual_creator_scene_plan_v1,
-    provide_manual_creator_visual_file_v1, ArtifactStore, ManualResultProvenanceV1,
-    ManualScenePlanDraftV1, ManualVisualMediaKindV1, StateStore, StepStatus, Workspace,
-    CREATOR_STEP_PRODUCTION_PACK_V1, CREATOR_STEP_VISUAL_PREPARE_V1,
+    creator_scene_visual_states_v1, initial_studio_pack_catalog_v1, inspect_manual_visual_media_v1,
+    materialize_creator_workflow_plan_v1, provide_manual_creator_content_v1,
+    provide_manual_creator_scene_plan_v1, provide_manual_creator_visual_file_v1, ArtifactStore,
+    ManualResultProvenanceV1, ManualScenePlanDraftV1, ManualVisualMediaKindV1, StateStore,
+    StepStatus, Workspace, CREATOR_STEP_PRODUCTION_PACK_V1, CREATOR_STEP_VISUAL_PREPARE_V1,
     CREATOR_STEP_VOICE_PREPARE_V1, CREATOR_WORKFLOW_UNIT_PROJECT_V1,
 };
 
@@ -106,7 +105,10 @@ fn no_stock_provider_manual_images_per_scene_unlock_visual_stage() {
         false,
     )
     .unwrap();
-    assert_eq!(first_outcome.media.media_kind, ManualVisualMediaKindV1::Image);
+    assert_eq!(
+        first_outcome.media.media_kind,
+        ManualVisualMediaKindV1::Image
+    );
     assert_eq!(first_outcome.media.width, Some(1280));
     assert!(!first_outcome.visual_stage_complete);
     assert_eq!(
@@ -132,8 +134,7 @@ fn no_stock_provider_manual_images_per_scene_unlock_visual_stage() {
     assert!(artifacts.verify_artifact(&first_outcome.artifact).unwrap());
     assert!(artifacts.verify_artifact(&second_outcome.artifact).unwrap());
 
-    let states =
-        creator_scene_visual_states_v1(&fx.store, &artifacts, &fx.project_id).unwrap();
+    let states = creator_scene_visual_states_v1(&fx.store, &artifacts, &fx.project_id).unwrap();
     assert_eq!(states.len(), 2);
     assert!(states.iter().all(|state| state.verified));
 }

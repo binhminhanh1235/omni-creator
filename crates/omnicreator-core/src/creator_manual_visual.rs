@@ -8,10 +8,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     deterministic_input_hash, ingest_manual_result_file_v1, load_latest_creator_content_scene_v1,
-    Artifact, ArtifactStore, Error, LogicalUri, ManualResultIngestRequestV1,
-    ManualResultOutcomeV1, ManualResultProvenanceV1, Result, StateStore, StepStatus,
-    WorkflowStep, CREATOR_STEP_VISUAL_PREPARE_V1, CREATOR_WORKFLOW_UNIT_PROJECT_V1,
-    MANUAL_RESULT_SCHEMA_V1, MANUAL_RESULT_VERSION_V1,
+    Artifact, ArtifactStore, Error, LogicalUri, ManualResultIngestRequestV1, ManualResultOutcomeV1,
+    ManualResultProvenanceV1, Result, StateStore, StepStatus, WorkflowStep,
+    CREATOR_STEP_VISUAL_PREPARE_V1, CREATOR_WORKFLOW_UNIT_PROJECT_V1, MANUAL_RESULT_SCHEMA_V1,
+    MANUAL_RESULT_VERSION_V1,
 };
 
 pub const MANUAL_VISUAL_SCHEMA_V1: &str = "omnicreator.manual-visual";
@@ -181,12 +181,7 @@ pub fn inspect_manual_visual_media_v1(
             } else {
                 "video/x-matroska"
             };
-            (
-                ManualVisualMediaKindV1::Video,
-                mime.to_owned(),
-                None,
-                None,
-            )
+            (ManualVisualMediaKindV1::Video, mime.to_owned(), None, None)
         }
         "avi" => {
             validate_avi_v1(&prefix)?;
@@ -249,7 +244,10 @@ pub fn choose_creator_visual_from_asset_library_v1(
     replace_existing: bool,
 ) -> Result<ManualCreatorVisualOutcomeV1> {
     let source = state_store.get_artifact(source_artifact_id)?;
-    if !matches!(source.artifact_type.to_ascii_lowercase().as_str(), "image" | "video") {
+    if !matches!(
+        source.artifact_type.to_ascii_lowercase().as_str(),
+        "image" | "video"
+    ) {
         return Err(Error::InvalidArtifact(
             "Asset Library visual selection must be an image or video artifact".to_owned(),
         ));
@@ -288,8 +286,12 @@ pub fn creator_scene_visual_states_v1(
         .scenes
         .iter()
         .map(|scene| {
-            let selected =
-                latest_verified_visual_for_scene_v1(state_store, artifact_store, project_id, &scene.id)?;
+            let selected = latest_verified_visual_for_scene_v1(
+                state_store,
+                artifact_store,
+                project_id,
+                &scene.id,
+            )?;
             Ok(CreatorSceneVisualStateV1 {
                 scene_id: scene.id.clone(),
                 verified: selected.is_some(),
@@ -359,9 +361,7 @@ fn persist_manual_creator_visual_v1(
     provenance.validate_v1()?;
     let creator = load_latest_creator_content_scene_v1(state_store, artifact_store, project_id)?
         .ok_or_else(|| {
-            Error::InvalidContract(
-                "manual visual requires verified Content + ScenePlan".to_owned(),
-            )
+            Error::InvalidContract("manual visual requires verified Content + ScenePlan".to_owned())
         })?;
     let scene = creator
         .scene_plan
@@ -382,8 +382,7 @@ fn persist_manual_creator_visual_v1(
     )?;
     let source_library_artifact_id =
         source_library_artifact.map(|artifact| artifact.artifact_id.clone());
-    let source_library_sha256 =
-        source_library_artifact.map(|artifact| artifact.sha256.clone());
+    let source_library_sha256 = source_library_artifact.map(|artifact| artifact.sha256.clone());
 
     let request = ManualResultIngestRequestV1 {
         schema: MANUAL_RESULT_SCHEMA_V1.to_owned(),
@@ -459,7 +458,10 @@ fn latest_verified_visual_for_scene_v1(
         if artifact.project_id.as_deref() != Some(project_id)
             || artifact.producer_job.as_deref() != Some(job.job_id.as_str())
             || artifact.input_hash.as_deref() != Some(job.input_hash.as_str())
-            || !matches!(artifact.artifact_type.to_ascii_lowercase().as_str(), "image" | "video")
+            || !matches!(
+                artifact.artifact_type.to_ascii_lowercase().as_str(),
+                "image" | "video"
+            )
             || !artifact_store.verify_artifact(&artifact)?
         {
             continue;
@@ -470,10 +472,7 @@ fn latest_verified_visual_for_scene_v1(
     Ok(candidates.pop().map(|(_, _, artifact)| artifact))
 }
 
-fn visual_aggregate_step_v1(
-    state_store: &StateStore,
-    project_id: &str,
-) -> Result<WorkflowStep> {
+fn visual_aggregate_step_v1(state_store: &StateStore, project_id: &str) -> Result<WorkflowStep> {
     state_store
         .list_project_steps(project_id)?
         .into_iter()
@@ -482,9 +481,7 @@ fn visual_aggregate_step_v1(
                 && step.unit == CREATOR_WORKFLOW_UNIT_PROJECT_V1
         })
         .ok_or_else(|| {
-            Error::InvalidContract(
-                "creator visual aggregate workflow step is missing".to_owned(),
-            )
+            Error::InvalidContract("creator visual aggregate workflow step is missing".to_owned())
         })
 }
 
@@ -573,7 +570,18 @@ fn jpeg_dimensions_v1(bytes: &[u8]) -> Option<(u32, u32)> {
         }
         if matches!(
             marker,
-            0xc0 | 0xc1 | 0xc2 | 0xc3 | 0xc5 | 0xc6 | 0xc7 | 0xc9 | 0xca | 0xcb | 0xcd | 0xce | 0xcf
+            0xc0 | 0xc1
+                | 0xc2
+                | 0xc3
+                | 0xc5
+                | 0xc6
+                | 0xc7
+                | 0xc9
+                | 0xca
+                | 0xcb
+                | 0xcd
+                | 0xce
+                | 0xcf
         ) && length >= 7
         {
             let height = u32::from(u16::from_be_bytes([bytes[index + 3], bytes[index + 4]]));
@@ -614,14 +622,10 @@ fn validate_webp_v1(bytes: &[u8]) -> Result<()> {
 
 fn webp_dimensions_v1(bytes: &[u8]) -> Option<(u32, u32)> {
     if bytes.len() >= 30 && &bytes[12..16] == b"VP8X" {
-        let width = 1
-            + u32::from(bytes[24])
-            + (u32::from(bytes[25]) << 8)
-            + (u32::from(bytes[26]) << 16);
-        let height = 1
-            + u32::from(bytes[27])
-            + (u32::from(bytes[28]) << 8)
-            + (u32::from(bytes[29]) << 16);
+        let width =
+            1 + u32::from(bytes[24]) + (u32::from(bytes[25]) << 8) + (u32::from(bytes[26]) << 16);
+        let height =
+            1 + u32::from(bytes[27]) + (u32::from(bytes[28]) << 8) + (u32::from(bytes[29]) << 16);
         return Some((width, height));
     }
     if bytes.len() >= 25 && &bytes[12..16] == b"VP8L" && bytes[20] == 0x2f {

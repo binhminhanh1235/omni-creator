@@ -445,14 +445,12 @@ fn metadata_field_v1<'a>(
     metadata: Option<&'a serde_json::Map<String, Value>>,
     key: &str,
 ) -> Option<&'a Value> {
-    metadata
-        .and_then(|value| value.get(key))
-        .or_else(|| {
-            metadata
-                .and_then(|value| value.get("stage"))
-                .and_then(Value::as_object)
-                .and_then(|value| value.get(key))
-        })
+    metadata.and_then(|value| value.get(key)).or_else(|| {
+        metadata
+            .and_then(|value| value.get("stage"))
+            .and_then(Value::as_object)
+            .and_then(|value| value.get(key))
+    })
 }
 
 fn asset_from_artifact_v1(artifact: &Artifact) -> Result<AssetV1> {
