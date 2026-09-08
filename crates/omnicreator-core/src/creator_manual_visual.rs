@@ -91,6 +91,15 @@ pub struct CreatorSceneVisualStateV1 {
     pub verified: bool,
 }
 
+struct ManualVisualPersistRequestV1<'a> {
+    project_id: &'a str,
+    scene_id: &'a str,
+    source_path: &'a Path,
+    provenance: ManualResultProvenanceV1,
+    replace_existing: bool,
+    source_library_artifact: Option<&'a Artifact>,
+}
+
 pub fn inspect_manual_visual_media_v1(
     path: impl AsRef<Path>,
 ) -> Result<ManualVisualMediaMetadataV1> {
@@ -226,12 +235,14 @@ pub fn provide_manual_creator_visual_file_v1(
     persist_manual_creator_visual_v1(
         state_store,
         artifact_store,
-        project_id,
-        scene_id,
-        path.as_ref(),
-        provenance,
-        replace_existing,
-        None,
+        ManualVisualPersistRequestV1 {
+            project_id,
+            scene_id,
+            source_path: path.as_ref(),
+            provenance,
+            replace_existing,
+            source_library_artifact: None,
+        },
     )
 }
 
@@ -261,12 +272,14 @@ pub fn choose_creator_visual_from_asset_library_v1(
     persist_manual_creator_visual_v1(
         state_store,
         artifact_store,
-        project_id,
-        scene_id,
-        &path,
-        ManualResultProvenanceV1::manual_editor(),
-        replace_existing,
-        Some(&source),
+        ManualVisualPersistRequestV1 {
+            project_id,
+            scene_id,
+            source_path: &path,
+            provenance: ManualResultProvenanceV1::manual_editor(),
+            replace_existing,
+            source_library_artifact: Some(&source),
+        },
     )
 }
 
@@ -350,13 +363,16 @@ pub fn reconcile_creator_visual_aggregate_v1(
 fn persist_manual_creator_visual_v1(
     state_store: &mut StateStore,
     artifact_store: &ArtifactStore,
-    project_id: &str,
-    scene_id: &str,
-    source_path: &Path,
-    provenance: ManualResultProvenanceV1,
-    replace_existing: bool,
-    source_library_artifact: Option<&Artifact>,
+    request: ManualVisualPersistRequestV1<'_>,
 ) -> Result<ManualCreatorVisualOutcomeV1> {
+    let ManualVisualPersistRequestV1 {
+        project_id,
+        scene_id,
+        source_path,
+        provenance,
+        replace_existing,
+        source_library_artifact,
+    } = request;
     state_store.get_project(project_id)?;
     provenance.validate_v1()?;
     let creator = load_latest_creator_content_scene_v1(state_store, artifact_store, project_id)?
