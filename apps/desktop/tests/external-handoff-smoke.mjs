@@ -29,6 +29,7 @@ const appMarkers = [
   "provide_creator_external_visual_result",
   "export_creator_external_voice_request",
   "provide_creator_external_voice_result",
+  "request: request",
 ];
 
 const backendMarkers = [
@@ -42,6 +43,9 @@ const backendMarkers = [
   "provide_creator_external_voice_result",
   "readable_store(&state)",
   "writable_store(&state)",
+  "request.validate_v1().map_err(error_string)?",
+  "External visual request identity does not match the selected project/scene.",
+  "External voice request identity does not match the selected project/segment.",
 ];
 
 const coreMarkers = [
