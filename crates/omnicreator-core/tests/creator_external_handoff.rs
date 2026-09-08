@@ -7,8 +7,8 @@ use omnicreator_core::{
     prepare_external_generated_visual_request_v1, prepare_external_voice_request_v1,
     provide_external_generated_visual_result_v1, provide_external_voice_result_v1,
     provide_manual_creator_content_v1, provide_manual_creator_scene_plan_v1,
-    provide_manual_creator_visual_file_v1, ArtifactStore, ManualCreatorVoiceRequestV1,
-    ManualResultProducerV1, ManualResultProvenanceV1, ManualScenePlanDraftV1, StateStore,
+    provide_manual_creator_visual_file_v1, ArtifactStore, ManualResultProvenanceV1,
+    ManualScenePlanDraftV1, StateStore,
     StepStatus, Workspace, CREATOR_STEP_PRODUCTION_PACK_V1, CREATOR_STEP_VISUAL_PREPARE_V1,
     CREATOR_STEP_VOICE_PREPARE_V1, CREATOR_TTS_STEP_V1, CREATOR_WORKFLOW_UNIT_PROJECT_V1,
 };
@@ -467,7 +467,13 @@ fn mixed_automatic_manual_and_external_visual_producers_share_one_canonical_stag
         StepStatus::Succeeded
     );
     assert_eq!(
-        external.ingestion.provenance_producer_for_test_v1(),
-        ManualResultProducerV1::ExternalResultImport
+        external
+            .artifact
+            .metadata
+            .get("manual_result")
+            .and_then(|value| value.get("provenance"))
+            .and_then(|value| value.get("producer"))
+            .and_then(serde_json::Value::as_str),
+        Some("EXTERNAL_RESULT_IMPORT")
     );
 }
