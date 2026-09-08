@@ -88,6 +88,16 @@ pub struct CreatorSegmentVoiceStateV1 {
 }
 
 #[derive(Debug, Clone)]
+pub struct LocalVoiceBundlePromotionV1<'a> {
+    pub attempt_id: &'a str,
+    pub request.audio_source: &'a Path,
+    pub request.audio_uri: LogicalUri,
+    pub request.timing_source: &'a Path,
+    pub request.timing_uri: LogicalUri,
+    pub metadata: serde_json::Value,
+}
+
+#[derive(Debug, Clone)]
 struct VerifiedSegmentVoiceV1 {
     job: Job,
     audio: Artifact,
@@ -348,11 +358,11 @@ pub fn provide_manual_creator_voice_bundle_v1(
         request.segment_id.as_bytes(),
         input_hash.as_bytes(),
     ]);
-    let audio_uri = LogicalUri::parse(&format!(
+    let request.audio_uri = LogicalUri::parse(&format!(
         "project://voice/manual/{}/{bundle_id}.{}",
         request.segment_id, audio_metadata.extension
     ))?;
-    let timing_uri = crate::voice_timing_output_uri_v1(&audio_uri)?;
+    let request.timing_uri = crate::voice_timing_output_uri_v1(&request.audio_uri)?;
     let timing_staging = manual_voice_timing_staging_path_v1(artifact_store)?;
     if let Some(parent) = timing_staging.parent() {
         fs::create_dir_all(parent)?;
@@ -361,12 +371,13 @@ pub fn provide_manual_creator_voice_bundle_v1(
 
     let promotion = artifact_store.promote_local_voice_bundle_v1(
         state_store,
-        &started.attempt.attempt_id,
-        request.audio_path,
-        audio_uri,
-        &timing_staging,
-        timing_uri,
-        serde_json::json!({
+        LocalVoiceBundlePromotionV1 {
+            attempt_id: &started.attempt.attempt_id,
+            request.audio_source: request.audio_path,
+            request.audio_uri,
+            request.timing_source: &timing_staging,
+            request.timing_uri,
+            metadata: serde_json::json!({
             "manual_result": {
                 "provenance": &request.provenance,
                 "job_step": CREATOR_TTS_STEP_V1,
@@ -383,7 +394,8 @@ pub fn provide_manual_creator_voice_bundle_v1(
                 "duration_ms": audio_metadata.duration_ms,
                 "timing_sha256": &timing_sha256,
             }
-        }),
+            }),
+        },
     );
     let _ = fs::remove_file(&timing_staging);
     let (audio, timing_artifact) = match promotion {
@@ -578,14 +590,9 @@ impl ArtifactStore {
     pub fn promote_local_voice_bundle_v1(
         &self,
         state_store: &mut StateStore,
-        attempt_id: &str,
-        audio_source: &Path,
-        audio_uri: LogicalUri,
-        timing_source: &Path,
-        timing_uri: LogicalUri,
-        metadata: serde_json::Value,
+        request: LocalVoiceBundlePromotionV1<'_>,
     ) -> Result<crate::RemoteVoiceArtifactBundleV1> {
-        let attempt = state_store.get_attempt(attempt_id)?;
+        let attempt = state_store.get_attempt(request.attempt_id)?;
         let job = state_store.get_job(&attempt.job_id)?;
         if !matches!(attempt.status, StepStatus::Running | StepStatus::Retryable)
             || !matches!(job.status, StepStatus::Running | StepStatus::Retryable)
@@ -594,19 +601,19 @@ impl ArtifactStore {
                 "local voice bundle promotion requires active voice attempt/job".to_owned(),
             ));
         }
-        if !matches!(audio_uri, LogicalUri::Project(_))
-            || !matches!(timing_uri, LogicalUri::Project(_))
+        if !matches!(request.audio_uri, LogicalUri::Project(_))
+            || !matches!(request.timing_uri, LogicalUri::Project(_))
         {
             return Err(Error::InvalidArtifact(
                 "local voice bundle outputs must use project:// logical URIs".to_owned(),
             ));
         }
-        if !audio_source.is_file() || !timing_source.is_file() {
+        if !request.audio_source.is_file() || !request.timing_source.is_file() {
             return Err(Error::InvalidArtifact(
                 "local voice bundle source files must exist".to_owned(),
             ));
         }
-        let timing_contract = VoiceTimingV1::from_json_bytes_v1(&fs::read(timing_source)?)?;
+        let timing_contract = VoiceTimingV1::from_json_bytes_v1(&fs::read(request.timing_source)?)?;
         if timing_contract.segment_id != job.unit {
             return Err(Error::InvalidArtifact(
                 "local voice timing segment_id does not match logical tts job unit".to_owned(),
@@ -614,8 +621,8 @@ impl ArtifactStore {
         }
 
         let resolver = PathResolver::new(self.data_root())?;
-        let audio_destination = resolver.resolve(&audio_uri, Some(&job.project_id))?;
-        let timing_destination = resolver.resolve(&timing_uri, Some(&job.project_id))?;
+        let audio_destination = resolver.resolve(&request.audio_uri, Some(&job.project_id))?;
+        let timing_destination = resolver.resolve(&request.timing_uri, Some(&job.project_id))?;
         if audio_destination == timing_destination
             || audio_destination.exists()
             || timing_destination.exists()
@@ -626,8 +633,8 @@ impl ArtifactStore {
                 timing_destination
             }));
         }
-        let audio_temp = copy_to_voice_temp_v1(audio_source, &audio_destination)?;
-        let timing_temp = match copy_to_voice_temp_v1(timing_source, &timing_destination) {
+        let audio_temp = copy_to_voice_temp_v1(request.audio_source, &audio_destination)?;
+        let timing_temp = match copy_to_voice_temp_v1(request.timing_source, &timing_destination) {
             Ok(path) => path,
             Err(error) => {
                 let _ = fs::remove_file(&audio_temp);
@@ -648,7 +655,7 @@ impl ArtifactStore {
             return Err(error.into());
         }
 
-        let mut audio_metadata = metadata.clone();
+        let mut audio_metadata = request.metadata.clone();
         merge_json_metadata_v1(
             &mut audio_metadata,
             serde_json::json!({
@@ -656,7 +663,7 @@ impl ArtifactStore {
                 "segment_id": &job.unit,
             }),
         );
-        let mut timing_metadata = metadata;
+        let mut timing_metadata = request.metadata;
         merge_json_metadata_v1(
             &mut timing_metadata,
             serde_json::json!({
@@ -672,7 +679,7 @@ impl ArtifactStore {
             artifact_id: format!("art_{}", Uuid::new_v4().simple()),
             project_id: Some(job.project_id.clone()),
             artifact_type: VOICE_AUDIO_ARTIFACT_TYPE_V1.to_owned(),
-            uri: audio_uri,
+            uri: request.audio_uri,
             sha256: audio_sha256,
             size_bytes: audio_size,
             input_hash: Some(job.input_hash.clone()),
@@ -684,7 +691,7 @@ impl ArtifactStore {
             artifact_id: format!("art_{}", Uuid::new_v4().simple()),
             project_id: Some(job.project_id.clone()),
             artifact_type: VOICE_TIMING_ARTIFACT_TYPE_V1.to_owned(),
-            uri: timing_uri,
+            uri: request.timing_uri,
             sha256: timing_sha256,
             size_bytes: timing_size,
             input_hash: Some(job.input_hash.clone()),
@@ -693,7 +700,7 @@ impl ArtifactStore {
             metadata: timing_metadata,
         };
 
-        if let Err(error) = state_store.commit_voice_bundle_success_v1(attempt_id, &audio, &timing)
+        if let Err(error) = state_store.commit_voice_bundle_success_v1(request.attempt_id, &audio, &timing)
         {
             let _ = fs::remove_file(&audio_destination);
             let _ = fs::remove_file(&timing_destination);
