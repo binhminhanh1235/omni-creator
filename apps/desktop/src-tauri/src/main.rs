@@ -1874,7 +1874,10 @@ fn provide_creator_external_visual_result(
 ) -> Result<AppSnapshot, String> {
     request.validate_v1().map_err(error_string)?;
     if request.project_id != project_id || request.scene_id != scene_id {
-        return Err("External visual request identity does not match the selected project/scene.".to_owned());
+        return Err(
+            "External visual request identity does not match the selected project/scene."
+                .to_owned(),
+        );
     }
     let Some(path) = rfd::FileDialog::new()
         .set_title(if replace_existing {
@@ -2086,7 +2089,10 @@ fn provide_creator_external_voice_result(
 ) -> Result<AppSnapshot, String> {
     request.validate_v1().map_err(error_string)?;
     if request.project_id != project_id || request.segment_id != segment_id {
-        return Err("External voice request identity does not match the selected project/segment.".to_owned());
+        return Err(
+            "External voice request identity does not match the selected project/segment."
+                .to_owned(),
+        );
     }
     let Some(audio_path) = rfd::FileDialog::new()
         .set_title(if replace_existing {
