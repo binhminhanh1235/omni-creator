@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use crate::{
     deterministic_input_hash, fs_util::sha256_file, load_latest_creator_content_v1, Artifact,
-    ArtifactStore, CreatorContentV1, CreatorSegmentV1, Error, Job, LogicalUri,
+    ArtifactStore, Error, Job, LogicalUri,
     ManualResultProducerV1, ManualResultProvenanceV1, PathResolver, Result, StateStore, StepStatus,
     VoiceTimingCueV1, VoiceTimingV1, WorkflowStep, CREATOR_STEP_CONTENT_PREPARE_V1,
     CREATOR_STEP_PRODUCTION_PACK_V1, CREATOR_STEP_VOICE_PREPARE_V1, CREATOR_TTS_STEP_V1,
@@ -502,7 +502,7 @@ pub fn creator_segment_voice_states_v1(
 }
 
 pub fn reconcile_creator_voice_aggregate_v1(
-    state_store: &StateStore,
+    state_store: &mut StateStore,
     artifact_store: &ArtifactStore,
     project_id: &str,
 ) -> Result<bool> {
@@ -712,7 +712,6 @@ impl ArtifactStore {
 struct CreatorVoiceParentStepsV1 {
     content: WorkflowStep,
     voice: WorkflowStep,
-    production: WorkflowStep,
 }
 
 fn creator_voice_parent_steps_v1(
@@ -733,21 +732,17 @@ fn creator_voice_parent_steps_v1(
     };
     let content = find(CREATOR_STEP_CONTENT_PREPARE_V1)?;
     let voice = find(CREATOR_STEP_VOICE_PREPARE_V1)?;
-    let production = find(CREATOR_STEP_PRODUCTION_PACK_V1)?;
+    let _production = find(CREATOR_STEP_PRODUCTION_PACK_V1)?;
     if content.status != StepStatus::Succeeded {
         return Err(Error::InvalidJobState(
             "content.prepare/project must be SUCCEEDED before manual voice takeover".to_owned(),
         ));
     }
-    Ok(CreatorVoiceParentStepsV1 {
-        content,
-        voice,
-        production,
-    })
+    Ok(CreatorVoiceParentStepsV1 { content, voice })
 }
 
 fn ensure_manual_tts_step_v1(
-    state_store: &StateStore,
+    state_store: &mut StateStore,
     project_id: &str,
     segment_id: &str,
     input_hash: &str,
@@ -782,7 +777,6 @@ fn ensure_manual_tts_step_v1(
     };
     state_store.add_dependency(&parents.content.step_id, &step.step_id)?;
     state_store.add_dependency(&step.step_id, &parents.voice.step_id)?;
-    let _ = &parents.production;
     state_store.refresh_ready_steps(project_id)?;
     Ok((state_store.get_step(&step.step_id)?, invalidated))
 }
@@ -797,12 +791,8 @@ fn normalize_stale_impact_v1(
         if current.status != StepStatus::Stale {
             continue;
         }
-        let next = if affected.step_id == root_step_id {
-            StepStatus::NotReady
-        } else {
-            StepStatus::NotReady
-        };
-        state_store.set_step_status(&affected.step_id, next)?;
+        let _ = root_step_id;
+        state_store.set_step_status(&affected.step_id, StepStatus::NotReady)?;
     }
     Ok(())
 }
@@ -821,10 +811,10 @@ fn latest_verified_segment_voice_v1(
         {
             continue;
         }
-        let Some(attempt_id) = job.selected_attempt.as_deref() else {
+        let Some(attempt_id) = job.selected_attempt.clone() else {
             continue;
         };
-        let Some(take) = state_store.get_voice_take_v1(attempt_id)? else {
+        let Some(take) = state_store.get_voice_take_v1(&attempt_id)? else {
             continue;
         };
         let (Some(audio), Some(timing_artifact)) = (take.artifact, take.timing_artifact) else {
@@ -841,7 +831,7 @@ fn latest_verified_segment_voice_v1(
         {
             continue;
         }
-        let Some(timing) = artifact_store.load_voice_timing_v1(state_store, attempt_id)? else {
+        let Some(timing) = artifact_store.load_voice_timing_v1(state_store, &attempt_id)? else {
             continue;
         };
         if timing.segment_id != segment_id {
@@ -855,7 +845,7 @@ fn latest_verified_segment_voice_v1(
                 audio,
                 timing_artifact,
                 timing,
-                attempt_id: attempt_id.to_owned(),
+                attempt_id,
             },
         ));
     }
