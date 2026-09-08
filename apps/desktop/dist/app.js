@@ -23,6 +23,8 @@ const creatorRunState = {
   manualSceneLoadingProjects: new Set(),
   manualVisualByProject: new Map(),
   manualVisualLoadingProjects: new Set(),
+  manualVoiceByProject: new Map(),
+  manualVoiceLoadingProjects: new Set(),
 };
 const studioPackState = {
   catalog: null,
@@ -550,6 +552,96 @@ async function loadCreatorManualVisual(item, readOnly) {
   }
 }
 
+
+function creatorManualVoiceMarkup(view, readOnly) {
+  if (!view || !Array.isArray(view.segments) || !view.segments.length) return "";
+  return (
+    '<div class="creator-visual-review manual-voice-takeover"><div class="creator-review-head"><strong>MANUAL VOICE + TIMING TAKEOVER</strong>' +
+    '<span>Use WAV directly, or pair WAV/MP3 with SRT/VoiceTiming JSON. Each segment remains an independent canonical VoiceTake.</span></div>' +
+    view.segments
+      .map(function (segment) {
+        const current = segment.selected_audio || null;
+        const timing = segment.timing || null;
+        const replacing = Boolean(current && segment.verified);
+        const currentText = replacing
+          ? '<div class="notice subtle"><strong>CURRENT VOICE</strong><code>' +
+            escapeHtml(current.artifact_id || "") +
+            '</code><span>' +
+            escapeHtml(current.uri || "") +
+            "</span><small>" +
+            escapeHtml(
+              timing
+                ? Math.round(Number(timing.duration_ms || 0)) +
+                    " ms · " +
+                    (Array.isArray(timing.cues) ? timing.cues.length : 0) +
+                    " cue(s)"
+                : "Timing sidecar unavailable",
+            ) +
+            "</small></div>"
+          : '<div class="notice subtle">No verified audio + timing bundle selected yet.</div>';
+        return (
+          '<article class="creator-review-scene manual-voice-segment" data-manual-voice-segment="' +
+          escapeHtml(segment.segment_id) +
+          '"><div><strong>' +
+          escapeHtml(segment.segment_id) +
+          "</strong><p>" +
+          escapeHtml(segment.narration || "") +
+          "</p>" +
+          currentText +
+          '</div><div class="creator-review-decision">' +
+          (replacing
+            ? '<strong class="asset-badge">Replace Existing Voice</strong>'
+            : '<strong class="asset-badge">Provide Manually</strong>') +
+          '<button class="btn creator-use-wav-manual" data-segment-id="' +
+          escapeHtml(segment.segment_id) +
+          '" data-replace="' +
+          (replacing ? "true" : "false") +
+          '"' +
+          (readOnly ? " disabled" : "") +
+          ">Use My WAV</button>" +
+          '<button class="btn creator-use-audio-timing-manual" data-segment-id="' +
+          escapeHtml(segment.segment_id) +
+          '" data-replace="' +
+          (replacing ? "true" : "false") +
+          '"' +
+          (readOnly ? " disabled" : "") +
+          ">Audio + Timing</button>" +
+          '<button class="btn creator-replace-timing-manual" data-segment-id="' +
+          escapeHtml(segment.segment_id) +
+          '"' +
+          (readOnly || !replacing ? " disabled" : "") +
+          ">Replace Timing</button></div></article>"
+        );
+      })
+      .join("") +
+    "</div>"
+  );
+}
+
+async function loadCreatorManualVoice(item, readOnly) {
+  if (
+    !item ||
+    !item.project ||
+    creatorRunState.manualVoiceLoadingProjects.has(item.project.id)
+  ) {
+    return;
+  }
+  creatorRunState.manualVoiceLoadingProjects.add(item.project.id);
+  try {
+    const view = await call("creator_manual_voice_status", {
+      projectId: item.project.id,
+    });
+    creatorRunState.manualVoiceByProject.set(item.project.id, view);
+    if (creatorRunState.selectedProjectId === item.project.id) {
+      renderCreatorRunPanel(item, readOnly);
+    }
+  } catch (_error) {
+    creatorRunState.manualVoiceByProject.delete(item.project.id);
+  } finally {
+    creatorRunState.manualVoiceLoadingProjects.delete(item.project.id);
+  }
+}
+
 async function loadCreatorVisualReview(item, readOnly) {
   if (
     !item ||
@@ -722,6 +814,7 @@ function renderCreatorRunPanel(item, readOnly) {
   const visualReview = creatorRunState.reviewByProject.get(project.id) || null;
   const manualSceneEditor = creatorRunState.manualSceneByProject.get(project.id) || null;
   const manualVisual = creatorRunState.manualVisualByProject.get(project.id) || null;
+  const manualVoice = creatorRunState.manualVoiceByProject.get(project.id) || null;
 
   panel.hidden = false;
   panel.innerHTML =
@@ -771,6 +864,11 @@ function renderCreatorRunPanel(item, readOnly) {
       ? manualVisual
         ? creatorManualVisualMarkup(manualVisual, readOnly)
         : '<div class="notice subtle">Loading manual visual takeover options from canonical scene and Asset Library state…</div>'
+      : "") +
+    (contentStep && contentStep.status === "SUCCEEDED"
+      ? manualVoice
+        ? creatorManualVoiceMarkup(manualVoice, readOnly)
+        : '<div class="notice subtle">Loading manual voice takeover options from canonical segment state…</div>'
       : "") +
     (run.stage === "VISUAL"
       ? visualReview
@@ -858,6 +956,7 @@ function renderCreatorRunPanel(item, readOnly) {
       manualScriptButton.disabled = true;
       try {
         creatorRunState.manualSceneByProject.delete(project.id);
+        creatorRunState.manualVoiceByProject.delete(project.id);
         render(await call("provide_creator_script_manually", { projectId: project.id, script: script }));
         showToast("Manual script promoted to the canonical Content artifact.");
       } catch (_error) {
@@ -872,6 +971,7 @@ function renderCreatorRunPanel(item, readOnly) {
       importScriptButton.disabled = true;
       try {
         creatorRunState.manualSceneByProject.delete(project.id);
+        creatorRunState.manualVoiceByProject.delete(project.id);
         render(await call("import_creator_script_manually", { projectId: project.id }));
         showToast("Imported script promoted to canonical Content.");
       } catch (_error) {
@@ -986,6 +1086,63 @@ function renderCreatorRunPanel(item, readOnly) {
     };
   });
 
+
+  document.querySelectorAll(".creator-use-wav-manual").forEach(function (button) {
+    button.onclick = async function () {
+      button.disabled = true;
+      try {
+        creatorRunState.manualVoiceByProject.delete(project.id);
+        render(
+          await call("use_creator_wav_manually", {
+            projectId: project.id,
+            segmentId: button.dataset.segmentId,
+            replaceExisting: button.dataset.replace === "true",
+          }),
+        );
+        showToast("Manual WAV copied, timed, verified and committed as a canonical VoiceTake.");
+      } catch (_error) {
+        loadCreatorManualVoice(item, readOnly);
+      }
+    };
+  });
+
+  document.querySelectorAll(".creator-use-audio-timing-manual").forEach(function (button) {
+    button.onclick = async function () {
+      button.disabled = true;
+      try {
+        creatorRunState.manualVoiceByProject.delete(project.id);
+        render(
+          await call("use_creator_audio_with_timing_manually", {
+            projectId: project.id,
+            segmentId: button.dataset.segmentId,
+            replaceExisting: button.dataset.replace === "true",
+          }),
+        );
+        showToast("Audio + timing sidecar validated and committed as one canonical VoiceTake.");
+      } catch (_error) {
+        loadCreatorManualVoice(item, readOnly);
+      }
+    };
+  });
+
+  document.querySelectorAll(".creator-replace-timing-manual").forEach(function (button) {
+    button.onclick = async function () {
+      button.disabled = true;
+      try {
+        creatorRunState.manualVoiceByProject.delete(project.id);
+        render(
+          await call("replace_creator_voice_timing_manually", {
+            projectId: project.id,
+            segmentId: button.dataset.segmentId,
+          }),
+        );
+        showToast("Timing corrected while preserving the selected segment audio.");
+      } catch (_error) {
+        loadCreatorManualVoice(item, readOnly);
+      }
+    };
+  });
+
   const runButton = document.getElementById("run-creator-production");
   runButton.onclick = async function () {
     const inputText = textInput.value.trim();
@@ -996,6 +1153,7 @@ function renderCreatorRunPanel(item, readOnly) {
     creatorRunState.kindByProject.set(project.id, kindInput.value);
     creatorRunState.draftByProject.set(project.id, textInput.value);
     creatorRunState.reviewByProject.delete(project.id);
+    creatorRunState.manualVoiceByProject.delete(project.id);
     runButton.disabled = true;
     try {
       const snapshot = await call("start_creator_production", {
@@ -1028,6 +1186,14 @@ function renderCreatorRunPanel(item, readOnly) {
     !creatorRunState.manualVisualLoadingProjects.has(project.id)
   ) {
     loadCreatorManualVisual(item, readOnly);
+  }
+  if (
+    contentStep &&
+    contentStep.status === "SUCCEEDED" &&
+    !manualVoice &&
+    !creatorRunState.manualVoiceLoadingProjects.has(project.id)
+  ) {
+    loadCreatorManualVoice(item, readOnly);
   }
 }
 
