@@ -262,6 +262,40 @@ fn timing_replacement_reuses_audio_and_preserves_other_segment_work() {
 }
 
 #[test]
+fn mp3_with_explicit_timing_can_fulfill_segment_without_local_duration_probe() {
+    let mut fx = fixture();
+    prepare_content(&mut fx);
+    let artifacts = ArtifactStore::new(fx.workspace.data_root()).unwrap();
+    let (segment_id, narration) = content_segments(&fx).into_iter().next().unwrap();
+    let audio = fx.temp.path().join("manual.mp3");
+    fs::write(&audio, b"ID3\x04\x00\x00\x00\x00\x00\x00manual-audio").unwrap();
+
+    let metadata = inspect_manual_voice_audio_v1(&audio).unwrap();
+    assert_eq!(metadata.mime_type, "audio/mpeg");
+    assert_eq!(metadata.duration_ms, None);
+
+    let timing = derive_manual_voice_timing_v1(&segment_id, &narration, 1_000).unwrap();
+    let outcome = provide_manual_creator_voice_bundle_v1(
+        &mut fx.store,
+        &artifacts,
+        ManualCreatorVoiceRequestV1 {
+            project_id: &fx.project_id,
+            segment_id: &segment_id,
+            audio_path: &audio,
+            timing,
+            provenance: ManualResultProvenanceV1::local_file(),
+            replace_existing: false,
+        },
+    )
+    .unwrap();
+
+    assert!(artifacts.verify_artifact(&outcome.audio).unwrap());
+    assert!(artifacts.verify_artifact(&outcome.timing_artifact).unwrap());
+    assert_eq!(outcome.audio_metadata.mime_type, "audio/mpeg");
+    assert!(!outcome.voice_stage_complete);
+}
+
+#[test]
 fn audio_inspection_rejects_spoofing_and_reports_wav_duration() {
     let fx = fixture();
     let good = fx.temp.path().join("good.wav");
