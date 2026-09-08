@@ -97,9 +97,7 @@ struct VerifiedSegmentVoiceV1 {
     attempt_id: String,
 }
 
-pub fn inspect_manual_voice_audio_v1(
-    path: impl AsRef<Path>,
-) -> Result<ManualVoiceAudioMetadataV1> {
+pub fn inspect_manual_voice_audio_v1(path: impl AsRef<Path>) -> Result<ManualVoiceAudioMetadataV1> {
     let path = path.as_ref();
     let metadata = fs::metadata(path)?;
     if !metadata.is_file() || metadata.len() == 0 {
@@ -244,14 +242,11 @@ pub fn provide_manual_creator_voice_bundle_v1(
     request: ManualCreatorVoiceRequestV1<'_>,
 ) -> Result<ManualCreatorVoiceOutcomeV1> {
     request.provenance.validate_v1()?;
-    let (content, _) = load_latest_creator_content_v1(
-        state_store,
-        artifact_store,
-        request.project_id,
-    )?
-    .ok_or_else(|| {
-        Error::InvalidContract("manual voice requires verified creator Content".to_owned())
-    })?;
+    let (content, _) =
+        load_latest_creator_content_v1(state_store, artifact_store, request.project_id)?
+            .ok_or_else(|| {
+                Error::InvalidContract("manual voice requires verified creator Content".to_owned())
+            })?;
     let segment = content
         .segments
         .iter()
@@ -395,10 +390,8 @@ pub fn provide_manual_creator_voice_bundle_v1(
     let (audio, timing_artifact) = match promotion {
         Ok(bundle) => (bundle.audio, bundle.timing),
         Err(error) => {
-            let _ = state_store.finish_attempt_failure(
-                &started.attempt.attempt_id,
-                "MANUAL_VOICE_IMPORT_ERROR",
-            );
+            let _ = state_store
+                .finish_attempt_failure(&started.attempt.attempt_id, "MANUAL_VOICE_IMPORT_ERROR");
             return Err(error);
         }
     };
@@ -413,7 +406,10 @@ pub fn provide_manual_creator_voice_bundle_v1(
         state_store.refresh_ready_steps(request.project_id)?;
     }
     let current_step = state_store.get_step(&segment_step.step_id)?;
-    if matches!(current_step.status, StepStatus::Ready | StepStatus::Retryable) {
+    if matches!(
+        current_step.status,
+        StepStatus::Ready | StepStatus::Retryable
+    ) {
         state_store.set_step_status(&current_step.step_id, StepStatus::Succeeded)?;
     }
     if !invalidated_step_ids.contains(&segment_step.step_id) && request.replace_existing {
@@ -444,17 +440,13 @@ pub fn replace_manual_creator_voice_timing_v1(
     timing: VoiceTimingV1,
     provenance: ManualResultProvenanceV1,
 ) -> Result<ManualCreatorVoiceOutcomeV1> {
-    let existing = latest_verified_segment_voice_v1(
-        state_store,
-        artifact_store,
-        project_id,
-        segment_id,
-    )?
-    .ok_or_else(|| {
-        Error::InvalidArtifact(format!(
-            "segment {segment_id} has no selected audio to keep while replacing timing"
-        ))
-    })?;
+    let existing =
+        latest_verified_segment_voice_v1(state_store, artifact_store, project_id, segment_id)?
+            .ok_or_else(|| {
+                Error::InvalidArtifact(format!(
+                    "segment {segment_id} has no selected audio to keep while replacing timing"
+                ))
+            })?;
     let audio_path = artifact_store.resolve_artifact_path(&existing.audio)?;
     provide_manual_creator_voice_bundle_v1(
         state_store,
@@ -516,18 +508,16 @@ pub fn reconcile_creator_voice_aggregate_v1(
 ) -> Result<bool> {
     let (content, _) = load_latest_creator_content_v1(state_store, artifact_store, project_id)?
         .ok_or_else(|| {
-            Error::InvalidContract("creator voice reconciliation requires verified Content".to_owned())
+            Error::InvalidContract(
+                "creator voice reconciliation requires verified Content".to_owned(),
+            )
         })?;
     let parents = creator_voice_parent_steps_v1(state_store, project_id)?;
     let mut all_complete = !content.segments.is_empty();
 
     for segment in &content.segments {
-        let selected = latest_verified_segment_voice_v1(
-            state_store,
-            artifact_store,
-            project_id,
-            &segment.id,
-        )?;
+        let selected =
+            latest_verified_segment_voice_v1(state_store, artifact_store, project_id, &segment.id)?;
         let Some(_selected) = selected else {
             all_complete = false;
             continue;
@@ -617,8 +607,7 @@ impl ArtifactStore {
                 "local voice bundle source files must exist".to_owned(),
             ));
         }
-        let timing_contract =
-            VoiceTimingV1::from_json_bytes_v1(&fs::read(timing_source)?)?;
+        let timing_contract = VoiceTimingV1::from_json_bytes_v1(&fs::read(timing_source)?)?;
         if timing_contract.segment_id != job.unit {
             return Err(Error::InvalidArtifact(
                 "local voice timing segment_id does not match logical tts job unit".to_owned(),
@@ -705,8 +694,7 @@ impl ArtifactStore {
             metadata: timing_metadata,
         };
 
-        if let Err(error) =
-            state_store.commit_voice_bundle_success_v1(attempt_id, &audio, &timing)
+        if let Err(error) = state_store.commit_voice_bundle_success_v1(attempt_id, &audio, &timing)
         {
             let _ = fs::remove_file(&audio_destination);
             let _ = fs::remove_file(&timing_destination);
@@ -882,13 +870,10 @@ fn verified_voice_for_input_hash_v1(
     segment_id: &str,
     input_hash: &str,
 ) -> Result<Option<VerifiedSegmentVoiceV1>> {
-    Ok(latest_verified_segment_voice_v1(
-        state_store,
-        artifact_store,
-        project_id,
-        segment_id,
-    )?
-    .filter(|value| value.job.input_hash == input_hash))
+    Ok(
+        latest_verified_segment_voice_v1(state_store, artifact_store, project_id, segment_id)?
+            .filter(|value| value.job.input_hash == input_hash),
+    )
 }
 
 fn parse_srt_v1(
@@ -917,9 +902,9 @@ fn parse_srt_v1(
                 Error::InvalidContract("SRT cue is missing a '-->' timing line".to_owned())
             })?;
         let timing_line = lines[timing_index];
-        let (start, end) = timing_line.split_once("-->").ok_or_else(|| {
-            Error::InvalidContract("invalid SRT timing separator".to_owned())
-        })?;
+        let (start, end) = timing_line
+            .split_once("-->")
+            .ok_or_else(|| Error::InvalidContract("invalid SRT timing separator".to_owned()))?;
         let start_ms = parse_srt_time_v1(start.trim())?;
         let end_ms = parse_srt_time_v1(end.trim())?;
         let cue_text = lines[(timing_index + 1)..].join("\n").trim().to_owned();
@@ -952,9 +937,9 @@ fn parse_srt_v1(
 
 fn parse_srt_time_v1(value: &str) -> Result<u64> {
     let normalized = value.replace('.', ",");
-    let (hms, millis) = normalized.split_once(',').ok_or_else(|| {
-        Error::InvalidContract(format!("invalid SRT timestamp: {value}"))
-    })?;
+    let (hms, millis) = normalized
+        .split_once(',')
+        .ok_or_else(|| Error::InvalidContract(format!("invalid SRT timestamp: {value}")))?;
     let parts = hms.split(':').collect::<Vec<_>>();
     if parts.len() != 3 || millis.len() != 3 {
         return Err(Error::InvalidContract(format!(
@@ -1054,12 +1039,10 @@ fn wav_duration_ms_v1(bytes: &[u8]) -> Result<u64> {
         }
         offset = end + (size % 2);
     }
-    let byte_rate = byte_rate.ok_or_else(|| {
-        Error::InvalidContract("WAV is missing a valid fmt chunk".to_owned())
-    })?;
-    let data_size = data_size.ok_or_else(|| {
-        Error::InvalidContract("WAV is missing a data chunk".to_owned())
-    })?;
+    let byte_rate = byte_rate
+        .ok_or_else(|| Error::InvalidContract("WAV is missing a valid fmt chunk".to_owned()))?;
+    let data_size = data_size
+        .ok_or_else(|| Error::InvalidContract("WAV is missing a data chunk".to_owned()))?;
     let duration_ms = data_size
         .checked_mul(1_000)
         .and_then(|value| value.checked_div(byte_rate))
@@ -1074,9 +1057,7 @@ fn wav_duration_ms_v1(bytes: &[u8]) -> Result<u64> {
 
 fn validate_mp3_v1(bytes: &[u8]) -> Result<()> {
     if bytes.len() < 4 {
-        return Err(Error::InvalidContract(
-            "manual MP3 is too small".to_owned(),
-        ));
+        return Err(Error::InvalidContract("manual MP3 is too small".to_owned()));
     }
     if bytes.starts_with(b"ID3") {
         return Ok(());
@@ -1090,9 +1071,9 @@ fn validate_mp3_v1(bytes: &[u8]) -> Result<()> {
 }
 
 fn copy_to_voice_temp_v1(source: &Path, destination: &Path) -> Result<PathBuf> {
-    let parent = destination.parent().ok_or_else(|| {
-        Error::InvalidArtifact("manual voice target has no parent".to_owned())
-    })?;
+    let parent = destination
+        .parent()
+        .ok_or_else(|| Error::InvalidArtifact("manual voice target has no parent".to_owned()))?;
     fs::create_dir_all(parent)?;
     let temp = parent.join(format!(".manual-voice-{}.tmp", Uuid::new_v4().simple()));
     fs::copy(source, &temp)?;
