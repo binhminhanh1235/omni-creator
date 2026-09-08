@@ -35,26 +35,26 @@ use omnicreator_core::{
     CreatorVisualAssetExecutorV1, CreatorVisualDiscoveryExecutorV1,
     CreatorVisualGenerationRequestV1, CreatorVisualPlanV1, CreatorVisualPlanningOptionsV1,
     CreatorVisualStockFetchRequestV1, CreatorVoiceRuntimeV1, DiscoveredPlugin, Error as CoreError,
-    ExternalGeneratedVisualRequestV1, ExternalVoiceRequestV1,
-    GeneratedImagePluginResultV1, GeneratedImageRequestV1, GeneratedImageResolutionV1,
-    GeneratedImageStyleV1, GpuBatchBudgetOverviewV1, GpuBatchPlanRequestV1, GpuBatchPlanV1,
-    GpuBurstDispatchSummaryV1, GpuBurstPlanV1, GpuJobPreparationV1, GpuWorkbenchQueueSnapshotV1,
-    HandoffManifest, HttpComputeProvider, HttpComputeProviderConfigV1, LlmGatewayClient,
-    LlmGatewayConfig, LlmGatewayModel, MachineBinding, ManualCreatorVoiceRequestV1,
-    ManualResultProvenanceV1, ManualScenePlanDraftV1, PluginCapabilityImpactV1,
-    PluginInventoryEntryV1, PluginInventoryReportV1, PluginJobWorkspace, PluginLifecycleStateV1,
-    PluginMutationKindV1, PluginProcess, PluginProcessOptions, PluginRegistry, PluginResponse,
-    PluginRuntimeReadinessV1, PluginUpdatePreviewV1, PortableStudioPackCatalogV1,
-    ProductionExportHistoryEntryV1, ProductionPackV1, ProductionPackageExportOutcomeV1,
-    ProductionPackageExporterV1, Project, ProjectBoardProjectionV1, ProjectDisplayStatus,
-    RemoteComputeJobSpecV1, RemoteReconciliationSummaryV1, Result as CoreResult,
-    RuntimeWorkloadEstimateV1, SegmentTtsLockStateV1, SelectedVisualOutput, StateStore,
-    StockDiscoveryStatusV1, StudioJobReviewSnapshotV1, StudioPackAvailabilityStatusV1,
-    StudioPackOverridesV1, StudioPackRouteTargetV1, StudioPackRuntimeSnapshotV1,
-    StudioPackUxViewV1, StudioPackV1, StudioReviewCenterV1, VisualCandidate,
-    VisualCandidateRankingInput, VisualCandidateSignals, VisualReviewSet, VoiceIdentityV1,
-    VoiceModelIdentityV1, VoiceTimingV1, WorkflowStep, Workspace, WorkspaceSession,
-    CREATOR_STEP_VISUAL_PREPARE_V1, STUDIO_PACK_SCHEMA_V1, STUDIO_PACK_VERSION_V1,
+    ExternalGeneratedVisualRequestV1, ExternalVoiceRequestV1, GeneratedImagePluginResultV1,
+    GeneratedImageRequestV1, GeneratedImageResolutionV1, GeneratedImageStyleV1,
+    GpuBatchBudgetOverviewV1, GpuBatchPlanRequestV1, GpuBatchPlanV1, GpuBurstDispatchSummaryV1,
+    GpuBurstPlanV1, GpuJobPreparationV1, GpuWorkbenchQueueSnapshotV1, HandoffManifest,
+    HttpComputeProvider, HttpComputeProviderConfigV1, LlmGatewayClient, LlmGatewayConfig,
+    LlmGatewayModel, MachineBinding, ManualCreatorVoiceRequestV1, ManualResultProvenanceV1,
+    ManualScenePlanDraftV1, PluginCapabilityImpactV1, PluginInventoryEntryV1,
+    PluginInventoryReportV1, PluginJobWorkspace, PluginLifecycleStateV1, PluginMutationKindV1,
+    PluginProcess, PluginProcessOptions, PluginRegistry, PluginResponse, PluginRuntimeReadinessV1,
+    PluginUpdatePreviewV1, PortableStudioPackCatalogV1, ProductionExportHistoryEntryV1,
+    ProductionPackV1, ProductionPackageExportOutcomeV1, ProductionPackageExporterV1, Project,
+    ProjectBoardProjectionV1, ProjectDisplayStatus, RemoteComputeJobSpecV1,
+    RemoteReconciliationSummaryV1, Result as CoreResult, RuntimeWorkloadEstimateV1,
+    SegmentTtsLockStateV1, SelectedVisualOutput, StateStore, StockDiscoveryStatusV1,
+    StudioJobReviewSnapshotV1, StudioPackAvailabilityStatusV1, StudioPackOverridesV1,
+    StudioPackRouteTargetV1, StudioPackRuntimeSnapshotV1, StudioPackUxViewV1, StudioPackV1,
+    StudioReviewCenterV1, VisualCandidate, VisualCandidateRankingInput, VisualCandidateSignals,
+    VisualReviewSet, VoiceIdentityV1, VoiceModelIdentityV1, VoiceTimingV1, WorkflowStep, Workspace,
+    WorkspaceSession, CREATOR_STEP_VISUAL_PREPARE_V1, STUDIO_PACK_SCHEMA_V1,
+    STUDIO_PACK_VERSION_V1,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
@@ -1730,22 +1730,24 @@ fn creator_manual_visual_status(
         .scene_plan
         .scenes
         .iter()
-        .map(|scene| -> Result<CreatorManualVisualSceneDesktopViewV1, String> {
-            let external_request = prepare_external_generated_visual_request_v1(
-                &store,
-                &artifacts,
-                &project_id,
-                &scene.id,
-            )
-            .map_err(error_string)?;
-            Ok(CreatorManualVisualSceneDesktopViewV1 {
-                scene_id: scene.id.clone(),
-                narration: scene.narration.clone(),
-                purpose: scene.purpose.clone(),
-                selected_artifact: selected.get(&scene.id).cloned().flatten(),
-                external_request,
-            })
-        })
+        .map(
+            |scene| -> Result<CreatorManualVisualSceneDesktopViewV1, String> {
+                let external_request = prepare_external_generated_visual_request_v1(
+                    &store,
+                    &artifacts,
+                    &project_id,
+                    &scene.id,
+                )
+                .map_err(error_string)?;
+                Ok(CreatorManualVisualSceneDesktopViewV1 {
+                    scene_id: scene.id.clone(),
+                    narration: scene.narration.clone(),
+                    purpose: scene.purpose.clone(),
+                    selected_artifact: selected.get(&scene.id).cloned().flatten(),
+                    external_request,
+                })
+            },
+        )
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(CreatorManualVisualDesktopViewV1 {
@@ -1919,21 +1921,23 @@ fn creator_manual_voice_status(
     let segments = content
         .segments
         .iter()
-        .map(|segment| -> Result<CreatorManualVoiceSegmentDesktopViewV1, String> {
-            let state = states.get(&segment.id);
-            let external_request =
-                prepare_external_voice_request_v1(&store, &artifacts, &project_id, &segment.id)
-                    .map_err(error_string)?;
-            Ok(CreatorManualVoiceSegmentDesktopViewV1 {
-                segment_id: segment.id.clone(),
-                narration: segment.text.clone(),
-                selected_audio: state.and_then(|value| value.audio.clone()),
-                timing_artifact: state.and_then(|value| value.timing_artifact.clone()),
-                timing: state.and_then(|value| value.timing.clone()),
-                verified: state.is_some_and(|value| value.verified),
-                external_request,
-            })
-        })
+        .map(
+            |segment| -> Result<CreatorManualVoiceSegmentDesktopViewV1, String> {
+                let state = states.get(&segment.id);
+                let external_request =
+                    prepare_external_voice_request_v1(&store, &artifacts, &project_id, &segment.id)
+                        .map_err(error_string)?;
+                Ok(CreatorManualVoiceSegmentDesktopViewV1 {
+                    segment_id: segment.id.clone(),
+                    narration: segment.text.clone(),
+                    selected_audio: state.and_then(|value| value.audio.clone()),
+                    timing_artifact: state.and_then(|value| value.timing_artifact.clone()),
+                    timing: state.and_then(|value| value.timing.clone()),
+                    verified: state.is_some_and(|value| value.verified),
+                    external_request,
+                })
+            },
+        )
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(CreatorManualVoiceDesktopViewV1 {
@@ -2055,9 +2059,8 @@ fn export_creator_external_voice_request(
     let data_root = active_data_root(&state)?;
     let artifacts = ArtifactStore::new(&data_root).map_err(error_string)?;
     let store = readable_store(&state)?;
-    let request =
-        prepare_external_voice_request_v1(&store, &artifacts, &project_id, &segment_id)
-            .map_err(error_string)?;
+    let request = prepare_external_voice_request_v1(&store, &artifacts, &project_id, &segment_id)
+        .map_err(error_string)?;
     let Some(path) = rfd::FileDialog::new()
         .set_title("Export External Voice Request")
         .set_file_name(format!("{segment_id}-voice-request.json"))
