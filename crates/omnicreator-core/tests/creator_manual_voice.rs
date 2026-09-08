@@ -199,11 +199,10 @@ fn timing_replacement_reuses_audio_and_preserves_other_segment_work() {
             outcome.audio.sha256,
         ));
     }
-    let production = step(&fx.store, &fx.project_id, CREATOR_STEP_PRODUCTION_PACK_V1);
-    assert_eq!(production.status, StepStatus::Ready);
-    fx.store
-        .set_step_status(&production.step_id, StepStatus::Succeeded)
-        .unwrap();
+    assert_eq!(
+        step(&fx.store, &fx.project_id, CREATOR_STEP_PRODUCTION_PACK_V1).status,
+        StepStatus::NotReady
+    );
 
     let corrected = VoiceTimingV1 {
         schema: VOICE_TIMING_SCHEMA_V1.to_owned(),
@@ -243,7 +242,7 @@ fn timing_replacement_reuses_audio_and_preserves_other_segment_work() {
     );
     assert_eq!(
         step(&fx.store, &fx.project_id, CREATOR_STEP_PRODUCTION_PACK_V1).status,
-        StepStatus::Ready
+        StepStatus::NotReady
     );
     let jobs = fx.store.list_project_jobs(&fx.project_id).unwrap();
     assert_eq!(
