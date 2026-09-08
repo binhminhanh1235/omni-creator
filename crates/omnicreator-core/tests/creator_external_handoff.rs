@@ -116,6 +116,23 @@ fn provider_unavailable_external_generated_result_succeeds_with_truthful_provena
     let mut fx = fixture("External visual");
     prepare_content_scene(&mut fx, "One generated visual.");
     let artifacts = ArtifactStore::new(fx.workspace.data_root()).unwrap();
+    let failed_provider_job = fx
+        .store
+        .create_job(
+            &fx.project_id,
+            CREATOR_STEP_VISUAL_PREPARE_V1,
+            "SC001",
+            "provider-unavailable-input",
+        )
+        .unwrap();
+    let failed_provider_attempt = fx
+        .store
+        .start_attempt(&failed_provider_job.job_id, Some("compute-provider"))
+        .unwrap();
+    fx.store
+        .finish_attempt_failure(&failed_provider_attempt.attempt_id, "PROVIDER_UNAVAILABLE")
+        .unwrap();
+
     let request = prepare_external_generated_visual_request_v1(
         &fx.store,
         &artifacts,
@@ -178,6 +195,13 @@ fn provider_unavailable_external_generated_result_succeeds_with_truthful_provena
         .unwrap()
         .iter()
         .all(|attempt| attempt.worker.as_deref() != Some("compute-provider")));
+    let provider_job_after = fx.store.get_job(&failed_provider_job.job_id).unwrap();
+    let provider_attempt_after = fx
+        .store
+        .get_attempt(&failed_provider_attempt.attempt_id)
+        .unwrap();
+    assert_ne!(provider_job_after.status, StepStatus::Succeeded);
+    assert_ne!(provider_attempt_after.status, StepStatus::Succeeded);
 }
 
 #[test]
