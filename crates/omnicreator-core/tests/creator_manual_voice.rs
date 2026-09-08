@@ -60,7 +60,7 @@ fn content_segments(fx: &Fixture) -> Vec<(String, String)> {
     content
         .segments
         .into_iter()
-        .map(|segment| (segment.id, segment.narration))
+        .map(|segment| (segment.id, segment.text))
         .collect()
 }
 
