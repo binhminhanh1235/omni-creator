@@ -515,7 +515,7 @@ fn run_content_stage_v1(
             schema_version: CREATOR_CONTENT_VERSION_V1,
             project_id: step.project_id.clone(),
             source: input.clone(),
-            segments: segment_script_v1(&script)?,
+            segments: segment_creator_script_v1(&script)?,
             script,
         };
         content.validate_v1()?;
@@ -716,7 +716,7 @@ fn creator_scene_input_hash_v1(
     ]))
 }
 
-fn segment_script_v1(script: &str) -> Result<Vec<SegmentV1>> {
+pub fn segment_creator_script_v1(script: &str) -> Result<Vec<SegmentV1>> {
     let normalized = script.replace("\r\n", "\n").replace('\r', "\n");
     let mut chunks = normalized
         .split("\n\n")

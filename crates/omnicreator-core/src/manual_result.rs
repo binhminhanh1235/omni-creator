@@ -398,7 +398,6 @@ fn manual_result_input_hash_v1(
 ) -> Result<String> {
     let provenance = serde_json::to_vec(&request.provenance)?;
     let stage_metadata = serde_json::to_vec(&request.stage_metadata)?;
-    let target_uri = request.target_uri.as_str();
     let size = source_size_bytes.to_string();
     Ok(deterministic_input_hash(&[
         b"manual-result-input-v1",
@@ -408,7 +407,6 @@ fn manual_result_input_hash_v1(
         request.job_step.as_bytes(),
         request.job_unit.as_bytes(),
         request.artifact_type.as_bytes(),
-        target_uri.as_bytes(),
         provenance.as_slice(),
         stage_metadata.as_slice(),
         source_sha256.as_bytes(),
