@@ -312,11 +312,10 @@ fn classify_artifact_v1(
     let identity_ok = artifact.project_id.as_deref() == Some(project_id)
         && artifact.producer_job.as_deref() == Some(job.job_id.as_str())
         && artifact.input_hash.as_deref() == Some(job.input_hash.as_str())
-        && allowed_types.is_none_or(|types| {
-            types
-                .iter()
-                .any(|value| *value == artifact.artifact_type.as_str())
-        });
+        && match allowed_types {
+            Some(types) => types.contains(&artifact.artifact_type.as_str()),
+            None => true,
+        };
     let (state, detail) = if !identity_ok {
         (
             ProductionRecoveryArtifactStateV1::Invalid,
