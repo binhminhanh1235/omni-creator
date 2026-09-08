@@ -2103,9 +2103,8 @@ fn provide_creator_external_voice_result(
     let data_root = active_data_root(&state)?;
     let artifacts = ArtifactStore::new(&data_root).map_err(error_string)?;
     let mut store = writable_store(&state)?;
-    let request =
-        prepare_external_voice_request_v1(&store, &artifacts, &project_id, &segment_id)
-            .map_err(error_string)?;
+    let request = prepare_external_voice_request_v1(&store, &artifacts, &project_id, &segment_id)
+        .map_err(error_string)?;
     let audio = inspect_manual_voice_audio_v1(&audio_path).map_err(error_string)?;
     let timing = import_manual_voice_timing_file_v1(&timing_path, &segment_id, audio.duration_ms)
         .map_err(error_string)?;
