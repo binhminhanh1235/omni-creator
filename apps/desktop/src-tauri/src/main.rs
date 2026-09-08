@@ -15,16 +15,15 @@ use omnicreator_core::{
     derive_manual_voice_timing_v1, dispatch_creator_voice_burst_v1, dispatch_gpu_burst_v1,
     execute_creator_visual_plan_v1, import_manual_creator_scene_plan_file_v1,
     import_manual_creator_script_file_v1, import_manual_voice_timing_file_v1,
-    initial_studio_pack_catalog_v1, inspect_manual_voice_audio_v1,
-    inspect_local_plugin_update_v1, install_local_plugin_folder_v1,
-    load_latest_creator_content_scene_v1, load_latest_creator_content_v1,
-    load_latest_creator_production_pack_v1, load_plugin_settings_ui,
-    materialize_creator_workflow_plan_v1, plan_creator_visuals_v1,
+    initial_studio_pack_catalog_v1, inspect_local_plugin_update_v1, inspect_manual_voice_audio_v1,
+    install_local_plugin_folder_v1, load_latest_creator_content_scene_v1,
+    load_latest_creator_content_v1, load_latest_creator_production_pack_v1,
+    load_plugin_settings_ui, materialize_creator_workflow_plan_v1, plan_creator_visuals_v1,
     plan_creator_voice_orchestration_v1, preview_plugin_capability_impact_v1,
     project_board_projection_v1, provide_manual_creator_content_v1,
     provide_manual_creator_scene_plan_v1, provide_manual_creator_visual_file_v1,
-    provide_manual_creator_voice_bundle_v1, replace_manual_creator_voice_timing_v1,
-    reconcile_remote_session_v1, run_creator_content_scene_v1, scan_plugin_inventory_v1,
+    provide_manual_creator_voice_bundle_v1, reconcile_remote_session_v1,
+    replace_manual_creator_voice_timing_v1, run_creator_content_scene_v1, scan_plugin_inventory_v1,
     select_creator_stock_candidate_v1, uninstall_user_plugin_v1, update_local_plugin_folder_v1,
     Artifact, ArtifactStore, AssetLibraryEntryV1, AssetLibrarySnapshotV1,
     ComputeProviderConnectionState, ComputeProviderLivenessPolicyV1, ComputeProviderRuntime,
@@ -39,20 +38,20 @@ use omnicreator_core::{
     GpuBurstDispatchSummaryV1, GpuBurstPlanV1, GpuJobPreparationV1, GpuWorkbenchQueueSnapshotV1,
     HandoffManifest, HttpComputeProvider, HttpComputeProviderConfigV1, LlmGatewayClient,
     LlmGatewayConfig, LlmGatewayModel, MachineBinding, ManualCreatorVoiceRequestV1,
-    ManualResultProvenanceV1, ManualScenePlanDraftV1, PluginCapabilityImpactV1, PluginInventoryEntryV1,
-    PluginInventoryReportV1, PluginJobWorkspace, PluginLifecycleStateV1, PluginMutationKindV1,
-    PluginProcess, PluginProcessOptions, PluginRegistry, PluginResponse, PluginRuntimeReadinessV1,
-    PluginUpdatePreviewV1, PortableStudioPackCatalogV1, ProductionExportHistoryEntryV1,
-    ProductionPackV1, ProductionPackageExportOutcomeV1, ProductionPackageExporterV1, Project,
-    ProjectBoardProjectionV1, ProjectDisplayStatus, RemoteComputeJobSpecV1,
-    RemoteReconciliationSummaryV1, Result as CoreResult, RuntimeWorkloadEstimateV1,
-    SegmentTtsLockStateV1, SelectedVisualOutput, StateStore, StockDiscoveryStatusV1,
-    StudioJobReviewSnapshotV1, StudioPackAvailabilityStatusV1, StudioPackOverridesV1,
-    StudioPackRouteTargetV1, StudioPackRuntimeSnapshotV1, StudioPackUxViewV1, StudioPackV1,
-    StudioReviewCenterV1, VisualCandidate, VisualCandidateRankingInput, VisualCandidateSignals,
-    VisualReviewSet, VoiceIdentityV1, VoiceModelIdentityV1, VoiceTimingV1, WorkflowStep, Workspace,
-    WorkspaceSession, CREATOR_STEP_VISUAL_PREPARE_V1, STUDIO_PACK_SCHEMA_V1,
-    STUDIO_PACK_VERSION_V1,
+    ManualResultProvenanceV1, ManualScenePlanDraftV1, PluginCapabilityImpactV1,
+    PluginInventoryEntryV1, PluginInventoryReportV1, PluginJobWorkspace, PluginLifecycleStateV1,
+    PluginMutationKindV1, PluginProcess, PluginProcessOptions, PluginRegistry, PluginResponse,
+    PluginRuntimeReadinessV1, PluginUpdatePreviewV1, PortableStudioPackCatalogV1,
+    ProductionExportHistoryEntryV1, ProductionPackV1, ProductionPackageExportOutcomeV1,
+    ProductionPackageExporterV1, Project, ProjectBoardProjectionV1, ProjectDisplayStatus,
+    RemoteComputeJobSpecV1, RemoteReconciliationSummaryV1, Result as CoreResult,
+    RuntimeWorkloadEstimateV1, SegmentTtsLockStateV1, SelectedVisualOutput, StateStore,
+    StockDiscoveryStatusV1, StudioJobReviewSnapshotV1, StudioPackAvailabilityStatusV1,
+    StudioPackOverridesV1, StudioPackRouteTargetV1, StudioPackRuntimeSnapshotV1,
+    StudioPackUxViewV1, StudioPackV1, StudioReviewCenterV1, VisualCandidate,
+    VisualCandidateRankingInput, VisualCandidateSignals, VisualReviewSet, VoiceIdentityV1,
+    VoiceModelIdentityV1, VoiceTimingV1, WorkflowStep, Workspace, WorkspaceSession,
+    CREATOR_STEP_VISUAL_PREPARE_V1, STUDIO_PACK_SCHEMA_V1, STUDIO_PACK_VERSION_V1,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
@@ -1823,7 +1822,6 @@ fn choose_creator_asset_library_visual(
     snapshot_from_active(&state)
 }
 
-
 #[tauri::command]
 fn creator_manual_voice_status(
     state: State<'_, DesktopState>,
@@ -1900,11 +1898,11 @@ fn use_creator_wav_manually(
     let mut store = writable_store(&state)?;
     let narration = creator_segment_narration_v1(&store, &artifacts, &project_id, &segment_id)?;
     let audio = inspect_manual_voice_audio_v1(&audio_path).map_err(error_string)?;
-    let duration_ms = audio
-        .duration_ms
-        .ok_or_else(|| "Use Audio + Timing when audio duration cannot be derived locally.".to_owned())?;
-    let timing =
-        derive_manual_voice_timing_v1(&segment_id, &narration, duration_ms).map_err(error_string)?;
+    let duration_ms = audio.duration_ms.ok_or_else(|| {
+        "Use Audio + Timing when audio duration cannot be derived locally.".to_owned()
+    })?;
+    let timing = derive_manual_voice_timing_v1(&segment_id, &narration, duration_ms)
+        .map_err(error_string)?;
     provide_manual_creator_voice_bundle_v1(
         &mut store,
         &artifacts,
@@ -1948,12 +1946,8 @@ fn use_creator_audio_with_timing_manually(
     let artifacts = ArtifactStore::new(&data_root).map_err(error_string)?;
     let mut store = writable_store(&state)?;
     let audio = inspect_manual_voice_audio_v1(&audio_path).map_err(error_string)?;
-    let timing = import_manual_voice_timing_file_v1(
-        &timing_path,
-        &segment_id,
-        audio.duration_ms,
-    )
-    .map_err(error_string)?;
+    let timing = import_manual_voice_timing_file_v1(&timing_path, &segment_id, audio.duration_ms)
+        .map_err(error_string)?;
     provide_manual_creator_voice_bundle_v1(
         &mut store,
         &artifacts,
@@ -1994,9 +1988,8 @@ fn replace_creator_voice_timing_manually(
         .find(|state| state.segment_id == segment_id && state.verified)
         .ok_or_else(|| format!("Segment {segment_id} has no verified selected voice take."))?;
     let duration_ms = selected.timing.as_ref().map(|timing| timing.duration_ms);
-    let timing =
-        import_manual_voice_timing_file_v1(&timing_path, &segment_id, duration_ms)
-            .map_err(error_string)?;
+    let timing = import_manual_voice_timing_file_v1(&timing_path, &segment_id, duration_ms)
+        .map_err(error_string)?;
     replace_manual_creator_voice_timing_v1(
         &mut store,
         &artifacts,
