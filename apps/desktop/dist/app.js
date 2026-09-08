@@ -1130,6 +1130,11 @@ function renderCreatorRunPanel(item, readOnly) {
 
   document.querySelectorAll(".creator-provide-external-visual").forEach(function (button) {
     button.onclick = async function () {
+      const request = externalRequestFor("visual", button.dataset.sceneId);
+      if (!request) {
+        showToast("Prepared external visual request is unavailable.");
+        return;
+      }
       button.disabled = true;
       try {
         creatorRunState.manualVisualByProject.delete(project.id);
@@ -1138,6 +1143,7 @@ function renderCreatorRunPanel(item, readOnly) {
           await call("provide_creator_external_visual_result", {
             projectId: project.id,
             sceneId: button.dataset.sceneId,
+            request: request,
             replaceExisting: button.dataset.replace === "true",
           }),
         );
@@ -1150,6 +1156,11 @@ function renderCreatorRunPanel(item, readOnly) {
 
   document.querySelectorAll(".creator-provide-external-voice").forEach(function (button) {
     button.onclick = async function () {
+      const request = externalRequestFor("voice", button.dataset.segmentId);
+      if (!request) {
+        showToast("Prepared external voice request is unavailable.");
+        return;
+      }
       button.disabled = true;
       try {
         creatorRunState.manualVoiceByProject.delete(project.id);
@@ -1157,6 +1168,7 @@ function renderCreatorRunPanel(item, readOnly) {
           await call("provide_creator_external_voice_result", {
             projectId: project.id,
             segmentId: button.dataset.segmentId,
+            request: request,
             replaceExisting: button.dataset.replace === "true",
           }),
         );
