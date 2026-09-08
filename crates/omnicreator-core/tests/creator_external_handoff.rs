@@ -2,15 +2,14 @@ use std::fs;
 
 use omnicreator_core::{
     compile_creator_workflow_plan_v1, creator_scene_visual_states_v1,
-    creator_segment_voice_states_v1, derive_manual_voice_timing_v1,
-    initial_studio_pack_catalog_v1, materialize_creator_workflow_plan_v1,
-    prepare_external_generated_visual_request_v1, prepare_external_voice_request_v1,
-    provide_external_generated_visual_result_v1, provide_external_voice_result_v1,
-    provide_manual_creator_content_v1, provide_manual_creator_scene_plan_v1,
-    provide_manual_creator_visual_file_v1, ArtifactStore, ManualResultProvenanceV1,
-    ManualScenePlanDraftV1, StateStore,
-    StepStatus, Workspace, CREATOR_STEP_PRODUCTION_PACK_V1, CREATOR_STEP_VISUAL_PREPARE_V1,
-    CREATOR_STEP_VOICE_PREPARE_V1, CREATOR_TTS_STEP_V1, CREATOR_WORKFLOW_UNIT_PROJECT_V1,
+    creator_segment_voice_states_v1, derive_manual_voice_timing_v1, initial_studio_pack_catalog_v1,
+    materialize_creator_workflow_plan_v1, prepare_external_generated_visual_request_v1,
+    prepare_external_voice_request_v1, provide_external_generated_visual_result_v1,
+    provide_external_voice_result_v1, provide_manual_creator_content_v1,
+    provide_manual_creator_scene_plan_v1, provide_manual_creator_visual_file_v1, ArtifactStore,
+    ManualResultProvenanceV1, ManualScenePlanDraftV1, StateStore, StepStatus, Workspace,
+    CREATOR_STEP_PRODUCTION_PACK_V1, CREATOR_STEP_VISUAL_PREPARE_V1, CREATOR_STEP_VOICE_PREPARE_V1,
+    CREATOR_TTS_STEP_V1, CREATOR_WORKFLOW_UNIT_PROJECT_V1,
 };
 
 struct Fixture {
@@ -144,7 +143,10 @@ fn provider_unavailable_external_generated_result_succeeds_with_truthful_provena
     )
     .unwrap();
 
-    assert_eq!(outcome.ingestion.attempt.worker.as_deref(), Some("manual-result:external"));
+    assert_eq!(
+        outcome.ingestion.attempt.worker.as_deref(),
+        Some("manual-result:external")
+    );
     assert_eq!(
         outcome
             .artifact
@@ -250,11 +252,17 @@ fn external_visual_replacement_invalidates_only_the_downstream_cone() {
     );
     let jobs = fx.store.list_project_jobs(&fx.project_id).unwrap();
     assert_eq!(
-        jobs.iter().find(|job| job.job_id == first.ingestion.job.job_id).unwrap().status,
+        jobs.iter()
+            .find(|job| job.job_id == first.ingestion.job.job_id)
+            .unwrap()
+            .status,
         StepStatus::Stale
     );
     assert_eq!(
-        jobs.iter().find(|job| job.job_id == second.ingestion.job.job_id).unwrap().status,
+        jobs.iter()
+            .find(|job| job.job_id == second.ingestion.job.job_id)
+            .unwrap()
+            .status,
         StepStatus::Succeeded
     );
 }
@@ -272,13 +280,8 @@ fn external_voice_audio_and_timing_rejoin_canonical_voice_take() {
     )
     .unwrap();
 
-    let request = prepare_external_voice_request_v1(
-        &fx.store,
-        &artifacts,
-        &fx.project_id,
-        "SEG001",
-    )
-    .unwrap();
+    let request =
+        prepare_external_voice_request_v1(&fx.store, &artifacts, &fx.project_id, "SEG001").unwrap();
     let serialized = request.to_pretty_json_v1().unwrap();
     assert!(!serialized.contains("provider_id"));
     assert!(!serialized.contains("plugin_id"));
@@ -351,7 +354,10 @@ fn external_result_survives_restart_and_data_root_move_without_shadow_state() {
     let artifact = store.get_artifact(&artifact_id).unwrap();
 
     assert!(artifacts.verify_artifact(&artifact).unwrap());
-    assert!(!artifact.uri.as_str().contains(moved.to_string_lossy().as_ref()));
+    assert!(!artifact
+        .uri
+        .as_str()
+        .contains(moved.to_string_lossy().as_ref()));
     assert_eq!(
         project_step(&store, &project_id, CREATOR_STEP_VISUAL_PREPARE_V1).status,
         StepStatus::Succeeded
@@ -385,7 +391,10 @@ fn external_result_survives_restart_and_data_root_move_without_shadow_state() {
 #[test]
 fn mixed_automatic_manual_and_external_visual_producers_share_one_canonical_stage() {
     let mut fx = fixture("Mixed producers");
-    prepare_content_scene(&mut fx, "Provider scene.\n\nManual scene.\n\nExternal scene.");
+    prepare_content_scene(
+        &mut fx,
+        "Provider scene.\n\nManual scene.\n\nExternal scene.",
+    );
     let artifacts = ArtifactStore::new(fx.workspace.data_root()).unwrap();
 
     let provider_file = fx.temp.path().join("provider.png");
