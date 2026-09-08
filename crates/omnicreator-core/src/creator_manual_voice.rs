@@ -90,10 +90,10 @@ pub struct CreatorSegmentVoiceStateV1 {
 #[derive(Debug, Clone)]
 pub struct LocalVoiceBundlePromotionV1<'a> {
     pub attempt_id: &'a str,
-    pub request.audio_source: &'a Path,
-    pub request.audio_uri: LogicalUri,
-    pub request.timing_source: &'a Path,
-    pub request.timing_uri: LogicalUri,
+    pub audio_source: &'a Path,
+    pub audio_uri: LogicalUri,
+    pub timing_source: &'a Path,
+    pub timing_uri: LogicalUri,
     pub metadata: serde_json::Value,
 }
 
@@ -358,11 +358,11 @@ pub fn provide_manual_creator_voice_bundle_v1(
         request.segment_id.as_bytes(),
         input_hash.as_bytes(),
     ]);
-    let request.audio_uri = LogicalUri::parse(&format!(
+    let audio_uri = LogicalUri::parse(&format!(
         "project://voice/manual/{}/{bundle_id}.{}",
         request.segment_id, audio_metadata.extension
     ))?;
-    let request.timing_uri = crate::voice_timing_output_uri_v1(&request.audio_uri)?;
+    let timing_uri = crate::voice_timing_output_uri_v1(&audio_uri)?;
     let timing_staging = manual_voice_timing_staging_path_v1(artifact_store)?;
     if let Some(parent) = timing_staging.parent() {
         fs::create_dir_all(parent)?;
@@ -373,10 +373,10 @@ pub fn provide_manual_creator_voice_bundle_v1(
         state_store,
         LocalVoiceBundlePromotionV1 {
             attempt_id: &started.attempt.attempt_id,
-            request.audio_source: request.audio_path,
-            request.audio_uri,
-            request.timing_source: &timing_staging,
-            request.timing_uri,
+            audio_source: request.audio_path,
+            audio_uri,
+            timing_source: &timing_staging,
+            timing_uri,
             metadata: serde_json::json!({
             "manual_result": {
                 "provenance": &request.provenance,
