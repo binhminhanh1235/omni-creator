@@ -168,6 +168,15 @@ impl StateStore {
         audio: &Artifact,
         timing: &Artifact,
     ) -> Result<()> {
+        self.commit_voice_bundle_success_v1(attempt_id, audio, timing)
+    }
+
+    pub fn commit_voice_bundle_success_v1(
+        &mut self,
+        attempt_id: &str,
+        audio: &Artifact,
+        timing: &Artifact,
+    ) -> Result<()> {
         let attempt = self.get_attempt(attempt_id)?;
         if !matches!(attempt.status, StepStatus::Running | StepStatus::Retryable) {
             return Err(Error::InvalidJobState(format!(
