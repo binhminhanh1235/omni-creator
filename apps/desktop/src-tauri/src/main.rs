@@ -10,10 +10,12 @@ use omnicreator_core::{
     approve_creator_generated_visual_v1, assemble_creator_production_pack_v1,
     build_studio_pack_ux_view_v1, build_studio_review_center_v1,
     choose_creator_visual_from_asset_library_v1, compile_creator_workflow_plan_v1,
-    creator_scene_visual_states_v1, default_segment_tts_compute_requirements_v1,
-    derive_creator_run_coordinator_v1, dispatch_creator_voice_burst_v1, dispatch_gpu_burst_v1,
+    creator_scene_visual_states_v1, creator_segment_voice_states_v1,
+    default_segment_tts_compute_requirements_v1, derive_creator_run_coordinator_v1,
+    derive_manual_voice_timing_v1, dispatch_creator_voice_burst_v1, dispatch_gpu_burst_v1,
     execute_creator_visual_plan_v1, import_manual_creator_scene_plan_file_v1,
-    import_manual_creator_script_file_v1, initial_studio_pack_catalog_v1,
+    import_manual_creator_script_file_v1, import_manual_voice_timing_file_v1,
+    initial_studio_pack_catalog_v1, inspect_manual_voice_audio_v1,
     inspect_local_plugin_update_v1, install_local_plugin_folder_v1,
     load_latest_creator_content_scene_v1, load_latest_creator_content_v1,
     load_latest_creator_production_pack_v1, load_plugin_settings_ui,
@@ -21,6 +23,7 @@ use omnicreator_core::{
     plan_creator_voice_orchestration_v1, preview_plugin_capability_impact_v1,
     project_board_projection_v1, provide_manual_creator_content_v1,
     provide_manual_creator_scene_plan_v1, provide_manual_creator_visual_file_v1,
+    provide_manual_creator_voice_bundle_v1, replace_manual_creator_voice_timing_v1,
     reconcile_remote_session_v1, run_creator_content_scene_v1, scan_plugin_inventory_v1,
     select_creator_stock_candidate_v1, uninstall_user_plugin_v1, update_local_plugin_folder_v1,
     Artifact, ArtifactStore, AssetLibraryEntryV1, AssetLibrarySnapshotV1,
@@ -35,8 +38,8 @@ use omnicreator_core::{
     GeneratedImageStyleV1, GpuBatchBudgetOverviewV1, GpuBatchPlanRequestV1, GpuBatchPlanV1,
     GpuBurstDispatchSummaryV1, GpuBurstPlanV1, GpuJobPreparationV1, GpuWorkbenchQueueSnapshotV1,
     HandoffManifest, HttpComputeProvider, HttpComputeProviderConfigV1, LlmGatewayClient,
-    LlmGatewayConfig, LlmGatewayModel, MachineBinding, ManualResultProvenanceV1,
-    ManualScenePlanDraftV1, PluginCapabilityImpactV1, PluginInventoryEntryV1,
+    LlmGatewayConfig, LlmGatewayModel, MachineBinding, ManualCreatorVoiceRequestV1,
+    ManualResultProvenanceV1, ManualScenePlanDraftV1, PluginCapabilityImpactV1, PluginInventoryEntryV1,
     PluginInventoryReportV1, PluginJobWorkspace, PluginLifecycleStateV1, PluginMutationKindV1,
     PluginProcess, PluginProcessOptions, PluginRegistry, PluginResponse, PluginRuntimeReadinessV1,
     PluginUpdatePreviewV1, PortableStudioPackCatalogV1, ProductionExportHistoryEntryV1,
@@ -47,7 +50,7 @@ use omnicreator_core::{
     StudioJobReviewSnapshotV1, StudioPackAvailabilityStatusV1, StudioPackOverridesV1,
     StudioPackRouteTargetV1, StudioPackRuntimeSnapshotV1, StudioPackUxViewV1, StudioPackV1,
     StudioReviewCenterV1, VisualCandidate, VisualCandidateRankingInput, VisualCandidateSignals,
-    VisualReviewSet, VoiceIdentityV1, VoiceModelIdentityV1, WorkflowStep, Workspace,
+    VisualReviewSet, VoiceIdentityV1, VoiceModelIdentityV1, VoiceTimingV1, WorkflowStep, Workspace,
     WorkspaceSession, CREATOR_STEP_VISUAL_PREPARE_V1, STUDIO_PACK_SCHEMA_V1,
     STUDIO_PACK_VERSION_V1,
 };
@@ -296,6 +299,22 @@ struct CreatorManualVisualDesktopViewV1 {
     project_id: String,
     scenes: Vec<CreatorManualVisualSceneDesktopViewV1>,
     library: Vec<AssetLibraryEntryV1>,
+}
+
+#[derive(Debug, Serialize)]
+struct CreatorManualVoiceSegmentDesktopViewV1 {
+    segment_id: String,
+    narration: String,
+    selected_audio: Option<Artifact>,
+    timing_artifact: Option<Artifact>,
+    timing: Option<VoiceTimingV1>,
+    verified: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct CreatorManualVoiceDesktopViewV1 {
+    project_id: String,
+    segments: Vec<CreatorManualVoiceSegmentDesktopViewV1>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1798,6 +1817,193 @@ fn choose_creator_asset_library_visual(
         &scene_id,
         &artifact_id,
         replace_existing,
+    )
+    .map_err(error_string)?;
+    drop(store);
+    snapshot_from_active(&state)
+}
+
+
+#[tauri::command]
+fn creator_manual_voice_status(
+    state: State<'_, DesktopState>,
+    project_id: String,
+) -> Result<CreatorManualVoiceDesktopViewV1, String> {
+    let data_root = active_data_root(&state)?;
+    let artifacts = ArtifactStore::new(&data_root).map_err(error_string)?;
+    let store = readable_store(&state)?;
+    let (content, _) = load_latest_creator_content_v1(&store, &artifacts, &project_id)
+        .map_err(error_string)?
+        .ok_or_else(|| "Provide verified Content before manual voice takeover.".to_owned())?;
+    let states = creator_segment_voice_states_v1(&store, &artifacts, &project_id)
+        .map_err(error_string)?
+        .into_iter()
+        .map(|state| (state.segment_id.clone(), state))
+        .collect::<BTreeMap<_, _>>();
+
+    let segments = content
+        .segments
+        .iter()
+        .map(|segment| {
+            let state = states.get(&segment.id);
+            CreatorManualVoiceSegmentDesktopViewV1 {
+                segment_id: segment.id.clone(),
+                narration: segment.narration.clone(),
+                selected_audio: state.and_then(|value| value.audio.clone()),
+                timing_artifact: state.and_then(|value| value.timing_artifact.clone()),
+                timing: state.and_then(|value| value.timing.clone()),
+                verified: state.is_some_and(|value| value.verified),
+            }
+        })
+        .collect();
+
+    Ok(CreatorManualVoiceDesktopViewV1 {
+        project_id,
+        segments,
+    })
+}
+
+fn creator_segment_narration_v1(
+    store: &StateStore,
+    artifacts: &ArtifactStore,
+    project_id: &str,
+    segment_id: &str,
+) -> Result<String, String> {
+    let (content, _) = load_latest_creator_content_v1(store, artifacts, project_id)
+        .map_err(error_string)?
+        .ok_or_else(|| "Provide verified Content before manual voice takeover.".to_owned())?;
+    content
+        .segments
+        .iter()
+        .find(|segment| segment.id == segment_id)
+        .map(|segment| segment.narration.clone())
+        .ok_or_else(|| format!("Creator segment not found: {segment_id}"))
+}
+
+#[tauri::command]
+fn use_creator_wav_manually(
+    state: State<'_, DesktopState>,
+    project_id: String,
+    segment_id: String,
+    replace_existing: bool,
+) -> Result<AppSnapshot, String> {
+    let Some(audio_path) = rfd::FileDialog::new()
+        .set_title("Use My WAV for creator segment")
+        .add_filter("WAV audio", &["wav"])
+        .pick_file()
+    else {
+        return snapshot_from_active(&state);
+    };
+
+    let data_root = active_data_root(&state)?;
+    let artifacts = ArtifactStore::new(&data_root).map_err(error_string)?;
+    let mut store = writable_store(&state)?;
+    let narration = creator_segment_narration_v1(&store, &artifacts, &project_id, &segment_id)?;
+    let audio = inspect_manual_voice_audio_v1(&audio_path).map_err(error_string)?;
+    let duration_ms = audio
+        .duration_ms
+        .ok_or_else(|| "Use Audio + Timing when audio duration cannot be derived locally.".to_owned())?;
+    let timing =
+        derive_manual_voice_timing_v1(&segment_id, &narration, duration_ms).map_err(error_string)?;
+    provide_manual_creator_voice_bundle_v1(
+        &mut store,
+        &artifacts,
+        ManualCreatorVoiceRequestV1 {
+            project_id: &project_id,
+            segment_id: &segment_id,
+            audio_path: &audio_path,
+            timing,
+            provenance: ManualResultProvenanceV1::local_file(),
+            replace_existing,
+        },
+    )
+    .map_err(error_string)?;
+    drop(store);
+    snapshot_from_active(&state)
+}
+
+#[tauri::command]
+fn use_creator_audio_with_timing_manually(
+    state: State<'_, DesktopState>,
+    project_id: String,
+    segment_id: String,
+    replace_existing: bool,
+) -> Result<AppSnapshot, String> {
+    let Some(audio_path) = rfd::FileDialog::new()
+        .set_title("Use Audio + Timing for creator segment")
+        .add_filter("Audio", &["wav", "mp3"])
+        .pick_file()
+    else {
+        return snapshot_from_active(&state);
+    };
+    let Some(timing_path) = rfd::FileDialog::new()
+        .set_title("Select SRT or VoiceTiming JSON")
+        .add_filter("Timing", &["srt", "json"])
+        .pick_file()
+    else {
+        return snapshot_from_active(&state);
+    };
+
+    let data_root = active_data_root(&state)?;
+    let artifacts = ArtifactStore::new(&data_root).map_err(error_string)?;
+    let mut store = writable_store(&state)?;
+    let audio = inspect_manual_voice_audio_v1(&audio_path).map_err(error_string)?;
+    let timing = import_manual_voice_timing_file_v1(
+        &timing_path,
+        &segment_id,
+        audio.duration_ms,
+    )
+    .map_err(error_string)?;
+    provide_manual_creator_voice_bundle_v1(
+        &mut store,
+        &artifacts,
+        ManualCreatorVoiceRequestV1 {
+            project_id: &project_id,
+            segment_id: &segment_id,
+            audio_path: &audio_path,
+            timing,
+            provenance: ManualResultProvenanceV1::local_file(),
+            replace_existing,
+        },
+    )
+    .map_err(error_string)?;
+    drop(store);
+    snapshot_from_active(&state)
+}
+
+#[tauri::command]
+fn replace_creator_voice_timing_manually(
+    state: State<'_, DesktopState>,
+    project_id: String,
+    segment_id: String,
+) -> Result<AppSnapshot, String> {
+    let Some(timing_path) = rfd::FileDialog::new()
+        .set_title("Replace Voice Timing")
+        .add_filter("Timing", &["srt", "json"])
+        .pick_file()
+    else {
+        return snapshot_from_active(&state);
+    };
+
+    let data_root = active_data_root(&state)?;
+    let artifacts = ArtifactStore::new(&data_root).map_err(error_string)?;
+    let mut store = writable_store(&state)?;
+    let selected = creator_segment_voice_states_v1(&store, &artifacts, &project_id)
+        .map_err(error_string)?
+        .into_iter()
+        .find(|state| state.segment_id == segment_id && state.verified)
+        .ok_or_else(|| format!("Segment {segment_id} has no verified selected voice take."))?;
+    let duration_ms = selected.timing.as_ref().map(|timing| timing.duration_ms);
+    let timing =
+        import_manual_voice_timing_file_v1(&timing_path, &segment_id, duration_ms)
+            .map_err(error_string)?;
+    replace_manual_creator_voice_timing_v1(
+        &mut store,
+        &artifacts,
+        &project_id,
+        &segment_id,
+        timing,
+        ManualResultProvenanceV1::local_file(),
     )
     .map_err(error_string)?;
     drop(store);
@@ -3420,11 +3626,15 @@ fn main() {
             retry_review_job,
             creator_visual_review_status,
             creator_manual_visual_status,
+            creator_manual_voice_status,
             select_creator_visual_candidate,
             approve_creator_generated_visual,
             use_creator_image_manually,
             use_creator_video_manually,
             choose_creator_asset_library_visual,
+            use_creator_wav_manually,
+            use_creator_audio_with_timing_manually,
+            replace_creator_voice_timing_manually,
             provide_creator_script_manually,
             import_creator_script_manually,
             creator_manual_scene_editor,
