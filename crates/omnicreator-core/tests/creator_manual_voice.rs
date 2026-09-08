@@ -137,9 +137,9 @@ fn no_voice_provider_or_gpu_manual_wav_segments_complete_voice_stage() {
 
 #[test]
 fn srt_import_and_round_trip_validate_order_duration_and_linkage() {
-    let valid = b"1\n00:00:00,000 --> 00:00:00,400\nFirst\n\n2\n00:00:00,400 --> 00:00:01,000\nSecond\n";
-    let timing =
-        parse_manual_voice_timing_bytes_v1(valid, "srt", "SEG001", Some(1_000)).unwrap();
+    let valid =
+        b"1\n00:00:00,000 --> 00:00:00,400\nFirst\n\n2\n00:00:00,400 --> 00:00:01,000\nSecond\n";
+    let timing = parse_manual_voice_timing_bytes_v1(valid, "srt", "SEG001", Some(1_000)).unwrap();
     assert_eq!(timing.duration_ms, 1_000);
     assert_eq!(timing.cues.len(), 2);
     let rendered = voice_timing_to_srt_v1(&timing).unwrap();
