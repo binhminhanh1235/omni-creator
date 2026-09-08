@@ -8,6 +8,7 @@ use std::{
 use chrono::{DateTime, Utc};
 use omnicreator_core::{
     approve_creator_generated_visual_v1, assemble_creator_production_pack_v1,
+    inspect_creator_production_recovery_v1,
     build_studio_pack_ux_view_v1, build_studio_review_center_v1,
     choose_creator_visual_from_asset_library_v1, compile_creator_workflow_plan_v1,
     creator_scene_visual_states_v1, creator_segment_voice_states_v1,
@@ -45,7 +46,8 @@ use omnicreator_core::{
     PluginInventoryReportV1, PluginJobWorkspace, PluginLifecycleStateV1, PluginMutationKindV1,
     PluginProcess, PluginProcessOptions, PluginRegistry, PluginResponse, PluginRuntimeReadinessV1,
     PluginUpdatePreviewV1, PortableStudioPackCatalogV1, ProductionExportHistoryEntryV1,
-    ProductionPackV1, ProductionPackageExportOutcomeV1, ProductionPackageExporterV1, Project,
+    ProductionPackV1, ProductionPackageExportOutcomeV1, ProductionPackageExporterV1,
+    ProductionRecoveryViewV1, Project,
     ProjectBoardProjectionV1, ProjectDisplayStatus, RemoteComputeJobSpecV1,
     RemoteReconciliationSummaryV1, Result as CoreResult, RuntimeWorkloadEstimateV1,
     SegmentTtsLockStateV1, SelectedVisualOutput, StateStore, StockDiscoveryStatusV1,
@@ -2172,6 +2174,163 @@ fn replace_creator_voice_timing_manually(
 }
 
 #[tauri::command]
+fn production_recovery_status(
+    state: State<'_, DesktopState>,
+    project_id: String,
+) -> Result<ProductionRecoveryViewV1, String> {
+    let data_root = active_data_root(&state)?;
+    let store = readable_store(&state)?;
+    let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
+    inspect_creator_production_recovery_v1(&store, &artifacts, &project_id).map_err(error_string)
+}
+
+#[tauri::command]
+fn repair_production_visual(
+    state: State<'_, DesktopState>,
+    project_id: String,
+    scene_id: String,
+) -> Result<ProductionRecoveryViewV1, String> {
+    let data_root = active_data_root(&state)?;
+    let mut store = writable_store(&state)?;
+    let Some(path) = rfd::FileDialog::new()
+        .set_title("Repair / Relink Production Visual")
+        .add_filter("Visual media", &["png", "jpg", "jpeg", "webp", "mp4", "mov", "m4v"])
+        .pick_file()
+    else {
+        let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
+        return inspect_creator_production_recovery_v1(&store, &artifacts, &project_id)
+            .map_err(error_string);
+    };
+    let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
+    repair_creator_production_visual_v1(
+        &mut store,
+        &artifacts,
+        &project_id,
+        &scene_id,
+        path,
+    )
+    .map_err(error_string)?;
+    inspect_creator_production_recovery_v1(&store, &artifacts, &project_id).map_err(error_string)
+}
+
+#[tauri::command]
+fn repair_production_audio(
+    state: State<'_, DesktopState>,
+    project_id: String,
+    segment_id: String,
+) -> Result<ProductionRecoveryViewV1, String> {
+    let data_root = active_data_root(&state)?;
+    let mut store = writable_store(&state)?;
+    let Some(path) = rfd::FileDialog::new()
+        .set_title("Repair / Relink Production Audio")
+        .add_filter("Audio", &["wav", "mp3"])
+        .pick_file()
+    else {
+        let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
+        return inspect_creator_production_recovery_v1(&store, &artifacts, &project_id)
+            .map_err(error_string);
+    };
+    let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
+    repair_creator_production_audio_v1(
+        &mut store,
+        &artifacts,
+        &project_id,
+        &segment_id,
+        path,
+    )
+    .map_err(error_string)?;
+    inspect_creator_production_recovery_v1(&store, &artifacts, &project_id).map_err(error_string)
+}
+
+#[tauri::command]
+fn repair_production_timing(
+    state: State<'_, DesktopState>,
+    project_id: String,
+    segment_id: String,
+) -> Result<ProductionRecoveryViewV1, String> {
+    let data_root = active_data_root(&state)?;
+    let mut store = writable_store(&state)?;
+    let Some(path) = rfd::FileDialog::new()
+        .set_title("Repair / Relink Production Timing")
+        .add_filter("Timing", &["srt", "json"])
+        .pick_file()
+    else {
+        let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
+        return inspect_creator_production_recovery_v1(&store, &artifacts, &project_id)
+            .map_err(error_string);
+    };
+    let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
+    repair_creator_production_timing_v1(
+        &mut store,
+        &artifacts,
+        &project_id,
+        &segment_id,
+        path,
+    )
+    .map_err(error_string)?;
+    inspect_creator_production_recovery_v1(&store, &artifacts, &project_id).map_err(error_string)
+}
+
+#[tauri::command]
+fn repair_production_voice_bundle(
+    state: State<'_, DesktopState>,
+    project_id: String,
+    segment_id: String,
+) -> Result<ProductionRecoveryViewV1, String> {
+    let data_root = active_data_root(&state)?;
+    let mut store = writable_store(&state)?;
+    let Some(audio_path) = rfd::FileDialog::new()
+        .set_title("Repair Production Voice Audio")
+        .add_filter("Audio", &["wav", "mp3"])
+        .pick_file()
+    else {
+        let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
+        return inspect_creator_production_recovery_v1(&store, &artifacts, &project_id)
+            .map_err(error_string);
+    };
+    let Some(timing_path) = rfd::FileDialog::new()
+        .set_title("Repair Production Voice Timing")
+        .add_filter("Timing", &["srt", "json"])
+        .pick_file()
+    else {
+        let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
+        return inspect_creator_production_recovery_v1(&store, &artifacts, &project_id)
+            .map_err(error_string);
+    };
+    let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
+    repair_creator_production_voice_bundle_v1(
+        &mut store,
+        &artifacts,
+        &project_id,
+        &segment_id,
+        audio_path,
+        timing_path,
+    )
+    .map_err(error_string)?;
+    inspect_creator_production_recovery_v1(&store, &artifacts, &project_id).map_err(error_string)
+}
+
+#[tauri::command]
+fn rebuild_recovered_production(
+    state: State<'_, DesktopState>,
+    project_id: String,
+) -> Result<ProductionExportViewV1, String> {
+    let data_root = active_data_root(&state)?;
+    let mut store = writable_store(&state)?;
+    let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
+    let outcome =
+        rebuild_and_export_creator_production_v1(&mut store, &artifacts, &project_id)
+            .map_err(error_string)?;
+    production_export_view_v1(
+        &store,
+        &artifacts,
+        &project_id,
+        Some(outcome.export),
+        None,
+    )
+}
+
+#[tauri::command]
 fn start_creator_production(
     app: AppHandle,
     state: State<'_, DesktopState>,
@@ -3809,6 +3968,12 @@ fn main() {
             rename_project,
             delete_project,
             production_export_status,
+            production_recovery_status,
+            repair_production_visual,
+            repair_production_audio,
+            repair_production_timing,
+            repair_production_voice_bundle,
+            rebuild_recovered_production,
             assemble_production_pack,
             export_production_pack,
             llmgateway_status,

@@ -12,6 +12,7 @@ const gpuWorkbenchState = {
 const productionPackState = {
   selectedProjectId: null,
   viewByProject: new Map(),
+  recoveryByProject: new Map(),
 };
 const creatorRunState = {
   selectedProjectId: null,
@@ -1458,6 +1459,73 @@ function productionDiagnosticMarkup(view) {
   );
 }
 
+function productionRecoveryMarkup(recovery, readOnly) {
+  if (!recovery) {
+    return '<div class="notice subtle"><strong>Production Recovery</strong><p>Recovery inventory becomes available after canonical Content + ScenePlan exist.</p></div>';
+  }
+  const items = Array.isArray(recovery.items) ? recovery.items : [];
+  const rows = items.map(function (item) {
+    const verified = item.state === "verified";
+    const action = !verified && !readOnly
+      ? '<button class="icon-btn production-repair-' + escapeHtml(item.kind) +
+        '" data-canonical-id="' + escapeHtml(item.canonical_id) + '">Repair / Relink ' +
+        escapeHtml(item.kind === "visual" ? "Visual" : item.kind === "audio" ? "Audio" : "Timing") +
+        "</button>"
+      : "";
+    return '<div class="production-history-row recovery-row"><strong>' +
+      escapeHtml(String(item.kind || "").toUpperCase() + " · " + item.canonical_id) +
+      '</strong><span>' + escapeHtml(statusLabel(item.state)) + '</span>' +
+      (item.logical_uri ? '<code>' + escapeHtml(item.logical_uri) + '</code>' : '') +
+      (item.detail ? '<p class="muted compact">' + escapeHtml(item.detail) + '</p>' : '') +
+      action + '</div>';
+  }).join("");
+
+  const bySegment = new Map();
+  items.filter(function (item) {
+    return item.kind === "audio" || item.kind === "timing";
+  }).forEach(function (item) {
+    const current = bySegment.get(item.canonical_id) || [];
+    current.push(item);
+    bySegment.set(item.canonical_id, current);
+  });
+  const bundleActions = readOnly ? "" : Array.from(bySegment.entries()).map(function (entry) {
+    const segmentId = entry[0];
+    const parts = entry[1];
+    const bothHealthy = parts.length === 2 && parts.every(function (item) {
+      return item.state === "verified";
+    });
+    return bothHealthy ? "" :
+      '<button class="icon-btn production-repair-bundle" data-canonical-id="' +
+      escapeHtml(segmentId) + '">Repair Audio + Timing</button>';
+  }).join("");
+
+  return '<details class="advanced-details production-recovery" open><summary>Production Recovery</summary>' +
+    '<p class="muted compact">Inspect canonical scene/segment artifacts. Repair copies the selected file into ArtifactStore, verifies it, invalidates only downstream dependencies, then rebuilds from canonical state.</p>' +
+    (rows || '<div class="queue-empty">No recovery artifacts are projected yet.</div>') +
+    bundleActions +
+    (readOnly ? '<p class="muted compact">Read-only: inspection only. Relink and rebuild mutations are disabled.</p>' : '') +
+    '</details>';
+}
+
+async function refreshProductionRecovery(project, readOnly) {
+  let recovery = null;
+  try {
+    recovery = await invoke("production_recovery_status", { projectId: project.id });
+    productionPackState.recoveryByProject.set(project.id, recovery);
+  } catch (_error) {
+    productionPackState.recoveryByProject.delete(project.id);
+  }
+  const view = await call("production_export_status", { projectId: project.id });
+  productionPackState.viewByProject.set(project.id, view);
+  try {
+    const recovery = await invoke("production_recovery_status", { projectId: project.id });
+    productionPackState.recoveryByProject.set(project.id, recovery);
+  } catch (_error) {
+    productionPackState.recoveryByProject.delete(project.id);
+  }
+  renderProductionPackPanel(project, readOnly, view);
+}
+
 function renderProductionPackPanel(project, readOnly, view) {
   const panel = document.getElementById("production-pack-panel");
   if (!panel) return;
@@ -1477,6 +1545,7 @@ function renderProductionPackPanel(project, readOnly, view) {
   const hasPack = Boolean(view && view.last_pack);
   const readyState =
     state === "assembled" || state === "succeeded" || state === "cached";
+  const recovery = productionPackState.recoveryByProject.get(project.id) || null;
 
   panel.innerHTML =
     '<div class="production-pack-head"><div><p class="eyebrow">DAVINCI PRODUCTION PACK</p><h3>' +
@@ -1493,6 +1562,7 @@ function renderProductionPackPanel(project, readOnly, view) {
         "</div></div>"
       : "") +
     productionDiagnosticMarkup(view) +
+    productionRecoveryMarkup(recovery, readOnly) +
     productionPackSummaryMarkup(view) +
     '<div class="production-pack-actions">' +
     '<button class="btn" id="assemble-production-pack"' +
@@ -1503,6 +1573,9 @@ function renderProductionPackPanel(project, readOnly, view) {
     '<button class="btn primary" id="run-production-export"' +
     (readOnly || !hasPack ? " disabled" : "") +
     ">Export to Resolve</button>" +
+    '<button class="btn primary" id="rebuild-recovered-production"' +
+    (readOnly || !recovery || !recovery.ready_for_rebuild ? " disabled" : "") +
+    ">Rebuild + Regenerate Resolve</button>" +
     '<button class="btn" id="refresh-production-export">Refresh Status</button></div>' +
     '<details class="advanced-details production-history"><summary>Canonical export history</summary>' +
     productionHistoryMarkup(view) +
@@ -1511,6 +1584,66 @@ function renderProductionPackPanel(project, readOnly, view) {
   document.getElementById("refresh-production-export").onclick = function () {
     openProductionPack(project, readOnly);
   };
+
+  document.querySelectorAll(".production-repair-visual").forEach(function (button) {
+    button.onclick = async function () {
+      button.disabled = true;
+      const recovery = await call("repair_production_visual", {
+        projectId: project.id,
+        sceneId: button.dataset.canonicalId,
+      });
+      productionPackState.recoveryByProject.set(project.id, recovery);
+      await refreshProductionRecovery(project, readOnly);
+      showToast("Visual relinked through canonical ArtifactStore recovery.");
+    };
+  });
+  document.querySelectorAll(".production-repair-audio").forEach(function (button) {
+    button.onclick = async function () {
+      button.disabled = true;
+      const recovery = await call("repair_production_audio", {
+        projectId: project.id,
+        segmentId: button.dataset.canonicalId,
+      });
+      productionPackState.recoveryByProject.set(project.id, recovery);
+      await refreshProductionRecovery(project, readOnly);
+      showToast("Audio relinked while preserving verified canonical timing.");
+    };
+  });
+  document.querySelectorAll(".production-repair-timing").forEach(function (button) {
+    button.onclick = async function () {
+      button.disabled = true;
+      const recovery = await call("repair_production_timing", {
+        projectId: project.id,
+        segmentId: button.dataset.canonicalId,
+      });
+      productionPackState.recoveryByProject.set(project.id, recovery);
+      await refreshProductionRecovery(project, readOnly);
+      showToast("Timing relinked and validated against the canonical segment.");
+    };
+  });
+  document.querySelectorAll(".production-repair-bundle").forEach(function (button) {
+    button.onclick = async function () {
+      button.disabled = true;
+      const recovery = await call("repair_production_voice_bundle", {
+        projectId: project.id,
+        segmentId: button.dataset.canonicalId,
+      });
+      productionPackState.recoveryByProject.set(project.id, recovery);
+      await refreshProductionRecovery(project, readOnly);
+      showToast("Audio + timing repaired as one canonical VoiceTake.");
+    };
+  });
+
+  const rebuildButton = document.getElementById("rebuild-recovered-production");
+  if (rebuildButton) {
+    rebuildButton.onclick = async function () {
+      rebuildButton.disabled = true;
+      const updated = await call("rebuild_recovered_production", { projectId: project.id });
+      productionPackState.viewByProject.set(project.id, updated);
+      await refreshProductionRecovery(project, readOnly);
+      showToast("ProductionPack rebuilt and Resolve export regenerated from verified inputs.");
+    };
+  }
 
   const assembleButton = document.getElementById("assemble-production-pack");
   if (assembleButton) {
