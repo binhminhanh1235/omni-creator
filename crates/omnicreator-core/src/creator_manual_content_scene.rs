@@ -271,7 +271,7 @@ pub fn provide_manual_creator_content_v1(
     state_store.get_project(project_id)?;
     let content = build_manual_creator_content_v1(project_id, script)?;
     let bytes = serde_json::to_vec(&content)?;
-    let target_uri = manual_target_uri_v1("content", "json")?;
+    let target_uri = manual_target_uri_v1("content", "json", &bytes, &provenance)?;
     let request = ManualResultIngestRequestV1 {
         schema: MANUAL_RESULT_SCHEMA_V1.to_owned(),
         version: MANUAL_RESULT_VERSION_V1,
@@ -394,6 +394,7 @@ fn persist_manual_scene_plan_v1(
     provenance: ManualResultProvenanceV1,
 ) -> Result<ManualCreatorScenePlanOutcomeV1> {
     let bytes = serde_json::to_vec(&scene_plan)?;
+    let target_uri = manual_target_uri_v1("scene-plan", "json", &bytes, &provenance)?;
     let request = ManualResultIngestRequestV1 {
         schema: MANUAL_RESULT_SCHEMA_V1.to_owned(),
         version: MANUAL_RESULT_VERSION_V1,
@@ -403,7 +404,7 @@ fn persist_manual_scene_plan_v1(
         job_step: CREATOR_STEP_SCENE_PLAN_V1.to_owned(),
         job_unit: CREATOR_WORKFLOW_UNIT_PROJECT_V1.to_owned(),
         artifact_type: CREATOR_SCENE_PLAN_ARTIFACT_TYPE_V1.to_owned(),
-        target_uri: manual_target_uri_v1("scene-plan", "json")?,
+        target_uri,
         provenance,
         stage_metadata: serde_json::json!({
             "contract": CREATOR_SCENE_PLAN_SCHEMA_V1,
@@ -460,8 +461,32 @@ fn staging_path_v1(artifact_store: &ArtifactStore, kind: &str) -> Result<PathBuf
         .join(format!("{kind}-{}.tmp", Uuid::new_v4().simple())))
 }
 
-fn manual_target_uri_v1(kind: &str, extension: &str) -> Result<LogicalUri> {
-    let id = Uuid::new_v4().simple().to_string();
+fn manual_target_uri_v1(
+    kind: &str,
+    extension: &str,
+    bytes: &[u8],
+    provenance: &ManualResultProvenanceV1,
+) -> Result<LogicalUri> {
+    if kind.trim().is_empty()
+        || extension.trim().is_empty()
+        || kind.contains('/')
+        || kind.contains('\\')
+        || extension.contains('/')
+        || extension.contains('\\')
+    {
+        return Err(Error::InvalidContract(
+            "manual result target kind and extension must be symbolic".to_owned(),
+        ));
+    }
+    provenance.validate_v1()?;
+    let provenance_json = serde_json::to_vec(provenance)?;
+    let id = deterministic_input_hash(&[
+        b"manual-result-target-v1",
+        kind.as_bytes(),
+        extension.as_bytes(),
+        provenance_json.as_slice(),
+        bytes,
+    ]);
     LogicalUri::parse(&format!("project://manual-results/{kind}/{id}.{extension}"))
 }
 
