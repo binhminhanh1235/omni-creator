@@ -268,6 +268,67 @@ fn external_visual_replacement_invalidates_only_the_downstream_cone() {
 }
 
 #[test]
+fn stale_external_visual_request_is_rejected_after_scene_plan_change() {
+    let mut fx = fixture("Stale external visual");
+    let artifacts = ArtifactStore::new(fx.workspace.data_root()).unwrap();
+    let content = provide_manual_creator_content_v1(
+        &mut fx.store,
+        &artifacts,
+        &fx.project_id,
+        "Render one external scene.",
+        ManualResultProvenanceV1::manual_editor(),
+    )
+    .unwrap();
+    let mut draft = ManualScenePlanDraftV1::for_content_v1(&content.content).unwrap();
+    draft.scenes[0].scene_type = "literal".to_owned();
+    draft.scenes[0].purpose = "Original visual purpose".to_owned();
+    provide_manual_creator_scene_plan_v1(
+        &mut fx.store,
+        &artifacts,
+        &fx.project_id,
+        &draft,
+        ManualResultProvenanceV1::manual_editor(),
+    )
+    .unwrap();
+
+    let request = prepare_external_generated_visual_request_v1(
+        &fx.store,
+        &artifacts,
+        &fx.project_id,
+        &draft.scenes[0].id,
+    )
+    .unwrap();
+
+    draft.scenes[0].purpose = "Changed visual purpose".to_owned();
+    provide_manual_creator_scene_plan_v1(
+        &mut fx.store,
+        &artifacts,
+        &fx.project_id,
+        &draft,
+        ManualResultProvenanceV1::manual_editor(),
+    )
+    .unwrap();
+
+    let image = fx.temp.path().join("stale.png");
+    fs::write(&image, png(1280, 720, 6)).unwrap();
+    let error = provide_external_generated_visual_result_v1(
+        &mut fx.store,
+        &artifacts,
+        &request,
+        &image,
+        "external-tool",
+        false,
+    )
+    .unwrap_err();
+
+    assert!(error.to_string().contains("stale"));
+    let states = creator_scene_visual_states_v1(&fx.store, &artifacts, &fx.project_id).unwrap();
+    assert_eq!(states.len(), 1);
+    assert!(states[0].selected_artifact.is_none());
+    assert!(!states[0].verified);
+}
+
+#[test]
 fn external_voice_audio_and_timing_rejoin_canonical_voice_take() {
     let mut fx = fixture("External voice");
     let artifacts = ArtifactStore::new(fx.workspace.data_root()).unwrap();
