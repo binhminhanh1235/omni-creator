@@ -81,10 +81,7 @@ fn no_llm_manual_script_and_scene_plan_unlock_visual() {
         scene.scene_plan.scenes[0].narration,
         content.content.segments[0].text
     );
-    assert_eq!(
-        scene.scene_plan.content_sha256,
-        content.artifact.sha256
-    );
+    assert_eq!(scene.scene_plan.content_sha256, content.artifact.sha256);
     assert_eq!(
         step_status(&store, &project_id, CREATOR_STEP_SCENE_PLAN_V1),
         StepStatus::Succeeded
@@ -94,8 +91,7 @@ fn no_llm_manual_script_and_scene_plan_unlock_visual() {
         StepStatus::Ready
     );
 
-    let loaded =
-        load_latest_creator_content_scene_v1(&store, &artifacts, &project_id).unwrap();
+    let loaded = load_latest_creator_content_scene_v1(&store, &artifacts, &project_id).unwrap();
     assert!(loaded.is_some());
 }
 
@@ -106,8 +102,7 @@ fn txt_markdown_and_portable_scene_import_normalize_identity() {
     let script = temp.path().join("script.md");
     fs::write(&script, "# ignored as narration text\n\nSecond beat.").unwrap();
     let content =
-        import_manual_creator_script_file_v1(&mut store, &artifacts, &project_id, &script)
-            .unwrap();
+        import_manual_creator_script_file_v1(&mut store, &artifacts, &project_id, &script).unwrap();
 
     let mut imported = CreatorScenePlanV1 {
         schema: "omnicreator.creator-scene-plan".to_owned(),
@@ -146,10 +141,7 @@ fn txt_markdown_and_portable_scene_import_normalize_identity() {
         import_manual_creator_scene_plan_file_v1(&mut store, &artifacts, &project_id, &path)
             .unwrap();
     assert_eq!(outcome.scene_plan.project_id, project_id);
-    assert_eq!(
-        outcome.scene_plan.content_sha256,
-        content.artifact.sha256
-    );
+    assert_eq!(outcome.scene_plan.content_sha256, content.artifact.sha256);
     for (index, scene) in outcome.scene_plan.scenes.iter().enumerate() {
         assert_eq!(scene.id, format!("SC{:03}", index + 1));
         assert_eq!(scene.segment_id, content.content.segments[index].id);

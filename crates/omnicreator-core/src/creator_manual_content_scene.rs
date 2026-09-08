@@ -11,10 +11,9 @@ use crate::{
     deterministic_input_hash, ingest_manual_result_file_v1, load_latest_creator_content_v1,
     segment_creator_script_v1, Artifact, ArtifactStore, CreatorContentV1, CreatorInputV1,
     CreatorScenePlanV1, Error, LogicalUri, ManualResultIngestRequestV1, ManualResultOutcomeV1,
-    ManualResultProvenanceV1, Result, SceneIntentV1, StateStore,
-    CREATOR_CONTENT_ARTIFACT_TYPE_V1, CREATOR_CONTENT_SCHEMA_V1, CREATOR_CONTENT_VERSION_V1,
-    CREATOR_SCENE_PLAN_ARTIFACT_TYPE_V1, CREATOR_SCENE_PLAN_SCHEMA_V1,
-    CREATOR_SCENE_PLAN_VERSION_V1, CREATOR_STEP_CONTENT_PREPARE_V1,
+    ManualResultProvenanceV1, Result, SceneIntentV1, StateStore, CREATOR_CONTENT_ARTIFACT_TYPE_V1,
+    CREATOR_CONTENT_SCHEMA_V1, CREATOR_CONTENT_VERSION_V1, CREATOR_SCENE_PLAN_ARTIFACT_TYPE_V1,
+    CREATOR_SCENE_PLAN_SCHEMA_V1, CREATOR_SCENE_PLAN_VERSION_V1, CREATOR_STEP_CONTENT_PREPARE_V1,
     CREATOR_STEP_SCENE_PLAN_V1, CREATOR_WORKFLOW_UNIT_PROJECT_V1, MANUAL_RESULT_SCHEMA_V1,
     MANUAL_RESULT_VERSION_V1, SCENE_INTENT_SCHEMA, SCENE_INTENT_SCHEMA_VERSION,
 };
@@ -175,10 +174,7 @@ pub struct ManualCreatorScenePlanOutcomeV1 {
     pub ingestion: ManualResultOutcomeV1,
 }
 
-pub fn build_manual_creator_content_v1(
-    project_id: &str,
-    script: &str,
-) -> Result<CreatorContentV1> {
+pub fn build_manual_creator_content_v1(project_id: &str, script: &str) -> Result<CreatorContentV1> {
     if project_id.trim().is_empty() {
         return Err(Error::InvalidContract(
             "manual creator content requires project_id".to_owned(),
@@ -318,18 +314,16 @@ pub fn provide_manual_creator_scene_plan_v1(
     provenance: ManualResultProvenanceV1,
 ) -> Result<ManualCreatorScenePlanOutcomeV1> {
     state_store.get_project(project_id)?;
-    let (content, content_artifact) = load_latest_creator_content_v1(
-        state_store,
-        artifact_store,
-        project_id,
-    )?
-    .ok_or_else(|| {
-        Error::InvalidContract(
-            "manual ScenePlan requires a verified canonical creator content artifact".to_owned(),
-        )
-    })?;
-    let scene_plan =
-        build_manual_creator_scene_plan_v1(&content, &content_artifact.sha256, draft)?;
+    let (content, content_artifact) =
+        load_latest_creator_content_v1(state_store, artifact_store, project_id)?.ok_or_else(
+            || {
+                Error::InvalidContract(
+                    "manual ScenePlan requires a verified canonical creator content artifact"
+                        .to_owned(),
+                )
+            },
+        )?;
+    let scene_plan = build_manual_creator_scene_plan_v1(&content, &content_artifact.sha256, draft)?;
     persist_manual_scene_plan_v1(
         state_store,
         artifact_store,
@@ -373,16 +367,14 @@ pub fn import_manual_creator_scene_plan_file_v1(
         MAX_MANUAL_SCENE_PLAN_IMPORT_BYTES_V1,
         "manual ScenePlan",
     )?;
-    let (content, content_artifact) = load_latest_creator_content_v1(
-        state_store,
-        artifact_store,
-        project_id,
-    )?
-    .ok_or_else(|| {
-        Error::InvalidContract(
-            "manual ScenePlan import requires verified creator content".to_owned(),
-        )
-    })?;
+    let (content, content_artifact) =
+        load_latest_creator_content_v1(state_store, artifact_store, project_id)?.ok_or_else(
+            || {
+                Error::InvalidContract(
+                    "manual ScenePlan import requires verified creator content".to_owned(),
+                )
+            },
+        )?;
     let scene_plan =
         parse_portable_manual_scene_plan_v1(&bytes, &content, &content_artifact.sha256)?;
     persist_manual_scene_plan_v1(
@@ -470,9 +462,7 @@ fn staging_path_v1(artifact_store: &ArtifactStore, kind: &str) -> Result<PathBuf
 
 fn manual_target_uri_v1(kind: &str, extension: &str) -> Result<LogicalUri> {
     let id = Uuid::new_v4().simple().to_string();
-    LogicalUri::parse(&format!(
-        "project://manual-results/{kind}/{id}.{extension}"
-    ))
+    LogicalUri::parse(&format!("project://manual-results/{kind}/{id}.{extension}"))
 }
 
 fn read_limited_v1(path: &Path, max_bytes: u64, label: &str) -> Result<Vec<u8>> {
