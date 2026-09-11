@@ -10,7 +10,7 @@ use omnicreator_core::{
     repair_creator_production_timing_v1, repair_creator_production_visual_v1, ArtifactStore,
     CreatorProductionPackOptionsV1, ManualCreatorVoiceRequestV1, ManualResultProvenanceV1,
     ManualScenePlanDraftV1, ProductionRecoveryArtifactKindV1, ProductionRecoveryArtifactStateV1,
-    StateStore, Workspace,
+    StateStore, StepStatus, Workspace,
 };
 
 struct Fixture {
@@ -203,6 +203,52 @@ fn missing_visual_relinks_through_canonical_replacement_and_rebuilds_export() {
 }
 
 #[test]
+fn hash_invalid_visual_same_input_replacement_is_not_cache_hit_and_supersedes_old_job() {
+    let mut fx = fixture();
+    let (scene_id, _) = prepare(&mut fx);
+    let artifacts = ArtifactStore::new(fx.workspace.data_root()).unwrap();
+    let initial =
+        inspect_creator_production_recovery_v1(&fx.store, &artifacts, &fx.project_id).unwrap();
+    let visual_id = item(&initial, ProductionRecoveryArtifactKindV1::Visual)
+        .artifact_id
+        .clone()
+        .unwrap();
+    let old_artifact = fx.store.get_artifact(&visual_id).unwrap();
+    let old_job_id = old_artifact.producer_job.clone().unwrap();
+    fs::write(
+        artifacts.resolve_artifact_path(&old_artifact).unwrap(),
+        b"corrupt visual",
+    )
+    .unwrap();
+
+    let broken =
+        inspect_creator_production_recovery_v1(&fx.store, &artifacts, &fx.project_id).unwrap();
+    assert_eq!(
+        item(&broken, ProductionRecoveryArtifactKindV1::Visual).state,
+        ProductionRecoveryArtifactStateV1::Invalid
+    );
+
+    let original_source = fx.temp.path().join("visual.png");
+    let repaired = repair_creator_production_visual_v1(
+        &mut fx.store,
+        &artifacts,
+        &fx.project_id,
+        &scene_id,
+        &original_source,
+    )
+    .unwrap();
+    assert!(!repaired.ingestion.cache_hit);
+    assert_ne!(repaired.artifact.artifact_id, visual_id);
+    assert!(artifacts.verify_artifact(&repaired.artifact).unwrap());
+    assert_eq!(fx.store.get_job(&old_job_id).unwrap().status, StepStatus::Stale);
+    assert!(repaired
+        .ingestion
+        .invalidated_step_ids
+        .iter()
+        .any(|step_id| step_id != &repaired.ingestion.job.job_id));
+}
+
+#[test]
 fn audio_then_timing_recovery_preserves_segment_identity_and_survives_data_root_move() {
     let mut fx = fixture();
     let (_, segment_id) = prepare(&mut fx);
@@ -241,6 +287,7 @@ fn audio_then_timing_recovery_preserves_segment_identity_and_survives_data_root_
         .clone()
         .unwrap();
     let timing_artifact = fx.store.get_artifact(&timing_id).unwrap();
+    let old_timing_job_id = timing_artifact.producer_job.clone().unwrap();
     fs::write(
         artifacts.resolve_artifact_path(&timing_artifact).unwrap(),
         b"corrupt timing",
@@ -267,6 +314,16 @@ fn audio_then_timing_recovery_preserves_segment_identity_and_survives_data_root_
     )
     .unwrap();
     assert_eq!(timing_repair.timing.segment_id, segment_id);
+    assert!(!timing_repair.cache_hit);
+    assert_ne!(timing_repair.timing_artifact.artifact_id, timing_id);
+    assert_eq!(
+        fx.store.get_job(&old_timing_job_id).unwrap().status,
+        StepStatus::Stale
+    );
+    assert!(artifacts.verify_artifact(&timing_repair.audio).unwrap());
+    assert!(artifacts
+        .verify_artifact(&timing_repair.timing_artifact)
+        .unwrap());
 
     let rebuilt =
         rebuild_and_export_creator_production_v1(&mut fx.store, &artifacts, &fx.project_id)
