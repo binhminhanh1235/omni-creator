@@ -191,9 +191,13 @@ pub fn ingest_manual_result_file_v1(
 
     let input_hash = manual_result_input_hash_v1(request, &source_sha256, source_size_bytes)?;
 
-    if let Some((job, attempt, artifact)) =
-        find_verified_cache_v1(state_store, artifact_store, request, &input_hash)?
-    {
+    if let Some((job, attempt, artifact)) = find_verified_cache_v1(
+        state_store,
+        artifact_store,
+        request,
+        &input_hash,
+        request.replace_existing,
+    )? {
         if request.complete_workflow_step {
             mark_workflow_step_succeeded_v1(state_store, &workflow_step)?;
         }
@@ -209,7 +213,12 @@ pub fn ingest_manual_result_file_v1(
         });
     }
 
-    let existing = find_current_result_v1(state_store, artifact_store, request)?;
+    let existing = find_current_result_v1(
+        state_store,
+        artifact_store,
+        request,
+        request.replace_existing,
+    )?;
     if existing.is_some() && !request.replace_existing {
         return Err(Error::InvalidJobState(format!(
             "manual-result {}/{} already has a verified canonical result; use replacement explicitly",
@@ -238,7 +247,7 @@ pub fn ingest_manual_result_file_v1(
             &request.project_id,
             &request.job_step,
             &request.job_unit,
-            Some(&input_hash),
+            None,
         )?;
     }
 
@@ -250,6 +259,11 @@ pub fn ingest_manual_result_file_v1(
         }
     }
     let attempt = state_store.start_attempt(&job.job_id, Some(request.provenance.worker_v1()))?;
+    let target_uri = if request.replace_existing {
+        replacement_target_uri_v1(&request.target_uri, &job.job_id)?
+    } else {
+        request.target_uri.clone()
+    };
 
     let promotion = artifact_store.promote_attempt_outputs(
         state_store,
@@ -258,7 +272,7 @@ pub fn ingest_manual_result_file_v1(
             job_id: job.job_id.clone(),
             outputs: vec![AttemptOutputPromotion {
                 source: source.to_path_buf(),
-                target_uri: request.target_uri.clone(),
+                target_uri,
                 artifact_type: request.artifact_type.clone(),
                 metadata: serde_json::json!({
                     "manual_result": {
@@ -430,11 +444,24 @@ fn require_workflow_step_v1(
         })
 }
 
+fn verify_existing_manual_artifact_v1(
+    artifact_store: &ArtifactStore,
+    artifact: &Artifact,
+    allow_invalid_existing: bool,
+) -> Result<bool> {
+    match artifact_store.verify_artifact(artifact) {
+        Ok(verified) => Ok(verified),
+        Err(Error::ArtifactHashMismatch(_)) if allow_invalid_existing => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
 fn find_verified_cache_v1(
     state_store: &StateStore,
     artifact_store: &ArtifactStore,
     request: &ManualResultIngestRequestV1,
     input_hash: &str,
+    allow_invalid_existing: bool,
 ) -> Result<Option<(Job, Attempt, Artifact)>> {
     for job in state_store.list_project_jobs(&request.project_id)? {
         if job.step != request.job_step
@@ -452,7 +479,7 @@ fn find_verified_cache_v1(
         };
         let attempt = state_store.get_attempt(attempt_id)?;
         let artifact = state_store.get_artifact(artifact_id)?;
-        if artifact_store.verify_artifact(&artifact)?
+        if verify_existing_manual_artifact_v1(artifact_store, &artifact, allow_invalid_existing)?
             && parse_provenance_v1(&artifact.metadata)?.is_some()
         {
             return Ok(Some((job, attempt, artifact)));
@@ -465,6 +492,7 @@ fn find_current_result_v1(
     state_store: &StateStore,
     artifact_store: &ArtifactStore,
     request: &ManualResultIngestRequestV1,
+    allow_invalid_existing: bool,
 ) -> Result<Option<Artifact>> {
     let mut artifacts = Vec::new();
     for job in state_store.list_project_jobs(&request.project_id)? {
@@ -478,7 +506,7 @@ fn find_current_result_v1(
             continue;
         };
         let artifact = state_store.get_artifact(artifact_id)?;
-        if artifact_store.verify_artifact(&artifact)? {
+        if verify_existing_manual_artifact_v1(artifact_store, &artifact, allow_invalid_existing)? {
             artifacts.push(artifact);
         }
     }
@@ -489,6 +517,22 @@ fn find_current_result_v1(
             .then_with(|| right.artifact_id.cmp(&left.artifact_id))
     });
     Ok(artifacts.into_iter().next())
+}
+
+fn replacement_target_uri_v1(target: &LogicalUri, job_id: &str) -> Result<LogicalUri> {
+    let raw = target.to_string();
+    let slash = raw.rfind('/').ok_or_else(|| {
+        Error::InvalidArtifact("manual-result target URI has no portable file name".to_owned())
+    })?;
+    let prefix = &raw[..=slash];
+    let file_name = &raw[(slash + 1)..];
+    let replacement = match file_name.rsplit_once('.') {
+        Some((stem, extension)) if !stem.is_empty() && !extension.is_empty() => {
+            format!("{prefix}{stem}-replacement-{job_id}.{extension}")
+        }
+        _ => format!("{raw}-replacement-{job_id}"),
+    };
+    LogicalUri::parse(&replacement)
 }
 
 fn get_or_create_job_v1(

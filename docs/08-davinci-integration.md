@@ -314,3 +314,10 @@ A successful previous package lets the desktop reload the verified portable `pro
 Missing-source diagnostics expose portable identity: artifact ID plus logical URI. Machine-specific physical paths used at the export boundary are deliberately not serialized into the desktop diagnostic view. The user can restore/relink the Data Root or source artifact and regenerate. A Data Root copy/rebind still changes the path-bearing execution variant, so regenerated FCPXML resolves the new root and cannot reuse the stale old-root variant.
 
 The desktop may show the logical package location and cache-hit state. It does not add transcoding, preview rendering, proxy generation, final rendering or Resolve scripting automation.
+
+
+## Phase 16 P5 recovery and regeneration
+
+When a selected source media or timing artifact is missing or hash-invalid, the desktop Production Recovery view identifies it by canonical scene/segment identity and logical URI. Repair / Relink promotes the replacement into ArtifactStore through the same visual or VoiceTake path used by normal manual takeover.
+
+After all required members verify, **Rebuild + Regenerate Resolve** re-runs canonical ProductionPack assembly and the Phase 9 Resolve exporter. The exporter still derives local file URLs from the active Data Root binding at export time, so moving/rebinding Data Root does not persist old absolute machine paths. Read-only sessions may inspect recovery status but cannot relink, rebuild, or export.

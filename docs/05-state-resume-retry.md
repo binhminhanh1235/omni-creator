@@ -412,3 +412,14 @@ Phase 9 P3 makes local production export retry semantics explicit in the desktop
 Desktop status is queried from those canonical Jobs, Attempts and Artifacts. Restarting the app therefore reconstructs the same export state without a separate UI database. The latest verified portable `production-pack.json` artifact may be reloaded as the regenerate input.
 
 Missing-artifact UX uses artifact IDs and logical URIs. Physical absolute paths resolved at the current Data Root are transient export-boundary details and are not persisted in portable state or serialized as durable desktop diagnostics.
+
+
+## Phase 16 P5: Production recovery without shadow state
+
+Production recovery is a projection and controller over the same canonical SQLite state and ArtifactStore used by normal execution.
+
+- Inspection is read-only. It walks canonical ScenePlan scene IDs and Content segment IDs, then checks the currently selected visual and VoiceTake audio/timing artifacts for project/job linkage, logical identity, physical presence and hash validity.
+- A missing or invalid file is never repaired in place. Relink copies the user-selected replacement through the existing manual-result / VoiceTake ingestion path, hashes and verifies it in ArtifactStore, supersedes the prior logical result and uses the existing DAG invalidation cone.
+- The previous producer may be automatic, manual or external. Recovery does not branch on producer provenance and never converts a failed provider attempt into success.
+- ProductionPack rebuild is permitted only when every projected visual/audio/timing member is verified. Assembly and Resolve export then reuse the existing canonical jobs and exporter.
+- No recovery table, recovery scheduler, absolute machine path, or hand-edited ProductionPack JSON becomes durable state.

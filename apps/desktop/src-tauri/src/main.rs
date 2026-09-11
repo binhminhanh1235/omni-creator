@@ -15,46 +15,49 @@ use omnicreator_core::{
     derive_manual_voice_timing_v1, dispatch_creator_voice_burst_v1, dispatch_gpu_burst_v1,
     execute_creator_visual_plan_v1, import_manual_creator_scene_plan_file_v1,
     import_manual_creator_script_file_v1, import_manual_voice_timing_file_v1,
-    initial_studio_pack_catalog_v1, inspect_local_plugin_update_v1, inspect_manual_voice_audio_v1,
-    install_local_plugin_folder_v1, load_latest_creator_content_scene_v1,
-    load_latest_creator_content_v1, load_latest_creator_production_pack_v1,
-    load_plugin_settings_ui, materialize_creator_workflow_plan_v1, plan_creator_visuals_v1,
+    initial_studio_pack_catalog_v1, inspect_creator_production_recovery_v1,
+    inspect_local_plugin_update_v1, inspect_manual_voice_audio_v1, install_local_plugin_folder_v1,
+    load_latest_creator_content_scene_v1, load_latest_creator_content_v1,
+    load_latest_creator_production_pack_v1, load_plugin_settings_ui,
+    materialize_creator_workflow_plan_v1, plan_creator_visuals_v1,
     plan_creator_voice_orchestration_v1, prepare_external_generated_visual_request_v1,
     prepare_external_voice_request_v1, preview_plugin_capability_impact_v1,
     project_board_projection_v1, provide_external_generated_visual_result_v1,
     provide_external_voice_result_v1, provide_manual_creator_content_v1,
     provide_manual_creator_scene_plan_v1, provide_manual_creator_visual_file_v1,
-    provide_manual_creator_voice_bundle_v1, reconcile_remote_session_v1,
-    replace_manual_creator_voice_timing_v1, run_creator_content_scene_v1, scan_plugin_inventory_v1,
-    select_creator_stock_candidate_v1, uninstall_user_plugin_v1, update_local_plugin_folder_v1,
-    Artifact, ArtifactStore, AssetLibraryEntryV1, AssetLibrarySnapshotV1,
-    ComputeProviderConnectionState, ComputeProviderLivenessPolicyV1, ComputeProviderRuntime,
-    ComputeProviderSchedulingSnapshotV1, ComputeRunningAssignmentV1, CreatorContentSceneOptionsV1,
-    CreatorContentSceneOutcomeV1, CreatorInputV1, CreatorProductionPackOptionsV1,
-    CreatorRunCoordinatorV1, CreatorStockDiscoveryV1, CreatorVisualActionV1,
-    CreatorVisualAssetExecutorV1, CreatorVisualDiscoveryExecutorV1,
-    CreatorVisualGenerationRequestV1, CreatorVisualPlanV1, CreatorVisualPlanningOptionsV1,
-    CreatorVisualStockFetchRequestV1, CreatorVoiceRuntimeV1, DiscoveredPlugin, Error as CoreError,
-    ExternalGeneratedVisualRequestV1, ExternalVoiceRequestV1, GeneratedImagePluginResultV1,
-    GeneratedImageRequestV1, GeneratedImageResolutionV1, GeneratedImageStyleV1,
-    GpuBatchBudgetOverviewV1, GpuBatchPlanRequestV1, GpuBatchPlanV1, GpuBurstDispatchSummaryV1,
-    GpuBurstPlanV1, GpuJobPreparationV1, GpuWorkbenchQueueSnapshotV1, HandoffManifest,
-    HttpComputeProvider, HttpComputeProviderConfigV1, LlmGatewayClient, LlmGatewayConfig,
-    LlmGatewayModel, MachineBinding, ManualCreatorVoiceRequestV1, ManualResultProvenanceV1,
-    ManualScenePlanDraftV1, PluginCapabilityImpactV1, PluginInventoryEntryV1,
-    PluginInventoryReportV1, PluginJobWorkspace, PluginLifecycleStateV1, PluginMutationKindV1,
-    PluginProcess, PluginProcessOptions, PluginRegistry, PluginResponse, PluginRuntimeReadinessV1,
-    PluginUpdatePreviewV1, PortableStudioPackCatalogV1, ProductionExportHistoryEntryV1,
-    ProductionPackV1, ProductionPackageExportOutcomeV1, ProductionPackageExporterV1, Project,
-    ProjectBoardProjectionV1, ProjectDisplayStatus, RemoteComputeJobSpecV1,
-    RemoteReconciliationSummaryV1, Result as CoreResult, RuntimeWorkloadEstimateV1,
-    SegmentTtsLockStateV1, SelectedVisualOutput, StateStore, StockDiscoveryStatusV1,
-    StudioJobReviewSnapshotV1, StudioPackAvailabilityStatusV1, StudioPackOverridesV1,
-    StudioPackRouteTargetV1, StudioPackRuntimeSnapshotV1, StudioPackUxViewV1, StudioPackV1,
-    StudioReviewCenterV1, VisualCandidate, VisualCandidateRankingInput, VisualCandidateSignals,
-    VisualReviewSet, VoiceIdentityV1, VoiceModelIdentityV1, VoiceTimingV1, WorkflowStep, Workspace,
-    WorkspaceSession, CREATOR_STEP_VISUAL_PREPARE_V1, STUDIO_PACK_SCHEMA_V1,
-    STUDIO_PACK_VERSION_V1,
+    provide_manual_creator_voice_bundle_v1, rebuild_and_export_creator_production_v1,
+    reconcile_remote_session_v1, repair_creator_production_audio_v1,
+    repair_creator_production_timing_v1, repair_creator_production_visual_v1,
+    repair_creator_production_voice_bundle_v1, replace_manual_creator_voice_timing_v1,
+    run_creator_content_scene_v1, scan_plugin_inventory_v1, select_creator_stock_candidate_v1,
+    uninstall_user_plugin_v1, update_local_plugin_folder_v1, Artifact, ArtifactStore,
+    AssetLibraryEntryV1, AssetLibrarySnapshotV1, ComputeProviderConnectionState,
+    ComputeProviderLivenessPolicyV1, ComputeProviderRuntime, ComputeProviderSchedulingSnapshotV1,
+    ComputeRunningAssignmentV1, CreatorContentSceneOptionsV1, CreatorContentSceneOutcomeV1,
+    CreatorInputV1, CreatorProductionPackOptionsV1, CreatorRunCoordinatorV1,
+    CreatorStockDiscoveryV1, CreatorVisualActionV1, CreatorVisualAssetExecutorV1,
+    CreatorVisualDiscoveryExecutorV1, CreatorVisualGenerationRequestV1, CreatorVisualPlanV1,
+    CreatorVisualPlanningOptionsV1, CreatorVisualStockFetchRequestV1, CreatorVoiceRuntimeV1,
+    DiscoveredPlugin, Error as CoreError, ExternalGeneratedVisualRequestV1, ExternalVoiceRequestV1,
+    GeneratedImagePluginResultV1, GeneratedImageRequestV1, GeneratedImageResolutionV1,
+    GeneratedImageStyleV1, GpuBatchBudgetOverviewV1, GpuBatchPlanRequestV1, GpuBatchPlanV1,
+    GpuBurstDispatchSummaryV1, GpuBurstPlanV1, GpuJobPreparationV1, GpuWorkbenchQueueSnapshotV1,
+    HandoffManifest, HttpComputeProvider, HttpComputeProviderConfigV1, LlmGatewayClient,
+    LlmGatewayConfig, LlmGatewayModel, MachineBinding, ManualCreatorVoiceRequestV1,
+    ManualResultProvenanceV1, ManualScenePlanDraftV1, PluginCapabilityImpactV1,
+    PluginInventoryEntryV1, PluginInventoryReportV1, PluginJobWorkspace, PluginLifecycleStateV1,
+    PluginMutationKindV1, PluginProcess, PluginProcessOptions, PluginRegistry, PluginResponse,
+    PluginRuntimeReadinessV1, PluginUpdatePreviewV1, PortableStudioPackCatalogV1,
+    ProductionExportHistoryEntryV1, ProductionPackV1, ProductionPackageExportOutcomeV1,
+    ProductionPackageExporterV1, ProductionRecoveryViewV1, Project, ProjectBoardProjectionV1,
+    ProjectDisplayStatus, RemoteComputeJobSpecV1, RemoteReconciliationSummaryV1,
+    Result as CoreResult, RuntimeWorkloadEstimateV1, SegmentTtsLockStateV1, SelectedVisualOutput,
+    StateStore, StockDiscoveryStatusV1, StudioJobReviewSnapshotV1, StudioPackAvailabilityStatusV1,
+    StudioPackOverridesV1, StudioPackRouteTargetV1, StudioPackRuntimeSnapshotV1,
+    StudioPackUxViewV1, StudioPackV1, StudioReviewCenterV1, VisualCandidate,
+    VisualCandidateRankingInput, VisualCandidateSignals, VisualReviewSet, VoiceIdentityV1,
+    VoiceModelIdentityV1, VoiceTimingV1, WorkflowStep, Workspace, WorkspaceSession,
+    CREATOR_STEP_VISUAL_PREPARE_V1, STUDIO_PACK_SCHEMA_V1, STUDIO_PACK_VERSION_V1,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
@@ -2172,6 +2175,141 @@ fn replace_creator_voice_timing_manually(
 }
 
 #[tauri::command]
+fn production_recovery_status(
+    state: State<'_, DesktopState>,
+    project_id: String,
+) -> Result<ProductionRecoveryViewV1, String> {
+    let data_root = active_data_root(&state)?;
+    let store = readable_store(&state)?;
+    let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
+    inspect_creator_production_recovery_v1(&store, &artifacts, &project_id).map_err(error_string)
+}
+
+#[tauri::command]
+fn repair_production_visual(
+    state: State<'_, DesktopState>,
+    project_id: String,
+    scene_id: String,
+) -> Result<ProductionRecoveryViewV1, String> {
+    let data_root = active_data_root(&state)?;
+    let mut store = writable_store(&state)?;
+    let Some(path) = rfd::FileDialog::new()
+        .set_title("Repair / Relink Production Visual")
+        .add_filter(
+            "Visual media",
+            &["png", "jpg", "jpeg", "webp", "mp4", "mov", "m4v"],
+        )
+        .pick_file()
+    else {
+        let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
+        return inspect_creator_production_recovery_v1(&store, &artifacts, &project_id)
+            .map_err(error_string);
+    };
+    let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
+    repair_creator_production_visual_v1(&mut store, &artifacts, &project_id, &scene_id, path)
+        .map_err(error_string)?;
+    inspect_creator_production_recovery_v1(&store, &artifacts, &project_id).map_err(error_string)
+}
+
+#[tauri::command]
+fn repair_production_audio(
+    state: State<'_, DesktopState>,
+    project_id: String,
+    segment_id: String,
+) -> Result<ProductionRecoveryViewV1, String> {
+    let data_root = active_data_root(&state)?;
+    let mut store = writable_store(&state)?;
+    let Some(path) = rfd::FileDialog::new()
+        .set_title("Repair / Relink Production Audio")
+        .add_filter("Audio", &["wav", "mp3"])
+        .pick_file()
+    else {
+        let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
+        return inspect_creator_production_recovery_v1(&store, &artifacts, &project_id)
+            .map_err(error_string);
+    };
+    let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
+    repair_creator_production_audio_v1(&mut store, &artifacts, &project_id, &segment_id, path)
+        .map_err(error_string)?;
+    inspect_creator_production_recovery_v1(&store, &artifacts, &project_id).map_err(error_string)
+}
+
+#[tauri::command]
+fn repair_production_timing(
+    state: State<'_, DesktopState>,
+    project_id: String,
+    segment_id: String,
+) -> Result<ProductionRecoveryViewV1, String> {
+    let data_root = active_data_root(&state)?;
+    let mut store = writable_store(&state)?;
+    let Some(path) = rfd::FileDialog::new()
+        .set_title("Repair / Relink Production Timing")
+        .add_filter("Timing", &["srt", "json"])
+        .pick_file()
+    else {
+        let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
+        return inspect_creator_production_recovery_v1(&store, &artifacts, &project_id)
+            .map_err(error_string);
+    };
+    let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
+    repair_creator_production_timing_v1(&mut store, &artifacts, &project_id, &segment_id, path)
+        .map_err(error_string)?;
+    inspect_creator_production_recovery_v1(&store, &artifacts, &project_id).map_err(error_string)
+}
+
+#[tauri::command]
+fn repair_production_voice_bundle(
+    state: State<'_, DesktopState>,
+    project_id: String,
+    segment_id: String,
+) -> Result<ProductionRecoveryViewV1, String> {
+    let data_root = active_data_root(&state)?;
+    let mut store = writable_store(&state)?;
+    let Some(audio_path) = rfd::FileDialog::new()
+        .set_title("Repair Production Voice Audio")
+        .add_filter("Audio", &["wav", "mp3"])
+        .pick_file()
+    else {
+        let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
+        return inspect_creator_production_recovery_v1(&store, &artifacts, &project_id)
+            .map_err(error_string);
+    };
+    let Some(timing_path) = rfd::FileDialog::new()
+        .set_title("Repair Production Voice Timing")
+        .add_filter("Timing", &["srt", "json"])
+        .pick_file()
+    else {
+        let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
+        return inspect_creator_production_recovery_v1(&store, &artifacts, &project_id)
+            .map_err(error_string);
+    };
+    let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
+    repair_creator_production_voice_bundle_v1(
+        &mut store,
+        &artifacts,
+        &project_id,
+        &segment_id,
+        audio_path,
+        timing_path,
+    )
+    .map_err(error_string)?;
+    inspect_creator_production_recovery_v1(&store, &artifacts, &project_id).map_err(error_string)
+}
+
+#[tauri::command]
+fn rebuild_recovered_production(
+    state: State<'_, DesktopState>,
+    project_id: String,
+) -> Result<ProductionExportViewV1, String> {
+    let data_root = active_data_root(&state)?;
+    let mut store = writable_store(&state)?;
+    let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
+    let outcome = rebuild_and_export_creator_production_v1(&mut store, &artifacts, &project_id)
+        .map_err(error_string)?;
+    production_export_view_v1(&store, &artifacts, &project_id, Some(outcome.export), None)
+}
+
+#[tauri::command]
 fn start_creator_production(
     app: AppHandle,
     state: State<'_, DesktopState>,
@@ -3809,6 +3947,12 @@ fn main() {
             rename_project,
             delete_project,
             production_export_status,
+            production_recovery_status,
+            repair_production_visual,
+            repair_production_audio,
+            repair_production_timing,
+            repair_production_voice_bundle,
+            rebuild_recovered_production,
             assemble_production_pack,
             export_production_pack,
             llmgateway_status,
