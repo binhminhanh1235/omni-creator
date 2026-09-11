@@ -55,7 +55,9 @@ jobs:
       - name: Desktop format
         run: cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml -- --check
       - name: Desktop JavaScript syntax
-        run: node --check apps/desktop/dist/app.js
+        run: |
+          node --check apps/desktop/dist/app.js
+          node --check apps/desktop/dist/review-center-p6.js
       - name: Desktop GPU Workbench regression
         run: node apps/desktop/tests/gpu-workbench-smoke.mjs
       - name: Desktop Production Pack regression
@@ -80,6 +82,8 @@ jobs:
         run: node apps/desktop/tests/manual-voice-smoke.mjs
       - name: Desktop External Handoff regression
         run: node apps/desktop/tests/external-handoff-smoke.mjs
+      - name: Desktop Review Center P6 regression
+        run: node apps/desktop/tests/review-center-p6-smoke.mjs
       - name: Desktop clippy
         run: cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets -- -D warnings
       - name: Desktop tests
