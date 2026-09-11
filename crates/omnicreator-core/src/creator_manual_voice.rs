@@ -873,11 +873,7 @@ fn latest_verified_segment_voice_with_policy_v1(
             || audio.input_hash.as_deref() != Some(job.input_hash.as_str())
             || timing_artifact.producer_job.as_deref() != Some(job.job_id.as_str())
             || timing_artifact.input_hash.as_deref() != Some(job.input_hash.as_str())
-            || !verify_existing_voice_artifact_v1(
-                artifact_store,
-                &audio,
-                allow_invalid_existing,
-            )?
+            || !verify_existing_voice_artifact_v1(artifact_store, &audio, allow_invalid_existing)?
             || !verify_existing_voice_artifact_v1(
                 artifact_store,
                 &timing_artifact,
