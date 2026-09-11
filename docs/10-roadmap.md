@@ -483,6 +483,8 @@ The system is initially for one creator, one Mac, temporary remote workers and a
 
 **Tracking:** #84
 
+**Status: DONE / VERIFIED** via P0-P6, final PR #92, exact-head CI #453 / run `34617171968`, guarded squash merge `46ee33ae87283aa33061c26589714790e666d332`, and post-merge CI #454 / run `34617627912`.
+
 Goal: automatic execution is an accelerator, never a single point of failure. Every creator stage accepts one or more producer paths, but every accepted result converges on the existing canonical Project / WorkflowStep / Job / Attempt / ArtifactStore contracts.
 
 Canonical ingestion boundary:
@@ -553,7 +555,7 @@ Implementation boundary:
 
 ### P5 - ProductionPack + export recovery
 
-**Status: IN PROGRESS** on `feat/phase16-p5-production-pack-recovery` / PR #90.
+**Status: DONE / VERIFIED** via PR #90, exact-head CI #448 / run `34609039064`, guarded squash merge `0dabed2717357af5c5bcf8a74c58cca50b213344`, and post-merge CI #449 / run `34612981016`.
 
 - read-only recovery inspection projects verified/missing/invalid/unselected visual, audio and timing artifacts from canonical Job/Attempt/Artifact state only
 - repair/relink validates canonical scene/segment identity, then reuses the existing visual/manual-result or VoiceTake replacement path and ArtifactStore promotion/verification
@@ -566,21 +568,33 @@ Implementation boundary:
 
 ### P6 - Review Center universal recovery UX
 
-- actionable blockers expose only applicable actions from Retry, Configure, Choose Alternative Provider, Provide Manually, Replace Result and Details
-- Review Center remains a projection/controller over canonical state
-- read-only sessions may inspect recovery state but may not import/replace
+**Status: DONE / VERIFIED** via PR #92, final head `4ff10610d608ccdf7a63049f141ee0b4d8341c57`, exact-head tree `f42ea8ffecf6f93583249c911c70d908283cea07`, exact-head CI #453 / run `34617171968`, guarded squash merge `46ee33ae87283aa33061c26589714790e666d332`, and post-merge CI #454 / run `34617627912`.
+
+- actionable blockers expose only applicable actions from Retry, Configure, capability-compatible alternative when a real explicit choice exists, Provide Manually, Replace Result and Details
+- Review Center remains a projection/controller over canonical state and reuses the canonical P1-P5 manual/external/recovery paths
+- deterministic Studio Pack fallback is not presented as a fake provider choice
+- read-only sessions retain sanitized Details/inspection but cannot execute mutating recovery actions
+- missing/hash-invalid visual/audio/timing state is projected from canonical Production Recovery into Replace Result actions
+- default projection payloads contain no credentials, provider-private request data or absolute machine paths
+- Desktop has a dedicated P6 syntax/regression gate and one recommended primary action plus secondary actions
 
 ### Phase 16 critical acceptance
 
-A. Existing all-automatic Phase 15 golden path still passes.
-B. No LLM: manual Script + manual ScenePlan -> Visual -> Voice -> ProductionPack -> Export.
-C. No stock provider: manual image/video per scene continues.
-D. No voice provider/GPU: manual audio per segment + timing continues.
-E. No generated-image ComputeProvider: prepared request -> external result import continues.
-F. Mixed project: Pexels + Pixabay + Stick Figure + manual video + external image + OmniVoice/manual WAV -> canonical ProductionPack + Resolve export.
-G. Replacement invalidates only the correct dependency cone.
-H. Restart / Data Root move or rebind keeps manual outputs canonical and resumable.
-I. Read-only can inspect but cannot replace/import.
-J. With all external services unavailable, complete manual inputs can still reach ProductionPack and DaVinci export.
+A. **PASS** — existing all-automatic Phase 15 golden path still passes.
+B. **PASS** — no LLM: manual Script + manual ScenePlan -> Visual -> Voice -> ProductionPack -> Export.
+C. **PASS** — no stock provider: manual image/video per scene continues.
+D. **PASS** — no voice provider/GPU: manual audio per segment + timing continues.
+E. **PASS** — no generated-image ComputeProvider: prepared request -> external result import continues.
+F. **PASS** — mixed automatic/manual/external producers converge on canonical ProductionPack + Resolve export.
+G. **PASS** — replacement invalidates only the correct dependency cone.
+H. **PASS** — restart / Data Root move or rebind keeps manual/external/recovered outputs canonical and resumable.
+I. **PASS** — read-only can inspect/details but cannot replace/import/mutate.
+J. **PASS** — with all external services unavailable, complete manual inputs reach ProductionPack and DaVinci export through `all_external_services_unavailable_fully_manual_flow_exports_to_resolve`.
 
-Verification discipline: implement P0-P6 as guarded slices. Each slice requires exact-head CI PASS before merge and post-merge CI PASS on the exact merge SHA before it is marked DONE / VERIFIED in #84 and roadmap tracking #1.
+Final verified code checkpoint before this documentation closeout:
+
+- main `46ee33ae87283aa33061c26589714790e666d332`
+- tree `f42ea8ffecf6f93583249c911c70d908283cea07`
+- post-merge CI #454 / run `34617627912`: **PASS**
+
+No new numbered implementation phase is selected by this closeout. The next work remains explicitly under **Later / optional** until a concrete initiative is chosen; **Explicitly deferred** items remain out of scope.
