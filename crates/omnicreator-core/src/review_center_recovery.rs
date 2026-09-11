@@ -67,8 +67,6 @@ pub enum ReviewRecoveryAlternativeStateV1 {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ReviewRecoveryAlternativeV1 {
-    /// Provider/plugin identity is intentionally opaque to the generic projection.
-    /// It is safe to display, but the projection never interprets the value.
     pub id: String,
     pub capability: String,
     pub state: ReviewRecoveryAlternativeStateV1,
@@ -92,8 +90,8 @@ pub struct ReviewRecoveryContextV1 {
     pub required_capability: Option<String>,
     #[serde(default)]
     pub alternatives: Vec<ReviewRecoveryAlternativeV1>,
-    /// True only when the product semantics require the user to choose a provider.
-    /// Deterministic Studio Pack fallback must leave this false.
+    /// True only when product semantics require an explicit user selection.
+    /// Ordered Studio Pack fallback must leave this false.
     pub explicit_alternative_choice: bool,
     pub retry_available: bool,
     pub configure_available: bool,
@@ -117,8 +115,8 @@ pub fn derive_review_recovery_actions_v1(
 ) -> Vec<ReviewRecoveryActionV1> {
     let mut actions = Vec::new();
     let mutation_enabled = !context.read_only;
-
     let replace_applicable = context.has_invalid_selected_result_v1();
+
     if replace_applicable {
         push_action_v1(
             &mut actions,
@@ -204,12 +202,13 @@ pub fn derive_review_recovery_actions_v1(
                 | ReviewRecoveryBlockerClassV1::ValidationError
         )
     {
+        let retry_is_primary = actions.iter().all(|action| !action.primary);
         push_action_v1(
             &mut actions,
             ReviewRecoveryActionKindV1::Retry,
             ReviewRecoveryActionTargetV1::RetryCanonicalJob,
             "Retry".to_owned(),
-            actions.iter().all(|action| !action.primary),
+            retry_is_primary,
             mutation_enabled,
         );
     }
@@ -223,7 +222,6 @@ pub fn derive_review_recovery_actions_v1(
         true,
     );
 
-    // Ensure a single primary action. Details is never promoted because it is inspection-only.
     if actions.iter().all(|action| !action.primary) {
         if let Some(action) = actions
             .iter_mut()
@@ -232,6 +230,7 @@ pub fn derive_review_recovery_actions_v1(
             action.primary = true;
         }
     }
+
     let mut found_primary = false;
     for action in &mut actions {
         if action.primary {
@@ -255,7 +254,7 @@ fn eligible_alternative_count_v1(context: &ReviewRecoveryContextV1) -> usize {
                 && context
                     .required_capability
                     .as_deref()
-                    .is_none_or(|required| candidate.capability == required)
+                    .map_or(true, |required| candidate.capability == required)
         })
         .count()
 }
@@ -353,10 +352,7 @@ mod tests {
         assert!(kinds.contains(&ReviewRecoveryActionKindV1::Retry));
         assert!(kinds.contains(&ReviewRecoveryActionKindV1::ProvideManually));
         assert!(kinds.contains(&ReviewRecoveryActionKindV1::Details));
-        assert_eq!(
-            actions.iter().filter(|action| action.primary).count(),
-            1
-        );
+        assert_eq!(actions.iter().filter(|action| action.primary).count(), 1);
         assert_eq!(
             actions.iter().find(|action| action.primary).unwrap().label,
             "Provide Script Manually"
@@ -495,8 +491,18 @@ mod tests {
     fn serialized_action_payload_has_no_secret_or_machine_path_fields() {
         let actions = derive_review_recovery_actions_v1(&context(ReviewRecoveryStageV1::Visual));
         let json = serde_json::to_string(&actions).unwrap().to_ascii_lowercase();
-        for forbidden in ["api_key", "token", "cookie", "authorization", "absolute_path", "/users/"] {
-            assert!(!json.contains(forbidden), "found forbidden field/value: {forbidden}");
+        for forbidden in [
+            "api_key",
+            "token",
+            "cookie",
+            "authorization",
+            "absolute_path",
+            "/users/",
+        ] {
+            assert!(
+                !json.contains(forbidden),
+                "found forbidden field/value: {forbidden}"
+            );
         }
     }
 }
