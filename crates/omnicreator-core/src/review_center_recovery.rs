@@ -288,9 +288,7 @@ fn manual_label_v1(stage: ReviewRecoveryStageV1) -> String {
         ReviewRecoveryStageV1::ScenePlan => "Provide Scene Plan Manually",
         ReviewRecoveryStageV1::Visual => "Provide My Visual",
         ReviewRecoveryStageV1::Voice => "Provide My Audio",
-        ReviewRecoveryStageV1::ProductionPack | ReviewRecoveryStageV1::Export => {
-            "Repair Manually"
-        }
+        ReviewRecoveryStageV1::ProductionPack | ReviewRecoveryStageV1::Export => "Repair Manually",
         ReviewRecoveryStageV1::Other => "Provide Manually",
     }
     .to_owned()
@@ -490,7 +488,9 @@ mod tests {
     #[test]
     fn serialized_action_payload_has_no_secret_or_machine_path_fields() {
         let actions = derive_review_recovery_actions_v1(&context(ReviewRecoveryStageV1::Visual));
-        let json = serde_json::to_string(&actions).unwrap().to_ascii_lowercase();
+        let json = serde_json::to_string(&actions)
+            .unwrap()
+            .to_ascii_lowercase();
         for forbidden in [
             "api_key",
             "token",
