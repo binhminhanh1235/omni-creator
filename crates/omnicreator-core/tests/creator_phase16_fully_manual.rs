@@ -41,7 +41,7 @@ fn wav(duration_ms: u64) -> Vec<u8> {
     out.extend_from_slice(&bits.to_le_bytes());
     out.extend_from_slice(b"data");
     out.extend_from_slice(&data_size.to_le_bytes());
-    out.extend(std::iter::repeat_n(7u8, data_size as usize));
+    out.extend(std::iter::repeat(7u8).take(data_size as usize));
     out
 }
 
