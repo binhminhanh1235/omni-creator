@@ -479,11 +479,8 @@ fn find_verified_cache_v1(
         };
         let attempt = state_store.get_attempt(attempt_id)?;
         let artifact = state_store.get_artifact(artifact_id)?;
-        if verify_existing_manual_artifact_v1(
-            artifact_store,
-            &artifact,
-            allow_invalid_existing,
-        )? && parse_provenance_v1(&artifact.metadata)?.is_some()
+        if verify_existing_manual_artifact_v1(artifact_store, &artifact, allow_invalid_existing)?
+            && parse_provenance_v1(&artifact.metadata)?.is_some()
         {
             return Ok(Some((job, attempt, artifact)));
         }
@@ -509,11 +506,7 @@ fn find_current_result_v1(
             continue;
         };
         let artifact = state_store.get_artifact(artifact_id)?;
-        if verify_existing_manual_artifact_v1(
-            artifact_store,
-            &artifact,
-            allow_invalid_existing,
-        )? {
+        if verify_existing_manual_artifact_v1(artifact_store, &artifact, allow_invalid_existing)? {
             artifacts.push(artifact);
         }
     }
