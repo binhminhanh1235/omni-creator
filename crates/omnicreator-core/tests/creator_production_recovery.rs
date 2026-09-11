@@ -240,7 +240,10 @@ fn hash_invalid_visual_same_input_replacement_is_not_cache_hit_and_supersedes_ol
     assert!(!repaired.ingestion.cache_hit);
     assert_ne!(repaired.artifact.artifact_id, visual_id);
     assert!(artifacts.verify_artifact(&repaired.artifact).unwrap());
-    assert_eq!(fx.store.get_job(&old_job_id).unwrap().status, StepStatus::Stale);
+    assert_eq!(
+        fx.store.get_job(&old_job_id).unwrap().status,
+        StepStatus::Stale
+    );
     assert!(repaired
         .ingestion
         .invalidated_step_ids
