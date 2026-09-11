@@ -296,6 +296,7 @@ pub fn provide_manual_creator_voice_bundle_v1(
         request.project_id,
         request.segment_id,
         &input_hash,
+        request.replace_existing,
     )? {
         let voice_stage_complete =
             reconcile_creator_voice_aggregate_v1(state_store, artifact_store, request.project_id)?;
@@ -313,11 +314,12 @@ pub fn provide_manual_creator_voice_bundle_v1(
         });
     }
 
-    let current = latest_verified_segment_voice_v1(
+    let current = latest_verified_segment_voice_with_policy_v1(
         state_store,
         artifact_store,
         request.project_id,
         request.segment_id,
+        request.replace_existing,
     )?;
     if current.is_some() && !request.replace_existing {
         return Err(Error::InvalidJobState(format!(
@@ -338,7 +340,7 @@ pub fn provide_manual_creator_voice_bundle_v1(
             request.project_id,
             CREATOR_TTS_STEP_V1,
             request.segment_id,
-            Some(&input_hash),
+            None,
         )?;
     }
 
@@ -353,11 +355,20 @@ pub fn provide_manual_creator_voice_bundle_v1(
         Some(manual_voice_worker_v1(&request.provenance)),
     )?;
 
-    let bundle_id = deterministic_input_hash(&[
-        b"manual-voice-target-v1",
-        request.segment_id.as_bytes(),
-        input_hash.as_bytes(),
-    ]);
+    let bundle_id = if request.replace_existing {
+        deterministic_input_hash(&[
+            b"manual-voice-target-replacement-v1",
+            request.segment_id.as_bytes(),
+            input_hash.as_bytes(),
+            job.job_id.as_bytes(),
+        ])
+    } else {
+        deterministic_input_hash(&[
+            b"manual-voice-target-v1",
+            request.segment_id.as_bytes(),
+            input_hash.as_bytes(),
+        ])
+    };
     let audio_uri = LogicalUri::parse(&format!(
         "project://voice/manual/{}/{bundle_id}.{}",
         request.segment_id, audio_metadata.extension
@@ -762,7 +773,10 @@ fn ensure_manual_tts_step_v1(
         .find(|step| step.step == CREATOR_TTS_STEP_V1 && step.unit == segment_id);
     let mut invalidated = Vec::new();
     let step = match existing {
-        Some(step) if step.input_hash.as_deref() != Some(input_hash) => {
+        Some(step)
+            if step.input_hash.as_deref() != Some(input_hash)
+                || (replace_existing && step.status == StepStatus::Succeeded) =>
+        {
             if !replace_existing && step.status == StepStatus::Succeeded {
                 return Err(Error::InvalidJobState(format!(
                     "tts/{segment_id} already succeeded; replacement must be explicit"
@@ -808,6 +822,34 @@ fn latest_verified_segment_voice_v1(
     project_id: &str,
     segment_id: &str,
 ) -> Result<Option<VerifiedSegmentVoiceV1>> {
+    latest_verified_segment_voice_with_policy_v1(
+        state_store,
+        artifact_store,
+        project_id,
+        segment_id,
+        false,
+    )
+}
+
+fn verify_existing_voice_artifact_v1(
+    artifact_store: &ArtifactStore,
+    artifact: &Artifact,
+    allow_invalid_existing: bool,
+) -> Result<bool> {
+    match artifact_store.verify_artifact(artifact) {
+        Ok(verified) => Ok(verified),
+        Err(Error::ArtifactHashMismatch(_)) if allow_invalid_existing => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
+fn latest_verified_segment_voice_with_policy_v1(
+    state_store: &StateStore,
+    artifact_store: &ArtifactStore,
+    project_id: &str,
+    segment_id: &str,
+    allow_invalid_existing: bool,
+) -> Result<Option<VerifiedSegmentVoiceV1>> {
     let mut candidates = Vec::new();
     for job in state_store.list_project_jobs(project_id)? {
         if job.step != CREATOR_TTS_STEP_V1
@@ -831,8 +873,16 @@ fn latest_verified_segment_voice_v1(
             || audio.input_hash.as_deref() != Some(job.input_hash.as_str())
             || timing_artifact.producer_job.as_deref() != Some(job.job_id.as_str())
             || timing_artifact.input_hash.as_deref() != Some(job.input_hash.as_str())
-            || !artifact_store.verify_artifact(&audio)?
-            || !artifact_store.verify_artifact(&timing_artifact)?
+            || !verify_existing_voice_artifact_v1(
+                artifact_store,
+                &audio,
+                allow_invalid_existing,
+            )?
+            || !verify_existing_voice_artifact_v1(
+                artifact_store,
+                &timing_artifact,
+                allow_invalid_existing,
+            )?
         {
             continue;
         }
@@ -864,11 +914,16 @@ fn verified_voice_for_input_hash_v1(
     project_id: &str,
     segment_id: &str,
     input_hash: &str,
+    allow_invalid_existing: bool,
 ) -> Result<Option<VerifiedSegmentVoiceV1>> {
-    Ok(
-        latest_verified_segment_voice_v1(state_store, artifact_store, project_id, segment_id)?
-            .filter(|value| value.job.input_hash == input_hash),
-    )
+    Ok(latest_verified_segment_voice_with_policy_v1(
+        state_store,
+        artifact_store,
+        project_id,
+        segment_id,
+        allow_invalid_existing,
+    )?
+    .filter(|value| value.job.input_hash == input_hash))
 }
 
 fn parse_srt_v1(
