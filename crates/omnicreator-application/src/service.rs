@@ -15,17 +15,16 @@ use omnicreator_core::{
     repair_creator_production_timing_v1, repair_creator_production_visual_v1,
     repair_creator_production_voice_bundle_v1, replace_manual_creator_voice_timing_v1,
     select_creator_stock_candidate_v1, ArtifactStore, CreatorContentV1,
-    CreatorProductionPackOptionsV1, CreatorProductionPackOutcomeV1, CreatorScenePlanV1,
-    CreatorSceneVisualStateV1, CreatorSegmentVoiceStateV1, CreatorVisualPlanV1,
-    EffectiveStudioPackV1, ExternalGeneratedVisualRequestV1, ExternalVoiceRequestV1,
-    ManualCreatorContentOutcomeV1, ManualCreatorScenePlanOutcomeV1, ManualCreatorVisualOutcomeV1,
-    ManualCreatorVoiceOutcomeV1, ManualCreatorVoiceRequestV1, ManualScenePlanDraftV1,
-    ProductionRecoveryRebuildOutcomeV1, ProductionRecoveryViewV1, Project,
-    StateStore, StudioJobReviewSnapshotV1, StudioReviewCenterV1,
-    StudioReviewProjectSnapshotV1, VoiceTimingV1, WorkflowStepExecutionPolicyV1, Workspace,
+    CreatorProductionPackOptionsV1, CreatorProductionPackOutcomeV1, CreatorSceneVisualStateV1,
+    CreatorSegmentVoiceStateV1, CreatorVisualPlanV1, EffectiveStudioPackV1,
+    ExternalGeneratedVisualRequestV1, ExternalVoiceRequestV1, ManualCreatorContentOutcomeV1,
+    ManualCreatorScenePlanOutcomeV1, ManualCreatorVisualOutcomeV1, ManualCreatorVoiceOutcomeV1,
+    ManualCreatorVoiceRequestV1, ManualScenePlanDraftV1, ProductionRecoveryRebuildOutcomeV1,
+    ProductionRecoveryViewV1, Project, StateStore, StudioJobReviewSnapshotV1,
+    StudioReviewCenterV1, StudioReviewProjectSnapshotV1, WorkflowStepExecutionPolicyV1, Workspace,
     WorkspaceSession, CREATOR_STEP_CONTENT_PREPARE_V1, CREATOR_STEP_PRODUCTION_PACK_V1,
-    CREATOR_STEP_SCENE_PLAN_V1, CREATOR_STEP_VISUAL_PREPARE_V1,
-    CREATOR_STEP_VOICE_PREPARE_V1, CREATOR_WORKFLOW_UNIT_PROJECT_V1,
+    CREATOR_STEP_SCENE_PLAN_V1, CREATOR_STEP_VISUAL_PREPARE_V1, CREATOR_STEP_VOICE_PREPARE_V1,
+    CREATOR_WORKFLOW_UNIT_PROJECT_V1,
 };
 
 use crate::{
@@ -38,8 +37,8 @@ use crate::{
     ProductionRecoveryControlSnapshotV1, ProjectControlSnapshotV1, ProjectIdRequestV1,
     ProjectListControlSnapshotV1, RecoveryFileRequestV1, RecoveryVoiceBundleRequestV1,
     RenameProjectRequestV1, ReplaceVoiceTimingRequestV1, RuntimeInspectionSnapshotV1,
-    SetWorkflowAutomaticExecutionRequestV1, WorkspaceControlSnapshotV1,
-    CONTROL_CONTRACT_SCHEMA_V1, CONTROL_CONTRACT_VERSION_V1,
+    SetWorkflowAutomaticExecutionRequestV1, WorkspaceControlSnapshotV1, CONTROL_CONTRACT_SCHEMA_V1,
+    CONTROL_CONTRACT_VERSION_V1,
 };
 
 pub struct ApplicationControlService<'a> {
@@ -132,9 +131,7 @@ impl<'a> ApplicationControlService<'a> {
         ))
     }
 
-    pub fn review_center_v1(
-        &self,
-    ) -> ControlResultV1<ControlResponseV1<StudioReviewCenterV1>> {
+    pub fn review_center_v1(&self) -> ControlResultV1<ControlResponseV1<StudioReviewCenterV1>> {
         let projects = self.store.list_projects().map_err(ControlErrorV1::from)?;
         Ok(ControlResponseV1::new(
             ControlOperationV1::ReviewCenter,
@@ -146,12 +143,9 @@ impl<'a> ApplicationControlService<'a> {
         &self,
         request: &ProjectIdRequestV1,
     ) -> ControlResultV1<ControlResponseV1<omnicreator_core::CreatorRunCoordinatorV1>> {
-        let run = derive_creator_run_coordinator_v1(
-            &self.store,
-            &self.artifacts,
-            &request.project_id,
-        )
-        .map_err(ControlErrorV1::from)?;
+        let run =
+            derive_creator_run_coordinator_v1(&self.store, &self.artifacts, &request.project_id)
+                .map_err(ControlErrorV1::from)?;
         Ok(ControlResponseV1::new(
             ControlOperationV1::CreatorRunState,
             run,
@@ -164,7 +158,10 @@ impl<'a> ApplicationControlService<'a> {
     ) -> ControlResultV1<ControlResponseV1<ProjectControlSnapshotV1>> {
         self.require_writable_v1()?;
         let title = non_empty_v1("project title", &request.title)?;
-        let project = self.store.create_project(title).map_err(ControlErrorV1::from)?;
+        let project = self
+            .store
+            .create_project(title)
+            .map_err(ControlErrorV1::from)?;
         Ok(ControlResponseV1::new(
             ControlOperationV1::CreateProject,
             self.project_snapshot_v1(project)?,
@@ -185,9 +182,11 @@ impl<'a> ApplicationControlService<'a> {
             .map_err(ControlErrorV1::from)?;
         let plan = compile_creator_workflow_plan_v1(&project, studio_pack)
             .map_err(ControlErrorV1::from)?;
-        materialize_creator_workflow_plan_v1(&self.store, &plan)
+        materialize_creator_workflow_plan_v1(&self.store, &plan).map_err(ControlErrorV1::from)?;
+        let project = self
+            .store
+            .get_project(&project.id)
             .map_err(ControlErrorV1::from)?;
-        let project = self.store.get_project(&project.id).map_err(ControlErrorV1::from)?;
         Ok(ControlResponseV1::new(
             ControlOperationV1::CreateCreatorProject,
             self.project_snapshot_v1(project)?,
@@ -319,28 +318,24 @@ impl<'a> ApplicationControlService<'a> {
         &self,
         request: &ProjectIdRequestV1,
     ) -> ControlResultV1<(CreatorContentV1, String, ManualScenePlanDraftV1)> {
-        let (content, content_artifact) = load_latest_creator_content_v1(
-            &self.store,
-            &self.artifacts,
-            &request.project_id,
-        )
-        .map_err(ControlErrorV1::from)?
-        .ok_or_else(|| {
-            ControlErrorV1::new(
-                ControlErrorCodeV1::Blocked,
-                "verified creator Content is required before ScenePlan editing",
-            )
-        })?;
-        let existing = load_latest_creator_content_scene_v1(
-            &self.store,
-            &self.artifacts,
-            &request.project_id,
-        )
-        .map_err(ControlErrorV1::from)?;
+        let (content, content_artifact) =
+            load_latest_creator_content_v1(&self.store, &self.artifacts, &request.project_id)
+                .map_err(ControlErrorV1::from)?
+                .ok_or_else(|| {
+                    ControlErrorV1::new(
+                        ControlErrorCodeV1::Blocked,
+                        "verified creator Content is required before ScenePlan editing",
+                    )
+                })?;
+        let existing =
+            load_latest_creator_content_scene_v1(&self.store, &self.artifacts, &request.project_id)
+                .map_err(ControlErrorV1::from)?;
         let draft = existing
             .filter(|value| value.content_artifact.artifact_id == content_artifact.artifact_id)
             .map(|value| ManualScenePlanDraftV1::from_canonical_v1(&value.scene_plan))
-            .unwrap_or(ManualScenePlanDraftV1::for_content_v1(&content).map_err(ControlErrorV1::from)?);
+            .unwrap_or(
+                ManualScenePlanDraftV1::for_content_v1(&content).map_err(ControlErrorV1::from)?,
+            );
         Ok((content, content_artifact.sha256, draft))
     }
 
@@ -551,13 +546,9 @@ impl<'a> ApplicationControlService<'a> {
         project_id: &str,
         segment_id: &str,
     ) -> ControlResultV1<ControlResponseV1<ExternalVoiceRequestV1>> {
-        let request = prepare_external_voice_request_v1(
-            &self.store,
-            &self.artifacts,
-            project_id,
-            segment_id,
-        )
-        .map_err(ControlErrorV1::from)?;
+        let request =
+            prepare_external_voice_request_v1(&self.store, &self.artifacts, project_id, segment_id)
+                .map_err(ControlErrorV1::from)?;
         Ok(ControlResponseV1::new(
             ControlOperationV1::PrepareExternalVoice,
             request,
@@ -617,7 +608,10 @@ impl<'a> ApplicationControlService<'a> {
             &request.source_path,
         )
         .map_err(ControlErrorV1::from)?;
-        self.recovery_after_mutation_v1(&request.project_id, ControlOperationV1::RepairProductionVisual)
+        self.recovery_after_mutation_v1(
+            &request.project_id,
+            ControlOperationV1::RepairProductionVisual,
+        )
     }
 
     pub fn repair_production_audio_v1(
@@ -633,7 +627,10 @@ impl<'a> ApplicationControlService<'a> {
             &request.source_path,
         )
         .map_err(ControlErrorV1::from)?;
-        self.recovery_after_mutation_v1(&request.project_id, ControlOperationV1::RepairProductionAudio)
+        self.recovery_after_mutation_v1(
+            &request.project_id,
+            ControlOperationV1::RepairProductionAudio,
+        )
     }
 
     pub fn repair_production_timing_v1(
@@ -649,7 +646,10 @@ impl<'a> ApplicationControlService<'a> {
             &request.source_path,
         )
         .map_err(ControlErrorV1::from)?;
-        self.recovery_after_mutation_v1(&request.project_id, ControlOperationV1::RepairProductionTiming)
+        self.recovery_after_mutation_v1(
+            &request.project_id,
+            ControlOperationV1::RepairProductionTiming,
+        )
     }
 
     pub fn repair_production_voice_bundle_v1(
@@ -780,9 +780,9 @@ impl<'a> ApplicationControlService<'a> {
         ]
         .iter()
         .all(|key| {
-            steps.iter().any(|step| {
-                step.step == *key && step.unit == CREATOR_WORKFLOW_UNIT_PROJECT_V1
-            })
+            steps
+                .iter()
+                .any(|step| step.step == *key && step.unit == CREATOR_WORKFLOW_UNIT_PROJECT_V1)
         });
         let run_coordinator = if has_creator_dag {
             Some(
@@ -840,12 +840,9 @@ impl<'a> ApplicationControlService<'a> {
         project_id: &str,
         operation: ControlOperationV1,
     ) -> ControlResultV1<ControlResponseV1<ProductionRecoveryViewV1>> {
-        let recovery = inspect_creator_production_recovery_v1(
-            &self.store,
-            &self.artifacts,
-            project_id,
-        )
-        .map_err(ControlErrorV1::from)?;
+        let recovery =
+            inspect_creator_production_recovery_v1(&self.store, &self.artifacts, project_id)
+                .map_err(ControlErrorV1::from)?;
         Ok(ControlResponseV1::new(operation, recovery))
     }
 }
