@@ -186,21 +186,27 @@ mod tests {
             )
             .unwrap();
 
-        assert!(store
-            .workflow_step_execution_policy_v1(&step.step_id)
-            .unwrap()
-            .automatic_execution_enabled);
-        assert!(!store
-            .set_workflow_step_automatic_execution_v1(&step.step_id, false)
-            .unwrap()
-            .automatic_execution_enabled);
+        assert!(
+            store
+                .workflow_step_execution_policy_v1(&step.step_id)
+                .unwrap()
+                .automatic_execution_enabled
+        );
+        assert!(
+            !store
+                .set_workflow_step_automatic_execution_v1(&step.step_id, false)
+                .unwrap()
+                .automatic_execution_enabled
+        );
         drop(store);
 
         let reopened = StateStore::open(&db).unwrap();
-        assert!(!reopened
-            .workflow_step_execution_policy_v1(&step.step_id)
-            .unwrap()
-            .automatic_execution_enabled);
+        assert!(
+            !reopened
+                .workflow_step_execution_policy_v1(&step.step_id)
+                .unwrap()
+                .automatic_execution_enabled
+        );
     }
 
     #[test]
@@ -220,7 +226,9 @@ mod tests {
         let job = store
             .create_job(&project.id, "tts.segment", "S001", "hash")
             .unwrap();
-        store.start_attempt(&job.job_id, Some("test-worker")).unwrap();
+        store
+            .start_attempt(&job.job_id, Some("test-worker"))
+            .unwrap();
 
         assert!(matches!(
             store.set_workflow_step_automatic_execution_v1(&step.step_id, false),
