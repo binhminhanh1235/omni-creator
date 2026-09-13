@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/omnicreator-core"]
+members = ["crates/omnicreator-core", "crates/omnicreator-application"]
 resolver = "2"
 
 [workspace.package]

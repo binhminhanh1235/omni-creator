@@ -1,11 +1,37 @@
+fn with_application_control_phase18<T>(
+    state: &State<'_, DesktopState>,
+    operation: impl FnOnce(
+        &mut omnicreator_application::ApplicationControlService<'_>,
+    ) -> omnicreator_application::ControlResultV1<T>,
+) -> Result<T, String> {
+    let guard = state.active.lock().map_err(lock_error)?;
+    let active = guard
+        .as_ref()
+        .ok_or_else(|| "Open a Data Folder first.".to_owned())?;
+    let mut service = match active {
+        ActiveWorkspace::Writable(session) => {
+            omnicreator_application::ApplicationControlService::for_writer(session)
+        }
+        ActiveWorkspace::ReadOnly(workspace) => {
+            omnicreator_application::ApplicationControlService::for_read_only(workspace)
+        }
+    }
+    .map_err(|error| error.to_string())?;
+    operation(&mut service).map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 fn workflow_step_execution_policies(
     state: State<'_, DesktopState>,
     project_id: String,
 ) -> Result<Vec<omnicreator_core::WorkflowStepExecutionPolicyV1>, String> {
-    readable_store(&state)?
-        .list_project_workflow_step_execution_policies_v1(&project_id)
-        .map_err(error_string)
+    with_application_control_phase18(&state, |service| {
+        service
+            .workflow_execution_policies_v1(&omnicreator_application::ProjectIdRequestV1 {
+                project_id,
+            })
+            .map(|response| response.data)
+    })
 }
 
 #[tauri::command]
@@ -14,11 +40,16 @@ fn set_workflow_step_automatic_execution(
     step_id: String,
     enabled: bool,
 ) -> Result<AppSnapshot, String> {
-    let store = writable_store(&state)?;
-    store
-        .set_workflow_step_automatic_execution_v1(&step_id, enabled)
-        .map_err(error_string)?;
-    drop(store);
+    with_application_control_phase18(&state, |service| {
+        service
+            .set_workflow_automatic_execution_v1(
+                &omnicreator_application::SetWorkflowAutomaticExecutionRequestV1 {
+                    step_id,
+                    enabled,
+                },
+            )
+            .map(|_| ())
+    })?;
     snapshot_from_active(&state)
 }
 
