@@ -4,10 +4,13 @@ import process from "node:process";
 
 const root = process.cwd();
 const app = fs.readFileSync(path.join(root, "apps/desktop/dist/app.js"), "utf8");
-const backend = fs.readFileSync(
-  path.join(root, "apps/desktop/src-tauri/src/main.rs"),
-  "utf8",
-);
+const backend = [
+  "apps/desktop/src-tauri/src/main.rs",
+  "apps/desktop/src-tauri/src/application.rs",
+  "apps/desktop/src-tauri/src/phase17.rs",
+]
+  .map((file) => fs.readFileSync(path.join(root, file), "utf8"))
+  .join("\n");
 
 const appMarkers = [
   "MANUAL VISUAL TAKEOVER",
