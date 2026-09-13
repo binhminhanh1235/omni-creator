@@ -8,13 +8,14 @@ use std::{
 use omnicreator_application::{
     ApplicationControlService, ApplicationRuntimeInspectorV1, AssetLibraryVisualRequestV1,
     BindStudioPackRequestV1, ComputeRuntimeControlSnapshotV1, ControlErrorCodeV1, ControlErrorV1,
-    ControlResultV1, CreatorRunControlServiceV1, CreatorRunRuntimeV1,
-    ExternalVisualResultRequestV1, ExternalVoiceResultRequestV1, ManualContentImportRequestV1,
-    ManualContentRequestV1, ManualScenePlanImportRequestV1, ManualScenePlanRequestV1,
-    ManualVisualRequestV1, ManualVoiceRequestV1, PluginRuntimeControlSnapshotV1,
-    ProjectIdRequestV1, RecoveryFileRequestV1, RecoveryVoiceBundleRequestV1,
-    RenameProjectRequestV1, ReplaceVoiceTimingRequestV1, SetWorkflowAutomaticExecutionRequestV1,
-    StartOrResumeCreatorRequestV1, CONTROL_CONTRACT_SCHEMA_V1, CONTROL_CONTRACT_VERSION_V1,
+    ControlOperationV1, ControlResponseV1, ControlResultV1, CreatorRunControlServiceV1,
+    CreatorRunRuntimeV1, ExternalVisualResultRequestV1, ExternalVoiceResultRequestV1,
+    ManualContentImportRequestV1, ManualContentRequestV1, ManualScenePlanImportRequestV1,
+    ManualScenePlanRequestV1, ManualVisualRequestV1, ManualVoiceRequestV1,
+    PluginRuntimeControlSnapshotV1, ProjectIdRequestV1, RecoveryFileRequestV1,
+    RecoveryVoiceBundleRequestV1, RenameProjectRequestV1, ReplaceVoiceTimingRequestV1,
+    SetWorkflowAutomaticExecutionRequestV1, StartOrResumeCreatorRequestV1,
+    CONTROL_CONTRACT_SCHEMA_V1, CONTROL_CONTRACT_VERSION_V1,
 };
 use omnicreator_core::{
     initial_studio_pack_catalog_v1, run_creator_content_stage_v1, run_creator_scene_stage_v1,
@@ -489,8 +490,18 @@ fn execute_service_command_v1(
             value_v1(service.creator_run_state_v1(&ProjectIdRequestV1 { project_id })?)
         }
         ("review", "list") | ("review", "status") => {
+            let project_id = args.take_value("--project")?;
             args.finish()?;
-            value_v1(service.review_center_v1()?)
+            if let Some(project_id) = project_id {
+                let snapshot =
+                    service.project_status_v1(&ProjectIdRequestV1 { project_id })?;
+                value_v1(ControlResponseV1::new(
+                    ControlOperationV1::ReviewCenter,
+                    snapshot.data.review_center,
+                ))
+            } else {
+                value_v1(service.review_center_v1()?)
+            }
         }
         ("content", "provide") => {
             let request: ManualContentRequestV1 = read_payload_v1(&mut args, stdin)?;
