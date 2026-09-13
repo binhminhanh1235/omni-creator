@@ -2,8 +2,7 @@ use std::{fs, io::Cursor};
 
 use omnicreator_application::{
     ApplicationControlService, ManualContentRequestV1, ManualScenePlanRequestV1,
-    ManualVisualRequestV1, ManualVoiceRequestV1, ProjectIdRequestV1,
-    StartOrResumeCreatorRequestV1,
+    ManualVisualRequestV1, ManualVoiceRequestV1, ProjectIdRequestV1, StartOrResumeCreatorRequestV1,
 };
 use omnicreator_cli::run_cli_v1;
 use omnicreator_core::{
@@ -177,10 +176,7 @@ fn cli_full_manual_path_reaches_resolve_export_and_matches_application_projectio
     assert_eq!(voice.exit_code, 0, "{}", voice.output);
 
     let recovery = run(
-        args(
-            &root,
-            &["production", "recovery", "--project", &project_id],
-        ),
+        args(&root, &["production", "recovery", "--project", &project_id]),
         "",
     );
     assert_eq!(recovery.exit_code, 0, "{}", recovery.output);
@@ -198,9 +194,11 @@ fn cli_full_manual_path_reaches_resolve_export_and_matches_application_projectio
     );
     assert_eq!(exported.exit_code, 0, "{}", exported.output);
     let exported_json = json(&exported);
-    assert!(exported_json["data"]["data"]["assembly"]["production_pack"]["tracks"]
-        .as_array()
-        .is_some_and(|items| !items.is_empty()));
+    assert!(
+        exported_json["data"]["data"]["assembly"]["production_pack"]["tracks"]
+            .as_array()
+            .is_some_and(|items| !items.is_empty())
+    );
     assert!(exported_json["data"]["data"]["export"]["artifacts"]
         .as_array()
         .is_some_and(|items| !items.is_empty()));
@@ -253,10 +251,7 @@ fn cli_full_manual_path_reaches_resolve_export_and_matches_application_projectio
 fn cli_creator_start_reports_provider_unavailable_without_desktop_or_network_attempt() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().join("data-root");
-    assert_eq!(
-        run(args(&root, &["workspace", "init"]), "").exit_code,
-        0
-    );
+    assert_eq!(run(args(&root, &["workspace", "init"]), "").exit_code, 0);
     let created = run(
         args(
             &root,
