@@ -1,6 +1,12 @@
 import fs from "node:fs";
 
-const main = fs.readFileSync("apps/desktop/src-tauri/src/main.rs", "utf8");
+const backend = [
+  "apps/desktop/src-tauri/src/main.rs",
+  "apps/desktop/src-tauri/src/application.rs",
+  "apps/desktop/src-tauri/src/phase17.rs",
+]
+  .map((file) => fs.readFileSync(file, "utf8"))
+  .join("\n");
 const lifecycle = fs.readFileSync(
   "crates/omnicreator-core/src/plugin_lifecycle.rs",
   "utf8",
@@ -13,7 +19,7 @@ for (const marker of [
   "uninstall_user_plugin_v1",
   "plugin_user_root_v1",
 ]) {
-  if (!main.includes(marker)) {
+  if (!backend.includes(marker)) {
     throw new Error(`desktop Plugin Manager P1 marker missing: ${marker}`);
   }
 }
@@ -36,7 +42,7 @@ if (lifecycle.includes("std::process::Command") || lifecycle.includes("Command::
   throw new Error("package inspection must not execute plugin commands");
 }
 
-if (!main.includes("app_data_dir()") || !main.includes("app_config_dir()")) {
+if (!backend.includes("app_data_dir()") || !backend.includes("app_config_dir()")) {
   throw new Error("plugin installation/lifecycle state must remain machine-local");
 }
 
