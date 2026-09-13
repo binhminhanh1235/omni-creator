@@ -1,9 +1,10 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ArtifactStore, Error, Result, StateStore, StepStatus, CREATOR_STEP_CONTENT_PREPARE_V1,
-    CREATOR_STEP_PRODUCTION_PACK_V1, CREATOR_STEP_SCENE_PLAN_V1, CREATOR_STEP_VISUAL_PREPARE_V1,
-    CREATOR_STEP_VOICE_PREPARE_V1, CREATOR_TTS_STEP_V1, CREATOR_WORKFLOW_UNIT_PROJECT_V1,
+    ArtifactStore, Error, Result, StateStore, StepStatus, WorkflowStep,
+    CREATOR_STEP_CONTENT_PREPARE_V1, CREATOR_STEP_PRODUCTION_PACK_V1, CREATOR_STEP_SCENE_PLAN_V1,
+    CREATOR_STEP_VISUAL_PREPARE_V1, CREATOR_STEP_VOICE_PREPARE_V1, CREATOR_TTS_STEP_V1,
+    CREATOR_WORKFLOW_UNIT_PROJECT_V1,
 };
 
 pub const CREATOR_RUN_COORDINATOR_SCHEMA_V1: &str = "omnicreator.creator-run-coordinator";
@@ -107,21 +108,56 @@ pub fn derive_creator_run_coordinator_v1(
         ));
     }
 
-    if content.status != StepStatus::Succeeded || scenes.status != StepStatus::Succeeded {
-        return Ok(snapshot(
-            project_id,
-            CreatorRunStageV1::ContentScene,
-            CreatorRunActionV1::StartOrResume,
-            Some(if content.status != StepStatus::Succeeded {
-                CREATOR_STEP_CONTENT_PREPARE_V1
-            } else {
-                CREATOR_STEP_SCENE_PLAN_V1
-            }),
-            "Start or resume canonical content and SceneIntent preparation.",
-        ));
+    if content.status != StepStatus::Succeeded {
+        return if automatic_execution_enabled_v1(state_store, content)? {
+            Ok(snapshot(
+                project_id,
+                CreatorRunStageV1::ContentScene,
+                CreatorRunActionV1::StartOrResume,
+                Some(CREATOR_STEP_CONTENT_PREPARE_V1),
+                "Start or resume canonical content preparation.",
+            ))
+        } else {
+            Ok(snapshot(
+                project_id,
+                CreatorRunStageV1::ContentScene,
+                CreatorRunActionV1::Review,
+                Some(CREATOR_STEP_CONTENT_PREPARE_V1),
+                "Content automatic execution is OFF. Provide Script manually/import it, or turn this step ON.",
+            ))
+        };
+    }
+
+    if scenes.status != StepStatus::Succeeded {
+        return if automatic_execution_enabled_v1(state_store, scenes)? {
+            Ok(snapshot(
+                project_id,
+                CreatorRunStageV1::ContentScene,
+                CreatorRunActionV1::StartOrResume,
+                Some(CREATOR_STEP_SCENE_PLAN_V1),
+                "Start or resume canonical SceneIntent preparation.",
+            ))
+        } else {
+            Ok(snapshot(
+                project_id,
+                CreatorRunStageV1::ContentScene,
+                CreatorRunActionV1::Review,
+                Some(CREATOR_STEP_SCENE_PLAN_V1),
+                "Scene Plan automatic execution is OFF. Edit/import the Scene Plan manually, or turn this step ON.",
+            ))
+        };
     }
 
     if visual.status != StepStatus::Succeeded {
+        if !automatic_execution_enabled_v1(state_store, visual)? {
+            return Ok(snapshot(
+                project_id,
+                CreatorRunStageV1::Visual,
+                CreatorRunActionV1::Review,
+                Some(CREATOR_STEP_VISUAL_PREPARE_V1),
+                "Visual automatic execution is OFF. Provide visuals manually/external per scene, or turn this step ON.",
+            ));
+        }
         let retryable_visual = state_store
             .list_project_jobs(project_id)?
             .into_iter()
@@ -147,6 +183,15 @@ pub fn derive_creator_run_coordinator_v1(
     }
 
     if voice.status != StepStatus::Succeeded {
+        if !automatic_execution_enabled_v1(state_store, voice)? {
+            return Ok(snapshot(
+                project_id,
+                CreatorRunStageV1::VoiceCompute,
+                CreatorRunActionV1::Review,
+                Some(CREATOR_STEP_VOICE_PREPARE_V1),
+                "Voice automatic execution is OFF. Provide audio + timing manually/external per segment, or turn this step ON.",
+            ));
+        }
         let tts_jobs = state_store
             .list_project_jobs(project_id)?
             .into_iter()
@@ -197,13 +242,23 @@ pub fn derive_creator_run_coordinator_v1(
     }
 
     if production.status != StepStatus::Succeeded {
-        return Ok(snapshot(
-            project_id,
-            CreatorRunStageV1::ProductionPack,
-            CreatorRunActionV1::AssembleProductionPack,
-            Some(CREATOR_STEP_PRODUCTION_PACK_V1),
-            "Visual and voice artifacts are complete. Assemble the canonical ProductionPack.",
-        ));
+        return if automatic_execution_enabled_v1(state_store, production)? {
+            Ok(snapshot(
+                project_id,
+                CreatorRunStageV1::ProductionPack,
+                CreatorRunActionV1::AssembleProductionPack,
+                Some(CREATOR_STEP_PRODUCTION_PACK_V1),
+                "Visual and voice artifacts are complete. Assemble the canonical ProductionPack.",
+            ))
+        } else {
+            Ok(snapshot(
+                project_id,
+                CreatorRunStageV1::ProductionPack,
+                CreatorRunActionV1::Review,
+                Some(CREATOR_STEP_PRODUCTION_PACK_V1),
+                "Production Pack automatic assembly is OFF. Turn this step ON when you are ready to assemble/export.",
+            ))
+        };
     }
 
     if crate::load_latest_creator_production_pack_v1(state_store, artifact_store, project_id)?
@@ -239,6 +294,15 @@ pub fn derive_creator_run_coordinator_v1(
             "ProductionPack is ready for review and Resolve export.",
         ))
     }
+}
+
+fn automatic_execution_enabled_v1(
+    state_store: &StateStore,
+    step: &WorkflowStep,
+) -> Result<bool> {
+    Ok(state_store
+        .workflow_step_execution_policy_v1(&step.step_id)?
+        .automatic_execution_enabled)
 }
 
 fn stage_for_step_v1(step: &str) -> CreatorRunStageV1 {
