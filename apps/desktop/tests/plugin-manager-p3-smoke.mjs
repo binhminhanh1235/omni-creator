@@ -1,7 +1,13 @@
 import fs from "node:fs";
 
 const app = fs.readFileSync("apps/desktop/dist/app.js", "utf8");
-const main = fs.readFileSync("apps/desktop/src-tauri/src/main.rs", "utf8");
+const backend = [
+  "apps/desktop/src-tauri/src/main.rs",
+  "apps/desktop/src-tauri/src/application.rs",
+  "apps/desktop/src-tauri/src/phase17.rs",
+]
+  .map((file) => fs.readFileSync(file, "utf8"))
+  .join("\n");
 const styles = fs.readFileSync("apps/desktop/dist/styles.css", "utf8");
 
 for (const marker of [
@@ -37,7 +43,7 @@ for (const marker of [
   "PluginRuntimeReadinessV1::SetupRequired",
   "PluginRuntimeReadinessV1::Unavailable",
 ]) {
-  if (!main.includes(marker)) {
+  if (!backend.includes(marker)) {
     throw new Error(`desktop Plugin Manager P3 backend marker missing: ${marker}`);
   }
 }
