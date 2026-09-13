@@ -1,7 +1,7 @@
 use omnicreator_core::{
     assemble_creator_production_pack_v1, derive_creator_run_coordinator_v1,
     load_latest_creator_content_scene_v1, load_latest_creator_content_v1, Artifact, ArtifactStore,
-    CreatorContentSceneOutcomeV1, CreatorContentSceneOptionsV1, CreatorContentV1, CreatorInputV1,
+    CreatorContentSceneOptionsV1, CreatorContentSceneOutcomeV1, CreatorContentV1, CreatorInputV1,
     CreatorProductionPackOptionsV1, CreatorRunCoordinatorV1, EffectiveStudioPackV1, Project,
     StateStore, StepStatus, WorkflowStep, Workspace, WorkspaceSession,
     CREATOR_STEP_CONTENT_PREPARE_V1, CREATOR_STEP_PRODUCTION_PACK_V1, CREATOR_STEP_SCENE_PLAN_V1,
@@ -150,12 +150,9 @@ impl<'a> CreatorRunControlServiceV1<'a> {
         }
 
         let mut progressed = false;
-        let mut content_state = load_latest_creator_content_v1(
-            &self.store,
-            &self.artifacts,
-            project_id,
-        )
-        .map_err(ControlErrorV1::from)?;
+        let mut content_state =
+            load_latest_creator_content_v1(&self.store, &self.artifacts, project_id)
+                .map_err(ControlErrorV1::from)?;
         let input_changed = match (&request.input, &content_state) {
             (Some(input), Some((content, _))) => content.source != *input,
             (Some(_), None) => true,
@@ -172,19 +169,11 @@ impl<'a> CreatorRunControlServiceV1<'a> {
                     "creator topic or script is required until Content has a verified canonical artifact",
                 )
             })?;
-            runtime.run_content_v1(
-                &mut self.store,
-                &self.artifacts,
-                project_id,
-                input,
-            )?;
+            runtime.run_content_v1(&mut self.store, &self.artifacts, project_id, input)?;
             progressed = true;
-            content_state = load_latest_creator_content_v1(
-                &self.store,
-                &self.artifacts,
-                project_id,
-            )
-            .map_err(ControlErrorV1::from)?;
+            content_state =
+                load_latest_creator_content_v1(&self.store, &self.artifacts, project_id)
+                    .map_err(ControlErrorV1::from)?;
         }
 
         let (content, content_artifact) = content_state.ok_or_else(|| {
@@ -194,13 +183,10 @@ impl<'a> CreatorRunControlServiceV1<'a> {
             )
         })?;
 
-        let mut creator = load_latest_creator_content_scene_v1(
-            &self.store,
-            &self.artifacts,
-            project_id,
-        )
-        .map_err(ControlErrorV1::from)?
-        .filter(|value| value.content_artifact.artifact_id == content_artifact.artifact_id);
+        let mut creator =
+            load_latest_creator_content_scene_v1(&self.store, &self.artifacts, project_id)
+                .map_err(ControlErrorV1::from)?
+                .filter(|value| value.content_artifact.artifact_id == content_artifact.artifact_id);
         if creator.is_none() {
             if !self.automatic_execution_enabled_v1(project_id, CREATOR_STEP_SCENE_PLAN_V1)? {
                 return self.outcome_v1(project_id, progressed);
@@ -214,12 +200,9 @@ impl<'a> CreatorRunControlServiceV1<'a> {
                 &CreatorContentSceneOptionsV1::default(),
             )?;
             progressed = true;
-            creator = load_latest_creator_content_scene_v1(
-                &self.store,
-                &self.artifacts,
-                project_id,
-            )
-            .map_err(ControlErrorV1::from)?;
+            creator =
+                load_latest_creator_content_scene_v1(&self.store, &self.artifacts, project_id)
+                    .map_err(ControlErrorV1::from)?;
         }
         let creator = creator.ok_or_else(|| {
             ControlErrorV1::new(
@@ -263,8 +246,7 @@ impl<'a> CreatorRunControlServiceV1<'a> {
             }
         }
 
-        let production_step =
-            self.require_step_v1(project_id, CREATOR_STEP_PRODUCTION_PACK_V1)?;
+        let production_step = self.require_step_v1(project_id, CREATOR_STEP_PRODUCTION_PACK_V1)?;
         if production_step.status != StepStatus::Succeeded {
             if !self.automatic_execution_enabled_for_step_v1(&production_step)? {
                 return self.outcome_v1(project_id, progressed);
@@ -295,9 +277,7 @@ impl<'a> CreatorRunControlServiceV1<'a> {
             .list_project_steps(project_id)
             .map_err(ControlErrorV1::from)?
             .into_iter()
-            .find(|step| {
-                step.step == step_key && step.unit == CREATOR_WORKFLOW_UNIT_PROJECT_V1
-            })
+            .find(|step| step.step == step_key && step.unit == CREATOR_WORKFLOW_UNIT_PROJECT_V1)
             .ok_or_else(|| {
                 ControlErrorV1::new(
                     ControlErrorCodeV1::InvalidTransition,
@@ -331,12 +311,9 @@ impl<'a> CreatorRunControlServiceV1<'a> {
         project_id: &str,
         progressed: bool,
     ) -> ControlResultV1<CreatorRunControlOutcomeV1> {
-        let coordinator = derive_creator_run_coordinator_v1(
-            &self.store,
-            &self.artifacts,
-            project_id,
-        )
-        .map_err(ControlErrorV1::from)?;
+        let coordinator =
+            derive_creator_run_coordinator_v1(&self.store, &self.artifacts, project_id)
+                .map_err(ControlErrorV1::from)?;
         Ok(CreatorRunControlOutcomeV1 {
             schema: CREATOR_RUN_CONTROL_SCHEMA_V1.to_owned(),
             version: CREATOR_RUN_CONTROL_VERSION_V1,
