@@ -101,7 +101,10 @@ fn auto_off_still_accepts_manual_result_and_project_review_accepts_project_filte
         "",
     );
     assert_eq!(provided.exit_code, 0, "{}", provided.output);
-    assert_eq!(json(&provided)["data"]["data"]["content"]["script"], request.script);
+    assert_eq!(
+        json(&provided)["data"]["data"]["content"]["script"],
+        request.script
+    );
 
     let policies = run(
         args(&root, &["workflow", "status", "--project", &project_id]),
