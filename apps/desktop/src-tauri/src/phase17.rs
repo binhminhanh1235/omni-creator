@@ -1,5 +1,5 @@
 #[tauri::command]
-pub(super) fn workflow_step_execution_policies(
+fn workflow_step_execution_policies(
     state: State<'_, DesktopState>,
     project_id: String,
 ) -> Result<Vec<omnicreator_core::WorkflowStepExecutionPolicyV1>, String> {
@@ -9,7 +9,7 @@ pub(super) fn workflow_step_execution_policies(
 }
 
 #[tauri::command]
-pub(super) fn set_workflow_step_automatic_execution(
+fn set_workflow_step_automatic_execution(
     state: State<'_, DesktopState>,
     step_id: String,
     enabled: bool,
@@ -37,7 +37,7 @@ fn workflow_step_auto_enabled_phase17(
 }
 
 #[tauri::command]
-pub(super) fn start_creator_production_phase17(
+fn start_creator_production_phase17(
     app: AppHandle,
     state: State<'_, DesktopState>,
     project_id: String,
