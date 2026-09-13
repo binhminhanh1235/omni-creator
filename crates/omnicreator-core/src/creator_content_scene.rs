@@ -405,16 +405,7 @@ impl CreatorLlmExecutorV1 for LlmGatewayClient {
     }
 }
 
-pub fn run_creator_content_scene_v1(
-    state_store: &mut StateStore,
-    artifact_store: &ArtifactStore,
-    llm: &impl CreatorLlmExecutorV1,
-    project_id: &str,
-    input: &CreatorInputV1,
-    options: &CreatorContentSceneOptionsV1,
-) -> Result<CreatorContentSceneOutcomeV1> {
-    input.validate_v1()?;
-    options.validate_v1()?;
+fn validate_creator_project_v1(state_store: &StateStore, project_id: &str) -> Result<crate::Project> {
     let project = state_store.get_project(project_id)?;
     if !matches!(
         project.studio_pack.as_deref(),
@@ -424,11 +415,23 @@ pub fn run_creator_content_scene_v1(
             "creator content orchestration requires a Project bound to a Studio Pack".to_owned(),
         ));
     }
+    Ok(project)
+}
 
-    let (content_step, scene_step) = require_creator_p0_steps_v1(state_store, project_id)?;
-
+/// Run only the canonical Content stage. This is used by Phase 17 so Content
+/// can remain ON while Scene Plan automatic execution is independently OFF.
+pub fn run_creator_content_stage_v1(
+    state_store: &mut StateStore,
+    artifact_store: &ArtifactStore,
+    llm: &impl CreatorLlmExecutorV1,
+    project_id: &str,
+    input: &CreatorInputV1,
+) -> Result<(CreatorContentV1, Artifact, bool)> {
+    input.validate_v1()?;
+    let project = validate_creator_project_v1(state_store, project_id)?;
+    let (content_step, _) = require_creator_p0_steps_v1(state_store, project_id)?;
     let content_hash = creator_content_input_hash_v1(&project.id, project.script_version, input)?;
-    let (content, content_artifact, content_cache_hit) = run_content_stage_v1(
+    let outcome = run_content_stage_v1(
         state_store,
         artifact_store,
         llm,
@@ -436,30 +439,81 @@ pub fn run_creator_content_scene_v1(
         input,
         &content_hash,
     )?;
-
     state_store.refresh_ready_steps(project_id)?;
+    Ok(outcome)
+}
+
+/// Run only the canonical Scene Plan stage against an already verified Content
+/// artifact. This preserves independent ON/OFF control without changing any
+/// Project/Job/Attempt/Artifact contract.
+pub fn run_creator_scene_stage_v1(
+    state_store: &mut StateStore,
+    artifact_store: &ArtifactStore,
+    llm: &impl CreatorLlmExecutorV1,
+    project_id: &str,
+    content: &CreatorContentV1,
+    content_artifact: &Artifact,
+    options: &CreatorContentSceneOptionsV1,
+) -> Result<(CreatorScenePlanV1, Artifact, bool)> {
+    options.validate_v1()?;
+    content.validate_v1()?;
+    if content.project_id != project_id || content_artifact.project_id.as_deref() != Some(project_id)
+    {
+        return Err(Error::InvalidContract(
+            "creator content identity must match the requested project".to_owned(),
+        ));
+    }
+    validate_creator_project_v1(state_store, project_id)?;
+    state_store.refresh_ready_steps(project_id)?;
+    let (_, scene_step) = require_creator_p0_steps_v1(state_store, project_id)?;
     let scene_step = state_store.get_step(&scene_step.step_id)?;
     if scene_step.status == StepStatus::NotReady {
         return Err(Error::InvalidTransition(
             "scene.plan remained NOT_READY after content.prepare succeeded".to_owned(),
         ));
     }
-
-    let scene_hash = creator_scene_input_hash_v1(&content_artifact, options)?;
-    let (scene_plan, scene_plan_artifact, scene_plan_cache_hit) = run_scene_stage_v1(
+    let scene_hash = creator_scene_input_hash_v1(content_artifact, options)?;
+    let outcome = run_scene_stage_v1(
         state_store,
         artifact_store,
         llm,
         &scene_step,
         SceneStageInputV1 {
-            content: &content,
-            content_artifact: &content_artifact,
+            content,
+            content_artifact,
             options,
             input_hash: &scene_hash,
         },
     )?;
-
     state_store.refresh_ready_steps(project_id)?;
+    Ok(outcome)
+}
+
+pub fn run_creator_content_scene_v1(
+    state_store: &mut StateStore,
+    artifact_store: &ArtifactStore,
+    llm: &impl CreatorLlmExecutorV1,
+    project_id: &str,
+    input: &CreatorInputV1,
+    options: &CreatorContentSceneOptionsV1,
+) -> Result<CreatorContentSceneOutcomeV1> {
+    options.validate_v1()?;
+    let (content, content_artifact, content_cache_hit) = run_creator_content_stage_v1(
+        state_store,
+        artifact_store,
+        llm,
+        project_id,
+        input,
+    )?;
+    let (scene_plan, scene_plan_artifact, scene_plan_cache_hit) = run_creator_scene_stage_v1(
+        state_store,
+        artifact_store,
+        llm,
+        project_id,
+        &content,
+        &content_artifact,
+        options,
+    )?;
 
     Ok(CreatorContentSceneOutcomeV1 {
         content,
@@ -1170,6 +1224,49 @@ mod tests {
         assert_eq!(first[0].id, "S001");
         assert_eq!(first[2].id, "S003");
         assert_eq!(first[1].text, "Second beat?");
+    }
+
+    #[test]
+    fn content_and_scene_stages_can_execute_independently() {
+        let (_temp, _workspace, mut state, artifacts, project_id) = fixture();
+        let llm = MockLlm::with_script("First visual beat. Second visual beat.");
+        let input = CreatorInputV1::topic("Independent stage execution");
+
+        let (content, content_artifact, _) = run_creator_content_stage_v1(
+            &mut state,
+            &artifacts,
+            &llm,
+            &project_id,
+            &input,
+        )
+        .unwrap();
+        assert_eq!(llm.script_calls.get(), 1);
+        assert_eq!(llm.scene_calls.get(), 0);
+        let steps = state.list_project_steps(&project_id).unwrap();
+        assert_eq!(
+            find_project_step_v1(&steps, CREATOR_STEP_CONTENT_PREPARE_V1)
+                .unwrap()
+                .status,
+            StepStatus::Succeeded
+        );
+        assert_eq!(
+            find_project_step_v1(&steps, CREATOR_STEP_SCENE_PLAN_V1)
+                .unwrap()
+                .status,
+            StepStatus::Ready
+        );
+
+        run_creator_scene_stage_v1(
+            &mut state,
+            &artifacts,
+            &llm,
+            &project_id,
+            &content,
+            &content_artifact,
+            &CreatorContentSceneOptionsV1::default(),
+        )
+        .unwrap();
+        assert_eq!(llm.scene_calls.get(), content.segments.len());
     }
 
     #[test]
