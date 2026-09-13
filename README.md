@@ -60,6 +60,13 @@ Current primary setup:
 
 ## Documentation
 
+### User guides
+
+- [Complete User Guide (English)](docs/14-user-guide-en.md)
+- [Hướng dẫn sử dụng đầy đủ (Tiếng Việt)](docs/15-user-guide-vi.md)
+
+### Architecture and implementation
+
 - [Product Vision](docs/00-product-vision.md)
 - [System Architecture](docs/01-system-architecture.md)
 - [Plugin Architecture](docs/02-plugin-architecture.md)
@@ -73,6 +80,7 @@ Current primary setup:
 - [Roadmap](docs/10-roadmap.md)
 - [Architecture Decisions / Non-goals](docs/11-architecture-decisions.md)
 - [Portable Data Root & Device Handoff](docs/12-portable-data-root.md)
+- [Review Center Universal Recovery](docs/13-review-center-recovery.md)
 
 ## MVP definition
 
