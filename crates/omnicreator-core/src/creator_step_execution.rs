@@ -63,10 +63,8 @@ pub fn run_creator_content_stage_v1(
         &input_hash,
     )?;
     state_store.set_step_status(&step.step_id, StepStatus::Running)?;
-    let attempt = state_store.start_attempt(
-        &job.job_id,
-        Some(CREATOR_CONTENT_WORKER_PHASE17_V1),
-    )?;
+    let attempt =
+        state_store.start_attempt(&job.job_id, Some(CREATOR_CONTENT_WORKER_PHASE17_V1))?;
 
     let result = (|| {
         let script = llm.create_script_v1(input)?;
@@ -131,7 +129,8 @@ pub fn run_creator_scene_stage_v1(
     require_creator_project_v1(state_store, project_id)?;
     content.validate_v1()?;
     options.validate_v1()?;
-    if content.project_id != project_id || content_artifact.project_id.as_deref() != Some(project_id)
+    if content.project_id != project_id
+        || content_artifact.project_id.as_deref() != Some(project_id)
     {
         return Err(Error::InvalidContract(
             "creator content identity must match the requested project".to_owned(),
@@ -259,7 +258,10 @@ pub fn run_creator_scene_stage_v1(
     }
 }
 
-fn require_creator_project_v1(state_store: &StateStore, project_id: &str) -> Result<crate::Project> {
+fn require_creator_project_v1(
+    state_store: &StateStore,
+    project_id: &str,
+) -> Result<crate::Project> {
     let project = state_store.get_project(project_id)?;
     if project.studio_pack.as_deref().map_or(true, str::is_empty) {
         return Err(Error::InvalidContract(
@@ -277,9 +279,7 @@ fn require_creator_step_v1(
     state_store
         .list_project_steps(project_id)?
         .into_iter()
-        .find(|step| {
-            step.step == step_key && step.unit == CREATOR_WORKFLOW_UNIT_PROJECT_V1
-        })
+        .find(|step| step.step == step_key && step.unit == CREATOR_WORKFLOW_UNIT_PROJECT_V1)
         .ok_or_else(|| {
             Error::InvalidContract(format!(
                 "creator workflow step {step_key}/{} is missing; materialize Phase 15 P0 first",
