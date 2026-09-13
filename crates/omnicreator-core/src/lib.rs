@@ -60,6 +60,7 @@ pub mod voice_production;
 pub mod voice_takes;
 pub mod voice_timing;
 pub mod workflow;
+pub mod workflow_step_controls;
 pub mod workspace;
 
 pub use artifact_store::ArtifactStore;
@@ -122,4 +123,5 @@ pub use voice_burst::*;
 pub use voice_production::*;
 pub use voice_takes::*;
 pub use voice_timing::*;
+pub use workflow_step_controls::*;
 pub use workspace::{Workspace, WorkspaceManifest, WorkspaceWriter, WriterLease};
