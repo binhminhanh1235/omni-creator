@@ -9,10 +9,13 @@ const core = fs.readFileSync(
   path.join(root, "crates/omnicreator-core/src/review_center_recovery.rs"),
   "utf8",
 );
-const backend = fs.readFileSync(
-  path.join(root, "apps/desktop/src-tauri/src/main.rs"),
-  "utf8",
-);
+const backend = [
+  "apps/desktop/src-tauri/src/main.rs",
+  "apps/desktop/src-tauri/src/application.rs",
+  "apps/desktop/src-tauri/src/phase17.rs",
+]
+  .map((file) => fs.readFileSync(path.join(root, file), "utf8"))
+  .join("\n");
 
 for (const asset of ["review-center-p6.css", "review-center-p6.js"]) {
   if (!index.includes(asset)) {
