@@ -4,9 +4,13 @@ import process from "node:process";
 
 const root = process.cwd();
 const appPath = path.join(root, "apps/desktop/dist/app.js");
-const backendPath = path.join(root, "apps/desktop/src-tauri/src/main.rs");
+const backendPaths = [
+  path.join(root, "apps/desktop/src-tauri/src/main.rs"),
+  path.join(root, "apps/desktop/src-tauri/src/application.rs"),
+  path.join(root, "apps/desktop/src-tauri/src/phase17.rs"),
+];
 const app = fs.readFileSync(appPath, "utf8");
-const backend = fs.readFileSync(backendPath, "utf8");
+const backend = backendPaths.map((file) => fs.readFileSync(file, "utf8")).join("\n");
 
 const appMarkers = [
   "Start / Resume",
