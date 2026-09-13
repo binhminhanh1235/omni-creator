@@ -106,7 +106,7 @@ impl CommandArgsV1 {
             .ok_or_else(|| invalid_input_v1(format!("missing required {flag}")))
     }
 
-    fn finish(self) -> ControlResultV1<()> {
+    fn finish(&self) -> ControlResultV1<()> {
         if self.items.is_empty() {
             Ok(())
         } else {
