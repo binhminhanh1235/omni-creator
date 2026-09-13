@@ -296,10 +296,7 @@ pub fn derive_creator_run_coordinator_v1(
     }
 }
 
-fn automatic_execution_enabled_v1(
-    state_store: &StateStore,
-    step: &WorkflowStep,
-) -> Result<bool> {
+fn automatic_execution_enabled_v1(state_store: &StateStore, step: &WorkflowStep) -> Result<bool> {
     Ok(state_store
         .workflow_step_execution_policy_v1(&step.step_id)?
         .automatic_execution_enabled)
