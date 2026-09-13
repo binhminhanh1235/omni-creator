@@ -1,6 +1,4 @@
-use crate::{
-    ComputeRuntimeControlSnapshotV1, ControlResultV1, PluginRuntimeControlSnapshotV1,
-};
+use crate::{ComputeRuntimeControlSnapshotV1, ControlResultV1, PluginRuntimeControlSnapshotV1};
 
 /// Small transport-neutral bridge for machine-local runtime inspection.
 ///
