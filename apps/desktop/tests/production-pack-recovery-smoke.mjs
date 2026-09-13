@@ -4,10 +4,12 @@ import process from "node:process";
 
 const root = process.cwd();
 const app = fs.readFileSync(path.join(root, "apps/desktop/dist/app.js"), "utf8");
-const backend = fs.readFileSync(
+const backendPaths = [
   path.join(root, "apps/desktop/src-tauri/src/main.rs"),
-  "utf8",
-);
+  path.join(root, "apps/desktop/src-tauri/src/application.rs"),
+  path.join(root, "apps/desktop/src-tauri/src/phase17.rs"),
+];
+const backend = backendPaths.map((file) => fs.readFileSync(file, "utf8")).join("\n");
 
 const appMarkers = [
   "Production Recovery",
