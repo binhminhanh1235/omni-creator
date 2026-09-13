@@ -96,7 +96,8 @@ Workflow and creator control:
 - alias: `step auto ...`
 - `creator state`
 - `creator start|resume`
-- `review list`
+- `review list` for the workspace Review Center
+- `review list --project <id>` for the same typed Review Center projection scoped to one project
 
 Manual/external takeover:
 
@@ -123,7 +124,7 @@ Complex typed mutations accept exactly one of:
 --input-file <json-file>
 ```
 
-The JSON is deserialized directly into the versioned application request DTO. This avoids inventing a parallel CLI data model and lets scripts keep large content out of shell history.
+The JSON is deserialized directly into the versioned application request DTO. This avoids inventing a parallel CLI data model and lets scripts keep large content out of shell history. P1 acceptance exercises both input modes.
 
 ## Creator Start / Resume runtime
 
@@ -135,6 +136,7 @@ The CLI runtime adapter may supply machine-local execution only:
 - Content/Scene automatic execution uses the existing LLMGateway core adapter when `--llmgateway-config` is supplied.
 - If CLI-local visual/plugin or voice/ComputeProvider execution is unavailable, the adapter returns machine-readable `capability_unavailable`. It does not pretend that a provider ran or mark the canonical step successful.
 - Manual/external Phase 16 takeover remains available and a fully manual project can resume through ProductionPack/Resolve export without LLMGateway, plugins, TTS, or GPU.
+- Turning automatic execution OFF remains Phase 17 policy only. Manual/external canonical results can still satisfy that step; OFF is never translated into SKIPPED or SUCCEEDED.
 
 ## Safety and portability
 
@@ -149,8 +151,11 @@ P1 is DONE / VERIFIED only after:
 3. CLI and direct Application Control Service return equivalent canonical project projection for the same state;
 4. read-only mutation returns structured `read_only` and exit code 4;
 5. automatic Start/Resume without configured provider returns a typed provider/capability result without Desktop or a hidden network fallback;
-6. existing Plugins/Desktop regressions stay green;
-7. guarded squash merge uses the verified exact PR head;
-8. post-merge `main` CI passes on the exact merge SHA.
+6. workflow AUTO OFF remains disabled while a canonical manual result can satisfy the step;
+7. both `--stdin` and `--input-file` typed payload paths are exercised;
+8. project-scoped Review Center inspection works through the shared application projection;
+9. existing Plugins/Desktop regressions stay green;
+10. guarded squash merge uses the verified exact PR head;
+11. post-merge `main` CI passes on the exact merge SHA.
 
 P2 MCP, P3 provider abstraction/OpenRouter, P4 agent packages, and P5 MCP Tasks/hardening are not part of P1.
