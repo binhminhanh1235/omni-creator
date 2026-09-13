@@ -263,7 +263,7 @@ fn shared_start_resume_assembles_manual_flow_without_provider_calls() {
     assert!(outcome.progressed);
     assert_eq!(outcome.coordinator.action, CreatorRunActionV1::Export);
 
-    let mut service = ApplicationControlService::for_writer(&session).unwrap();
+    let service = ApplicationControlService::for_writer(&session).unwrap();
     let snapshot = service
         .project_status_v1(&ProjectIdRequestV1 {
             project_id: project_id.clone(),
