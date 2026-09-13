@@ -493,8 +493,7 @@ fn execute_service_command_v1(
             let project_id = args.take_value("--project")?;
             args.finish()?;
             if let Some(project_id) = project_id {
-                let snapshot =
-                    service.project_status_v1(&ProjectIdRequestV1 { project_id })?;
+                let snapshot = service.project_status_v1(&ProjectIdRequestV1 { project_id })?;
                 value_v1(ControlResponseV1::new(
                     ControlOperationV1::ReviewCenter,
                     snapshot.data.review_center,
