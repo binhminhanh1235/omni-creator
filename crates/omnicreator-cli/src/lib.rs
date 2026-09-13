@@ -8,20 +8,20 @@ use std::{
 use omnicreator_application::{
     ApplicationControlService, ApplicationRuntimeInspectorV1, AssetLibraryVisualRequestV1,
     BindStudioPackRequestV1, ComputeRuntimeControlSnapshotV1, ControlErrorCodeV1, ControlErrorV1,
-    ControlResultV1, CreatorRunControlServiceV1, CreatorRunRuntimeV1, ExternalVisualResultRequestV1,
-    ExternalVoiceResultRequestV1, ManualContentImportRequestV1, ManualContentRequestV1,
-    ManualScenePlanImportRequestV1, ManualScenePlanRequestV1, ManualVisualRequestV1,
-    ManualVoiceRequestV1, PluginRuntimeControlSnapshotV1, ProjectIdRequestV1,
-    RecoveryFileRequestV1, RecoveryVoiceBundleRequestV1, RenameProjectRequestV1,
-    ReplaceVoiceTimingRequestV1, SetWorkflowAutomaticExecutionRequestV1,
+    ControlResultV1, CreatorRunControlServiceV1, CreatorRunRuntimeV1,
+    ExternalVisualResultRequestV1, ExternalVoiceResultRequestV1, ManualContentImportRequestV1,
+    ManualContentRequestV1, ManualScenePlanImportRequestV1, ManualScenePlanRequestV1,
+    ManualVisualRequestV1, ManualVoiceRequestV1, PluginRuntimeControlSnapshotV1,
+    ProjectIdRequestV1, RecoveryFileRequestV1, RecoveryVoiceBundleRequestV1,
+    RenameProjectRequestV1, ReplaceVoiceTimingRequestV1, SetWorkflowAutomaticExecutionRequestV1,
     StartOrResumeCreatorRequestV1, CONTROL_CONTRACT_SCHEMA_V1, CONTROL_CONTRACT_VERSION_V1,
 };
 use omnicreator_core::{
     initial_studio_pack_catalog_v1, run_creator_content_stage_v1, run_creator_scene_stage_v1,
     Artifact, ArtifactStore, CreatorContentSceneOptionsV1, CreatorContentSceneOutcomeV1,
-    CreatorContentV1, CreatorInputV1, CreatorVisualPlanV1, EffectiveStudioPackV1,
-    LlmGatewayClient, LlmGatewayConfig, PortableStudioPackCatalogV1, Project, StateStore,
-    Workspace, WorkspaceSession,
+    CreatorContentV1, CreatorInputV1, CreatorVisualPlanV1, EffectiveStudioPackV1, LlmGatewayClient,
+    LlmGatewayConfig, PortableStudioPackCatalogV1, Project, StateStore, Workspace,
+    WorkspaceSession,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
@@ -409,9 +409,8 @@ fn execute_service_command_v1(
             let studio_pack = args.take_value("--studio-pack")?;
             args.finish()?;
             if let Some(studio_pack) = studio_pack {
-                let catalog = load_studio_pack_catalog_v1(
-                    invocation.global.studio_pack_catalog.as_deref(),
-                )?;
+                let catalog =
+                    load_studio_pack_catalog_v1(invocation.global.studio_pack_catalog.as_deref())?;
                 let pack = catalog
                     .resolve_v1(&studio_pack)
                     .map_err(ControlErrorV1::from)?;
@@ -426,10 +425,7 @@ fn execute_service_command_v1(
             let project_id = args.require_value("--project")?;
             let title = args.require_value("--title")?;
             args.finish()?;
-            value_v1(service.rename_project_v1(&RenameProjectRequestV1 {
-                project_id,
-                title,
-            })?)
+            value_v1(service.rename_project_v1(&RenameProjectRequestV1 { project_id, title })?)
         }
         ("project", "delete") => {
             let project_id = args.require_value("--project")?;
@@ -454,9 +450,7 @@ fn execute_service_command_v1(
         ("workflow", "status") => {
             let project_id = args.require_value("--project")?;
             args.finish()?;
-            value_v1(service.workflow_execution_policies_v1(&ProjectIdRequestV1 {
-                project_id,
-            })?)
+            value_v1(service.workflow_execution_policies_v1(&ProjectIdRequestV1 { project_id })?)
         }
         ("workflow", "set-auto") | ("step", "auto") => {
             let project_id = args.require_value("--project")?;
@@ -509,9 +503,7 @@ fn execute_service_command_v1(
         ("scene", "editor") => {
             let project_id = args.require_value("--project")?;
             args.finish()?;
-            value_v1(service.scene_plan_editor_v1(&ProjectIdRequestV1 {
-                project_id,
-            })?)
+            value_v1(service.scene_plan_editor_v1(&ProjectIdRequestV1 { project_id })?)
         }
         ("scene", "provide") => {
             let request: ManualScenePlanRequestV1 = read_payload_v1(&mut args, stdin)?;
@@ -587,23 +579,17 @@ fn execute_service_command_v1(
         ("production", "recovery") => {
             let project_id = args.require_value("--project")?;
             args.finish()?;
-            value_v1(service.production_recovery_v1(&ProjectIdRequestV1 {
-                project_id,
-            })?)
+            value_v1(service.production_recovery_v1(&ProjectIdRequestV1 { project_id })?)
         }
         ("production", "assemble") => {
             let project_id = args.require_value("--project")?;
             args.finish()?;
-            value_v1(service.assemble_production_pack_v1(&ProjectIdRequestV1 {
-                project_id,
-            })?)
+            value_v1(service.assemble_production_pack_v1(&ProjectIdRequestV1 { project_id })?)
         }
         ("production", "rebuild-export") | ("production", "export") => {
             let project_id = args.require_value("--project")?;
             args.finish()?;
-            value_v1(service.rebuild_and_export_production_v1(&ProjectIdRequestV1 {
-                project_id,
-            })?)
+            value_v1(service.rebuild_and_export_production_v1(&ProjectIdRequestV1 { project_id })?)
         }
         ("production", "repair-visual") => {
             let request: RecoveryFileRequestV1 = read_payload_v1(&mut args, stdin)?;
@@ -652,10 +638,8 @@ impl CliCreatorRunRuntimeV1 {
     ) -> ControlResultV1<Self> {
         let llm = match llmgateway_config {
             Some(path) => Some(
-                LlmGatewayClient::new(
-                    LlmGatewayConfig::load(path).map_err(ControlErrorV1::from)?,
-                )
-                .map_err(ControlErrorV1::from)?,
+                LlmGatewayClient::new(LlmGatewayConfig::load(path).map_err(ControlErrorV1::from)?)
+                    .map_err(ControlErrorV1::from)?,
             ),
             None => None,
         };
