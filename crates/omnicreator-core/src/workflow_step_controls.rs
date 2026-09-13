@@ -206,7 +206,7 @@ mod tests {
     #[test]
     fn disabling_rejects_active_project_work() {
         let temp = tempdir().unwrap();
-        let store = StateStore::open(temp.path().join("state.sqlite")).unwrap();
+        let mut store = StateStore::open(temp.path().join("state.sqlite")).unwrap();
         let project = store.create_project("active toggle guard").unwrap();
         let step = store
             .create_step(
@@ -220,7 +220,7 @@ mod tests {
         let job = store
             .create_job(&project.id, "tts.segment", "S001", "hash")
             .unwrap();
-        store.set_job_status(&job.job_id, StepStatus::Queued).unwrap();
+        store.start_attempt(&job.job_id, Some("test-worker")).unwrap();
 
         assert!(matches!(
             store.set_workflow_step_automatic_execution_v1(&step.step_id, false),
