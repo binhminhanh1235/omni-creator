@@ -50,7 +50,7 @@ impl ComputeProviderExecution for FakeExecutor {
             .filter(|entry| {
                 entry.provider_id == provider_id
                     && entry.session_id == session_id
-                    && after_sequence.map_or(true, |sequence| entry.sequence > sequence)
+                    && after_sequence.is_none_or(|sequence| entry.sequence > sequence)
             })
             .cloned()
             .collect())
