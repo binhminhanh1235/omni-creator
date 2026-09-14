@@ -6,7 +6,7 @@ This document records repository-level architecture/order only. GitHub issue sta
 
 ## Goal
 
-Make Desktop, CLI and future MCP adapters control the same canonical OmniCreator Project / WorkflowStep / Job / Attempt / ArtifactStore state without duplicating transport-specific workflow logic.
+Make Desktop, CLI and agent-facing MCP/CLI adapters control the same canonical OmniCreator Project / WorkflowStep / Job / Attempt / ArtifactStore state without duplicating transport-specific workflow logic.
 
 ```text
 Desktop
@@ -25,8 +25,8 @@ The control plane does not own a second scheduler, database, workflow engine or 
 | P0 | #100 | Shared Application Control Service + typed operation contracts | DONE / VERIFIED — PR #106 + corrective PR #107; post-merge CI #490 PASS |
 | P1 | #101 | Single-binary CLI + deterministic JSON output | DONE / VERIFIED — PR #108; post-merge CI #501 PASS |
 | P2 | #102 | MCP server v1 over stdio | DONE / VERIFIED — PR #109; post-merge CI #527 PASS |
-| P3 | #103 | Provider-neutral LLM abstraction + OpenRouter direct | IN PROGRESS — PR #110 / `feat/phase18-p3-llm-provider-openrouter` |
-| P4 | #104 | Agent skills/config/examples | NOT STARTED |
+| P3 | #103 | Provider-neutral LLM abstraction + OpenRouter direct | DONE / VERIFIED — PR #110; post-merge CI #563 PASS |
+| P4 | #104 | Agent skills/config/examples | IN PROGRESS — PR #111 / `feat/phase18-p4-agent-harness-packages` |
 | P5 | #105 | MCP Tasks, security, E2E parity, docs and hardening | NOT STARTED |
 
 Default sequence remains `P0 -> P1 -> P2 -> P3 -> P4 -> P5`.
@@ -39,7 +39,7 @@ Verified properties:
 
 - writable control services can only be built from the existing single-writer `WorkspaceSession`;
 - read-only inspection uses the existing read-only StateStore and application mutations fail with typed `read_only`;
-- versioned typed requests/results/errors are serde-safe for later JSON/MCP adapters;
+- versioned typed request/result/error contracts are serde-safe for later JSON/MCP adapters;
 - project/workflow/run/manual/external/recovery/production operations delegate to canonical core paths;
 - Creator Start/Resume sequencing and Phase 17 automatic-execution gates live in `CreatorRunControlServiceV1`, not Tauri;
 - machine-local LLM/plugin/ComputeProvider execution is injected through `CreatorRunRuntimeV1`;
@@ -63,7 +63,7 @@ P1 added one Rust CLI binary, `omnicreator`, as a transport adapter over the P0 
 
 Verified P1 evidence:
 
-- final exact head `4a07af1aba964823dc48b9795ec671a66d96bf0f`
+- final exact head `4a07af1aba964823dc48f9795ec671a66d96bf0f`
 - exact-head/merge tree `ddd72257abd132061f71441d599e390320662f84`
 - exact-head CI #500 / run `34799391242`: PASS
 - guarded squash merge/current verified main `b790feae93ccc0fa14619d3d1ec696ab0767178a`
@@ -101,44 +101,71 @@ P2 final evidence:
 
 Detailed P2 behavior is documented in `docs/19-mcp-control.md`.
 
-## P3 architecture checkpoint
+## P3 verified checkpoint
 
-P3 makes LLMGateway one supported creator-intelligence provider instead of the only transport and adds direct OpenRouter through an OpenAI-compatible adapter.
+P3 made LLMGateway one supported creator-intelligence provider instead of the only transport and added direct OpenRouter through an OpenAI-compatible adapter.
 
-Current architecture:
+Verified architecture:
 
 - `LlmProviderV1` defines provider-neutral chat/model/readiness behavior below shared creator execution;
-- `ConfiguredLlmProviderV1` selects an LLMGateway, OpenRouter, or generic OpenAI-compatible implementation from machine-local configuration;
-- legacy LLMGateway behavior is adapted behind `LlmGatewayProviderV1` so existing task/routing semantics remain available;
+- `ConfiguredLlmProviderV1` selects LLMGateway, OpenRouter, or generic OpenAI-compatible execution from machine-local configuration;
+- legacy LLMGateway behavior remains behind `LlmGatewayProviderV1`;
 - `OpenAiCompatibleProviderV1` uses standard `/chat/completions` and `/models` endpoints;
-- the explicit OpenRouter profile defaults to `https://openrouter.ai/api/v1`, `OPENROUTER_API_KEY`, and `openrouter/auto`;
+- the OpenRouter profile defaults to `https://openrouter.ai/api/v1`, `OPENROUTER_API_KEY`, and `openrouter/auto`;
 - provider config stores only an API-key environment-variable name, never the secret value;
-- structured-output extraction/repair and SceneIntent validation remain OmniCreator-owned and provider-neutral;
+- structured-output extraction/repair, SceneIntent validation, and quality/reasoning remain OmniCreator-owned and provider-neutral;
 - provider transport/config/API/response failures are normalized before crossing the Application Control boundary;
-- sanitized LLM readiness is included in Application runtime inspection and exposed consistently through CLI, MCP and Desktop;
-- CLI/MCP prefer `--llm-provider-config <path>` while retaining legacy `--llmgateway-config <path>` compatibility; the two are mutually exclusive;
-- Desktop settings can select LLMGateway, OpenRouter, or generic OpenAI-compatible execution without turning provider choice into canonical project state;
+- sanitized LLM readiness is exposed consistently through CLI, MCP and Desktop;
+- CLI/MCP prefer `--llm-provider-config <path>` while retaining legacy `--llmgateway-config <path>` compatibility;
+- Desktop settings select LLMGateway, OpenRouter, or generic OpenAI-compatible execution without turning provider choice into canonical project state;
 - provider-free manual Content + ScenePlan takeover remains valid.
 
-Deterministic offline acceptance covers direct OpenRouter-profile Content, structured SceneIntent and quality/reasoning execution against a local HTTP mock. Captured requests must use the OpenAI-compatible endpoint and Bearer auth while containing neither `llmgateway_task` nor any `/_llmgateway/*` call. This proves the protocol contract without claiming a live OpenRouter account/key test.
+P3 final evidence:
+
+- PR #110 final exact head `81e66863ef42188004631fa1566ef07204b699c2`
+- exact-head tree `d0ba79745eec60327313bd821c6d4511e99d1bc6`
+- exact-head CI #562 / run `34814316035`: PASS across Rust / Plugins / Desktop
+- guarded squash merge `8490e67e48e985a497473f3c3c9ea39ea158b9dd`
+- merge tree `d0ba79745eec60327313bd821c6d4511e99d1bc6`
+- post-merge CI #563 / run `34818696412`: PASS across Rust / Plugins / Desktop
+
+Deterministic offline acceptance covers direct OpenRouter-profile Content, structured SceneIntent and quality/reasoning execution against a local HTTP mock. It proves the protocol contract without claiming a live OpenRouter account/key test.
 
 Detailed P3 behavior is documented in `docs/20-llm-providers.md`.
 
-## P3 verification gate
+## P4 architecture checkpoint
 
-P3 is not DONE / VERIFIED until all of these hold on the exact PR head and again after merge:
+P4 packages the already-verified CLI/MCP control plane for mainstream agent harnesses without introducing vendor-owned workflow truth.
 
-1. provider-neutral LLM abstraction drives Content, SceneIntent and quality/reasoning paths;
-2. existing LLMGateway behavior remains green behind its adapter;
-3. direct OpenRouter-profile protocol acceptance succeeds without an LLMGateway process;
-4. OpenRouter requests never use `/_llmgateway/health`, `/_llmgateway/routes/explain`, or `llmgateway_task`;
-5. structured-output repair and canonical SceneIntent validation remain provider-neutral;
-6. provider config/readiness exposes no credential value or raw auth header and does not enter portable Data Root orchestration state;
-7. CLI and MCP can use `--llm-provider-config` and inspect sanitized LLM readiness;
-8. Desktop can select the provider-neutral execution mode while preserving manual fallback;
-9. provider-free manual Script + ScenePlan remains usable;
-10. Rust, Plugins, CLI/MCP and Desktop regressions all pass on the exact PR head;
-11. guarded squash merge uses the verified exact head;
-12. post-merge CI passes on the exact merge SHA before #103 is marked DONE / VERIFIED.
+Current implementation:
 
-P4/P5 implementation must not start during the P3 verification run.
+- Codex and Google Antigravity share the repository skill at `.agents/skills/omnicreator/SKILL.md`;
+- Claude Code uses a byte-identical copy at `.claude/skills/omnicreator/SKILL.md`;
+- checked-in Codex, Claude Code and Antigravity examples all launch the same local stdio process: `omnicreator --data-root <path> mcp serve`;
+- direct OpenRouter and LLMGateway provider examples use the P3 machine-local config schemas and contain only environment-variable names, never credential values;
+- the skill requires inspect-before-mutate, returned canonical IDs, re-inspection after mutation, truthful blocker handling, resume/recovery over state recreation, and canonical manual/external takeover;
+- the skill forbids direct SQLite/Data Root/ArtifactStore state mutation and fabricated provider/plugin/TTS/GPU/ComputeProvider success;
+- English and Vietnamese setup guides plus deterministic CLI examples cover all-auto, mixed auto/manual, fully manual, and recovery workflows;
+- `agent-harness/fixtures/blocked-workflow-recovery.json` records a provider-free recovery transcript contract that preserves `provider_unavailable`, turns a step AUTO OFF, satisfies it manually, and re-inspects before continuing;
+- `crates/omnicreator-cli/tests/agent_harnesses.rs` byte-compares skill copies, validates provider config through the real core schema, checks secret-like markers and fixture sequencing, then launches the real `omnicreator ... mcp serve` child with the official rmcp client to prove every fixture tool exists on the actual MCP server;
+- the pre-existing MCP E2E suite remains the executable proof that the provider-free fully manual flow can reach ProductionPack/export.
+
+Detailed P4 setup and safety guidance is in `docs/21-agent-harnesses.md` and `agent-harness/README.md`.
+
+## P4 verification gate
+
+P4 is not DONE / VERIFIED until all of these hold on the exact PR head and again after merge:
+
+1. Codex, Claude Code, and Antigravity each have a documented local MCP configuration path to the real single-binary stdio server;
+2. repository skills encode the inspect/mutate/re-inspect safety contract and cannot drift between `.agents` and `.claude` copies;
+3. OpenRouter and LLMGateway examples validate through the P3 provider schema without containing secret values;
+4. all-auto, mixed auto/manual, fully manual, AUTO OFF, Review Center/recovery, and provider selection behavior are documented;
+5. the blocked-workflow fixture preserves truthful `provider_unavailable` and manual recovery semantics;
+6. a real official rmcp client launches the actual binary and proves every fixture tool name exists;
+7. existing provider-free MCP full-manual ProductionPack/export E2E remains green;
+8. no vendor-specific workflow database, remote MCP HTTP, arbitrary shell control tool, or canonical-state bypass is introduced;
+9. Rust, Plugins, CLI/MCP and Desktop regressions pass on the exact PR head;
+10. guarded squash merge uses the verified exact head;
+11. post-merge CI passes on the exact merge SHA before #104 is marked DONE / VERIFIED.
+
+P5 MCP Tasks/security/final hardening remains out of scope until P4 is closed and verified.
