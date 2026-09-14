@@ -1,12 +1,11 @@
 use chrono::Utc;
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 use crate::{Artifact, Attempt, Error, Job, Result, StateStore, StepStatus};
 
 pub const CONTROL_TASK_STEP_PREFIX_V1: &str = "control.agent.";
-pub const CONTROL_TASK_CREATOR_START_OR_RESUME_V1: &str =
-    "control.agent.creator-start-or-resume";
+pub const CONTROL_TASK_CREATOR_START_OR_RESUME_V1: &str = "control.agent.creator-start-or-resume";
 pub const CONTROL_TASK_UNIT_PROJECT_V1: &str = "project";
 pub const CONTROL_TASK_RESULT_ARTIFACT_TYPE_V1: &str = "control.task-result.v1";
 
@@ -79,7 +78,10 @@ impl StateStore {
             return self.get_control_task_v1(task_id);
         }
 
-        if matches!(job.status, StepStatus::Fatal | StepStatus::Stale | StepStatus::Skipped) {
+        if matches!(
+            job.status,
+            StepStatus::Fatal | StepStatus::Stale | StepStatus::Skipped
+        ) {
             return Err(Error::InvalidTransition(format!(
                 "control task {task_id}: {} cannot be cancelled",
                 job.status.as_str()
@@ -98,9 +100,11 @@ impl StateStore {
 
         if let Some((attempt_id, started_at)) = running_attempt {
             let started_at = chrono::DateTime::parse_from_rfc3339(&started_at)
-                .map_err(|error| Error::InvalidJobState(format!(
-                    "control task attempt has invalid started_at: {error}"
-                )))?
+                .map_err(|error| {
+                    Error::InvalidJobState(format!(
+                        "control task attempt has invalid started_at: {error}"
+                    ))
+                })?
                 .with_timezone(&Utc);
             let runtime_seconds = now
                 .signed_duration_since(started_at)
@@ -121,8 +125,6 @@ impl StateStore {
         self.get_control_task_v1(task_id)
     }
 }
-
-use rusqlite::OptionalExtension;
 
 #[cfg(test)]
 mod tests {
@@ -170,7 +172,9 @@ mod tests {
         let workspace = Workspace::create(temp.path().join("data")).unwrap();
         let mut store = StateStore::open(workspace.sqlite_path()).unwrap();
         let project = store.create_project("Ordinary").unwrap();
-        let job = store.create_job(&project.id, "voice", "S01", "hash").unwrap();
+        let job = store
+            .create_job(&project.id, "voice", "S01", "hash")
+            .unwrap();
         assert!(store.get_control_task_v1(&job.job_id).is_err());
         assert!(store.cancel_control_task_v1(&job.job_id).is_err());
     }
