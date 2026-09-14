@@ -1,0 +1,15 @@
+{
+  "schema": "omnicreator.llm-provider-config",
+  "version": 1,
+  "provider": {
+    "kind": "llm_gateway",
+    "config": {
+      "schema": "omnicreator.llmgateway-config",
+      "schema_version": 1,
+      "base_url": "http://127.0.0.1:7331",
+      "api_key_env": "LLMGATEWAY_API_KEY",
+      "default_model": "llmgateway-auto",
+      "timeout_seconds": 60
+    }
+  }
+}

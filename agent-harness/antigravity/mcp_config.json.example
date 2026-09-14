@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "omnicreator": {
+      "command": "omnicreator",
+      "args": [
+        "--data-root",
+        "/ABSOLUTE/PATH/TO/OMNICREATOR_DATA_ROOT",
+        "mcp",
+        "serve"
+      ]
+    }
+  }
+}

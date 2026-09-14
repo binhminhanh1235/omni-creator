@@ -1,0 +1,9 @@
+# Copy this block into the Codex config that should own the OmniCreator server.
+# Replace the placeholder Data Root with an absolute path on this machine.
+# Provider credentials never belong here. If automatic LLM execution is needed,
+# append --llm-provider-config and the path to a machine-local provider config.
+
+[mcp_servers.omnicreator]
+command = "omnicreator"
+args = ["--data-root", "/ABSOLUTE/PATH/TO/OMNICREATOR_DATA_ROOT", "mcp", "serve"]
+startup_timeout_sec = 20
