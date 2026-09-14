@@ -1,12 +1,13 @@
 use std::{env, io, process};
 
+#[path = "mcp_p5.rs"]
 mod mcp;
 
 #[tokio::main]
 async fn main() {
     let args = env::args().skip(1).collect::<Vec<_>>();
     if mcp::is_mcp_invocation_v1(&args) {
-        if let Err(error) = mcp::serve_mcp_stdio_from_args_v1(args).await {
+        if let Err(error) = mcp::serve_mcp_stdio_p5_from_args_v1(args).await {
             eprintln!("{error}");
             process::exit(70);
         }
