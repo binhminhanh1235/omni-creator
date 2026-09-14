@@ -12,10 +12,10 @@ use omnicreator_application::{
     CreatorRunRuntimeV1, ExternalVisualResultRequestV1, ExternalVoiceResultRequestV1,
     LlmRuntimeControlSnapshotV1, ManualContentImportRequestV1, ManualContentRequestV1,
     ManualScenePlanImportRequestV1, ManualScenePlanRequestV1, ManualVisualRequestV1,
-    ManualVoiceRequestV1, PluginRuntimeControlSnapshotV1, ProjectIdRequestV1, RecoveryFileRequestV1,
-    RecoveryVoiceBundleRequestV1, RenameProjectRequestV1, ReplaceVoiceTimingRequestV1,
-    SetWorkflowAutomaticExecutionRequestV1, StartOrResumeCreatorRequestV1,
-    CONTROL_CONTRACT_SCHEMA_V1, CONTROL_CONTRACT_VERSION_V1,
+    ManualVoiceRequestV1, PluginRuntimeControlSnapshotV1, ProjectIdRequestV1,
+    RecoveryFileRequestV1, RecoveryVoiceBundleRequestV1, RenameProjectRequestV1,
+    ReplaceVoiceTimingRequestV1, SetWorkflowAutomaticExecutionRequestV1,
+    StartOrResumeCreatorRequestV1, CONTROL_CONTRACT_SCHEMA_V1, CONTROL_CONTRACT_VERSION_V1,
 };
 use omnicreator_core::{
     initial_studio_pack_catalog_v1, run_creator_content_stage_v1, run_creator_scene_stage_v1,
@@ -831,7 +831,9 @@ fn load_configured_llm_provider_v1(
         .map_err(ControlErrorV1::from)
 }
 
-fn llm_runtime_snapshot_v1(provider: Option<&ConfiguredLlmProviderV1>) -> LlmRuntimeControlSnapshotV1 {
+fn llm_runtime_snapshot_v1(
+    provider: Option<&ConfiguredLlmProviderV1>,
+) -> LlmRuntimeControlSnapshotV1 {
     let Some(provider) = provider else {
         return LlmRuntimeControlSnapshotV1::not_configured_v1();
     };

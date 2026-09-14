@@ -1035,7 +1035,9 @@ fn load_configured_llm_provider_v1(
         .map_err(ControlErrorV1::from)
 }
 
-fn llm_runtime_snapshot_v1(provider: Option<&ConfiguredLlmProviderV1>) -> LlmRuntimeControlSnapshotV1 {
+fn llm_runtime_snapshot_v1(
+    provider: Option<&ConfiguredLlmProviderV1>,
+) -> LlmRuntimeControlSnapshotV1 {
     let Some(provider) = provider else {
         return LlmRuntimeControlSnapshotV1::not_configured_v1();
     };

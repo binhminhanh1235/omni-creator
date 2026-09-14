@@ -148,8 +148,8 @@ pub trait LlmProviderV1 {
     fn models_v1(&self) -> Result<Vec<LlmProviderModelV1>>;
 
     fn readiness_v1(&self) -> LlmProviderReadinessV1 {
-        let credential_present = env::var(self.api_key_env_v1())
-            .is_ok_and(|value| !value.trim().is_empty());
+        let credential_present =
+            env::var(self.api_key_env_v1()).is_ok_and(|value| !value.trim().is_empty());
         LlmProviderReadinessV1 {
             provider_id: self.provider_id_v1().to_owned(),
             kind: self.kind_v1(),
@@ -469,10 +469,7 @@ impl OpenAiCompatibleProviderV1 {
             .agent
             .get(&self.config.endpoint_v1(path))
             .set("Authorization", &authorization);
-        decode_provider_http_v1(
-            &self.config.provider_id,
-            request.call(),
-        )
+        decode_provider_http_v1(&self.config.provider_id, request.call())
     }
 
     fn authenticated_post_v1(&self, path: &str, body: &Value) -> Result<Value> {
@@ -490,10 +487,7 @@ impl OpenAiCompatibleProviderV1 {
         if let Some(title) = self.config.app_title.as_deref() {
             request = request.set("X-Title", title);
         }
-        decode_provider_http_v1(
-            &self.config.provider_id,
-            request.send_string(&payload),
-        )
+        decode_provider_http_v1(&self.config.provider_id, request.send_string(&payload))
     }
 }
 
@@ -526,7 +520,10 @@ impl LlmProviderV1 for OpenAiCompatibleProviderV1 {
             .unwrap_or_else(|| self.default_model_v1());
         let mut body = serde_json::Map::new();
         body.insert("model".to_owned(), Value::String(model.to_owned()));
-        body.insert("messages".to_owned(), serde_json::to_value(&request.messages)?);
+        body.insert(
+            "messages".to_owned(),
+            serde_json::to_value(&request.messages)?,
+        );
         body.insert("stream".to_owned(), Value::Bool(false));
         if let Some(temperature) = request.temperature {
             body.insert("temperature".to_owned(), json!(temperature));
@@ -805,7 +802,9 @@ fn create_scene_with_provider_v1(
         Some(0.2),
         generation.max_tokens,
         generation.max_attempts,
-        |scene: &SceneIntentV1| validate_generated_scene_intent(scene, segment, scene_id, &generation),
+        |scene: &SceneIntentV1| {
+            validate_generated_scene_intent(scene, segment, scene_id, &generation)
+        },
     )
 }
 
@@ -817,7 +816,9 @@ fn build_scene_intent_messages_v1(
     segment.validate_v1()?;
     options.validate()?;
     if scene_id.trim().is_empty() {
-        return Err(Error::InvalidContract("scene id must not be empty".to_owned()));
+        return Err(Error::InvalidContract(
+            "scene id must not be empty".to_owned(),
+        ));
     }
     let input = json!({
         "scene_id": scene_id,
@@ -910,12 +911,11 @@ fn parse_provider_chat_result_v1(provider: &str, value: Value) -> Result<LlmChat
     struct Message {
         content: Option<String>,
     }
-    let response: Completion = serde_json::from_value(value).map_err(|error| {
-        Error::InvalidLlmProviderResponse {
+    let response: Completion =
+        serde_json::from_value(value).map_err(|error| Error::InvalidLlmProviderResponse {
             provider: provider.to_owned(),
             message: format!("invalid chat response: {error}"),
-        }
-    })?;
+        })?;
     let content = response
         .choices
         .into_iter()
@@ -933,13 +933,12 @@ fn parse_provider_chat_result_v1(provider: &str, value: Value) -> Result<LlmChat
 }
 
 fn parse_provider_models_v1(provider: &str, value: Value) -> Result<Vec<LlmProviderModelV1>> {
-    let data = value
-        .get("data")
-        .and_then(Value::as_array)
-        .ok_or_else(|| Error::InvalidLlmProviderResponse {
+    let data = value.get("data").and_then(Value::as_array).ok_or_else(|| {
+        Error::InvalidLlmProviderResponse {
             provider: provider.to_owned(),
             message: "models response does not contain a data array".to_owned(),
-        })?;
+        }
+    })?;
     data.iter()
         .map(|model| {
             let id = model
@@ -980,8 +979,8 @@ where
     F: Fn(&T) -> Result<()>,
 {
     let json = extract_json_value_v1(content)?;
-    let value = serde_json::from_str::<T>(json)
-        .map_err(|error| format!("JSON decode failed: {error}"))?;
+    let value =
+        serde_json::from_str::<T>(json).map_err(|error| format!("JSON decode failed: {error}"))?;
     validate(&value).map_err(|error| format!("contract validation failed: {error}"))?;
     Ok(value)
 }
@@ -1150,7 +1149,9 @@ mod tests {
         assert_eq!(result.content, "Creator script");
         let request = captured.lock().unwrap();
         assert!(request.starts_with("POST /api/v1/chat/completions "));
-        assert!(request.to_ascii_lowercase().contains("authorization: bearer test-secret"));
+        assert!(request
+            .to_ascii_lowercase()
+            .contains("authorization: bearer test-secret"));
         assert!(request.contains("\"model\":\"openrouter/auto\""));
         assert!(!request.contains("llmgateway_task"));
         assert!(!request.contains("/_llmgateway/"));
