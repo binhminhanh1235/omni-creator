@@ -5,37 +5,7 @@ on:
     branches: [main]
   pull_request:
 
-permissions:
-  contents: write
-
 jobs:
-  p3_http_mock_patch:
-    if: github.event_name == 'pull_request' && github.head_ref == 'feat/phase18-p3-llm-provider-openrouter'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref }}
-          fetch-depth: 0
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
-      - name: Patch deterministic HTTP mock
-        shell: bash
-        run: |
-          echo 'CmZyb20gcGF0aGxpYiBpbXBvcnQgUGF0aApwYXRoID0gUGF0aCgiY3JhdGVzL29tbmljcmVhdG9yLWNvcmUvc3JjL2xsbV9wcm92aWRlci5ycyIpCnRleHQgPSBwYXRoLnJlYWRfdGV4dCgpCnRleHQgPSB0ZXh0LnJlcGxhY2UoCiAgICAiICAgICAgICBuZXQ6OlRjcExpc3RlbmVyLFxuIiwKICAgICIgICAgICAgIG5ldDo6e1RjcExpc3RlbmVyLCBUY3BTdHJlYW19LFxuIiwKICAgIDEsCikKYW5jaG9yID0gJycnICAgIHVzZSBzdXBlcjo6KjsKCiAgICBmbiB3aXRoX2Vudl92YXI8VD4obmFtZTogJnN0ciwgdmFsdWU6ICZzdHIsIG9wZXJhdGlvbjogaW1wbCBGbk9uY2UoKSAtPiBUKSAtPiBUIHsKJycnCmhlbHBlciA9IHInJycgICAgdXNlIHN1cGVyOjoqOwoKICAgIGZuIHJlYWRfaHR0cF9yZXF1ZXN0X3YxKHN0cmVhbTogJm11dCBUY3BTdHJlYW0pIC0+IFN0cmluZyB7CiAgICAgICAgbGV0IG11dCBieXRlcyA9IFZlYzo6bmV3KCk7CiAgICAgICAgbGV0IG11dCBjaHVuayA9IFswX3U4OyA0XzA5Nl07CiAgICAgICAgbG9vcCB7CiAgICAgICAgICAgIGxldCByZWFkID0gc3RyZWFtLnJlYWQoJm11dCBjaHVuaykudW53cmFwKCk7CiAgICAgICAgICAgIGlmIHJlYWQgPT0gMCB7CiAgICAgICAgICAgICAgICBicmVhazsKICAgICAgICAgICAgfQogICAgICAgICAgICBieXRlcy5leHRlbmRfZnJvbV9zbGljZSgmY2h1bmtbLi5yZWFkXSk7CiAgICAgICAgICAgIGxldCBTb21lKGhlYWRlcl9lbmQpID0gYnl0ZXMud2luZG93cyg0KS5wb3NpdGlvbih8d2luZG93fCB3aW5kb3cgPT0gYiJcclxuXHJcbiIpIGVsc2UgewogICAgICAgICAgICAgICAgY29udGludWU7CiAgICAgICAgICAgIH07CiAgICAgICAgICAgIGxldCBoZWFkZXJzID0gU3RyaW5nOjpmcm9tX3V0ZjhfbG9zc3koJmJ5dGVzWy4uaGVhZGVyX2VuZF0pOwogICAgICAgICAgICBsZXQgY29udGVudF9sZW5ndGggPSBoZWFkZXJzCiAgICAgICAgICAgICAgICAubGluZXMoKQogICAgICAgICAgICAgICAgLmZpbmRfbWFwKHxsaW5lfCB7CiAgICAgICAgICAgICAgICAgICAgbGV0IChuYW1lLCB2YWx1ZSkgPSBsaW5lLnNwbGl0X29uY2UoJzonKT87CiAgICAgICAgICAgICAgICAgICAgbmFtZS5lcV9pZ25vcmVfYXNjaWlfY2FzZSgiY29udGVudC1sZW5ndGgiKQogICAgICAgICAgICAgICAgICAgICAgICAudGhlbih8fCB2YWx1ZS50cmltKCkucGFyc2U6Ojx1c2l6ZT4oKS5vaygpKQogICAgICAgICAgICAgICAgICAgICAgICAuZmxhdHRlbigpCiAgICAgICAgICAgICAgICB9KQogICAgICAgICAgICAgICAgLnVud3JhcF9vcigwKTsKICAgICAgICAgICAgaWYgYnl0ZXMubGVuKCkgPj0gaGVhZGVyX2VuZCArIDQgKyBjb250ZW50X2xlbmd0aCB7CiAgICAgICAgICAgICAgICBicmVhazsKICAgICAgICAgICAgfQogICAgICAgIH0KICAgICAgICBTdHJpbmc6OmZyb21fdXRmOChieXRlcykudW53cmFwKCkKICAgIH0KCiAgICBmbiB3aXRoX2Vudl92YXI8VD4obmFtZTogJnN0ciwgdmFsdWU6ICZzdHIsIG9wZXJhdGlvbjogaW1wbCBGbk9uY2UoKSAtPiBUKSAtPiBUIHsKJycnCmlmICJmbiByZWFkX2h0dHBfcmVxdWVzdF92MSgiIG5vdCBpbiB0ZXh0OgogICAgaWYgYW5jaG9yIG5vdCBpbiB0ZXh0OgogICAgICAgIHJhaXNlIFN5c3RlbUV4aXQoInRlc3QgaGVscGVyIGFuY2hvciBtaXNzaW5nIikKICAgIHRleHQgPSB0ZXh0LnJlcGxhY2UoYW5jaG9yLCBoZWxwZXIsIDEpCgpvbGQgPSAnJycgICAgICAgICAgICBsZXQgbXV0IGJ1ZmZlciA9IHZlYyFbMF91ODsgMTZfMzg0XTsKICAgICAgICAgICAgbGV0IHJlYWQgPSBzdHJlYW0ucmVhZCgmbXV0IGJ1ZmZlcikudW53cmFwKCk7CiAgICAgICAgICAgICpzZXJ2ZXJfY2FwdHVyZS5sb2NrKCkudW53cmFwKCkgPSBTdHJpbmc6OmZyb21fdXRmOF9sb3NzeSgmYnVmZmVyWy4ucmVhZF0pLmludG9fb3duZWQoKTsKJycnCm5ldyA9ICcnJyAgICAgICAgICAgICpzZXJ2ZXJfY2FwdHVyZS5sb2NrKCkudW53cmFwKCkgPSByZWFkX2h0dHBfcmVxdWVzdF92MSgmbXV0IHN0cmVhbSk7CicnJwppZiBvbGQgbm90IGluIHRleHQ6CiAgICByYWlzZSBTeXN0ZW1FeGl0KCJzaW5nbGUtcmVhZCBtb2NrIGFuY2hvciBtaXNzaW5nIikKdGV4dCA9IHRleHQucmVwbGFjZShvbGQsIG5ldywgMSkKcGF0aC53cml0ZV90ZXh0KHRleHQpCg==' | base64 -d > /tmp/p3-http-mock.py
-          python3 /tmp/p3-http-mock.py
-          cargo fmt --all
-          cargo test -p omnicreator-core --lib llm_provider::tests::openai_compatible_chat_uses_standard_endpoint_and_omits_llmgateway_fields
-      - name: Commit deterministic mock
-        shell: bash
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add crates/omnicreator-core/src/llm_provider.rs
-          git commit -m "test(llm): read complete HTTP mock request"
-          git push origin HEAD:${GITHUB_HEAD_REF}
-
   rust:
     runs-on: ubuntu-latest
     steps:
