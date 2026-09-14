@@ -82,12 +82,7 @@ async fn mcp_project_delete_requires_explicit_confirmation() {
         "project delete requires confirm=true"
     );
 
-    let still_present = call(
-        &client,
-        "project_get",
-        json!({"project_id": project_id}),
-    )
-    .await;
+    let still_present = call(&client, "project_get", json!({"project_id": project_id})).await;
     assert_eq!(still_present.is_error, Some(false));
 
     let deleted = call(
@@ -98,12 +93,7 @@ async fn mcp_project_delete_requires_explicit_confirmation() {
     .await;
     assert_eq!(deleted.is_error, Some(false));
 
-    let missing = call(
-        &client,
-        "project_get",
-        json!({"project_id": project_id}),
-    )
-    .await;
+    let missing = call(&client, "project_get", json!({"project_id": project_id})).await;
     assert_eq!(missing.is_error, Some(true));
     assert_eq!(structured(&missing)["error"]["code"], "not_found");
 
