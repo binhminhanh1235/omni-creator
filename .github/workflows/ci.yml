@@ -5,60 +5,7 @@ on:
     branches: [main]
   pull_request:
 
-permissions:
-  contents: write
-
 jobs:
-  p3_desktop_patch:
-    if: github.event_name == 'pull_request' && github.head_ref == 'feat/phase18-p3-llm-provider-openrouter'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref }}
-          fetch-depth: 0
-      - name: Apply provider-neutral Desktop integration
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          app_rs = Path('apps/desktop/src-tauri/src/application.rs')
-          text = app_rs.read_text()
-          old = "            llmgateway_status,\n            save_llmgateway_settings,\n"
-          if '            llm_provider_status_phase18_p3,\n' not in text:
-              if old not in text:
-                  raise SystemExit('invoke handler anchor missing')
-              text = text.replace(old, "            llm_provider_status_phase18_p3,\n            save_llm_provider_settings_phase18_p3,\n" + old, 1)
-              app_rs.write_text(text)
-
-          app_js = Path('apps/desktop/dist/app.js')
-          text = app_js.read_text()
-          if 'case "setup_required":' not in text:
-              text = text.replace('    case "needs_api_key":\n      return "NEEDS API KEY";\n', '    case "needs_api_key":\n    case "setup_required":\n      return "NEEDS API KEY";\n', 1)
-          if 'call("llm_provider_status_phase18_p3")' not in text:
-              start = text.index('function renderLlmGatewayPanel(status) {')
-              end = text.index('function studioPackItems() {', start)
-              replacement = '''function llmProviderLabel(kind) {\n  switch (String(kind || "llm_gateway")) {\n    case "open_router":\n      return "OpenRouter";\n    case "open_ai_compatible":\n      return "OpenAI-compatible";\n    default:\n      return "LLMGateway";\n  }\n}\n\nfunction renderLlmGatewayPanel(status) {\n  const panel = document.getElementById("llmgateway-panel");\n  if (!panel) return;\n\n  const state = String(status.state || "offline");\n  const providerKind = String(status.provider_kind || "llm_gateway");\n  const discovered = Array.isArray(status.models) ? status.models.length : 0;\n  const discoveryText = status.model_discovery_supported === false ? "not supported" : String(discovered);\n\n  panel.innerHTML =\n    '<div class="panel-heading">' +\n    '<div><p class="eyebrow">CREATOR INTELLIGENCE</p><h3>LLM Provider</h3></div>' +\n    '<span class="llm-state ' + escapeHtml(state) + '">' + escapeHtml(llmStateLabel(state)) + "</span></div>" +\n    '<p class="muted compact">' + escapeHtml(status.message || "") + "</p>" +\n    '<div class="field compact-field"><label>PROVIDER</label><select id="llm-provider-kind">' +\n    '<option value="llm_gateway"' + (providerKind === "llm_gateway" ? " selected" : "") + '>LLMGateway</option>' +\n    '<option value="open_router"' + (providerKind === "open_router" ? " selected" : "") + '>OpenRouter</option>' +\n    '<option value="open_ai_compatible"' + (providerKind === "open_ai_compatible" ? " selected" : "") + '>OpenAI-compatible</option>' +\n    "</select></div>" +\n    '<div class="field compact-field"><label>ENDPOINT</label><input id="llmgateway-url" value="' + escapeHtml(status.base_url || "") + '" /></div>' +\n    '<div class="field compact-field"><label>API KEY ENVIRONMENT VARIABLE</label><input id="llmgateway-key-env" value="' + escapeHtml(status.api_key_env || "") + '" /></div>' +\n    '<div class="field compact-field"><label>MODEL</label><input id="llmgateway-model" list="llmgateway-model-options" value="' + escapeHtml(status.default_model || "") + '" /><datalist id="llmgateway-model-options">' + llmModelOptions(status) + "</datalist></div>" +\n    '<div class="info-list llm-meta">' +\n    '<div class="info-row"><div class="info-label">ACTIVE PROVIDER</div><div class="info-value">' + escapeHtml(llmProviderLabel(providerKind)) + "</div></div>" +\n    '<div class="info-row"><div class="info-label">DISCOVERED MODELS</div><div class="info-value">' + escapeHtml(discoveryText) + "</div></div>" +\n    '<div class="info-row"><div class="info-label">SECRET STORAGE</div><div class="info-value">Machine environment only · never Data Root</div></div>' +\n    "</div>" +\n    '<p class="muted compact">Manual Content and Scene Plan takeover remain available even when no LLM provider is ready.</p>' +\n    '<div class="actions compact-actions"><button class="btn primary" id="llmgateway-save">Save &amp; Check</button><button class="btn" id="llmgateway-refresh">Refresh</button></div>';\n\n  document.getElementById("llmgateway-save").onclick = async function () {\n    const selectedKind = document.getElementById("llm-provider-kind").value;\n    const baseUrl = document.getElementById("llmgateway-url").value.trim();\n    const apiKeyEnv = document.getElementById("llmgateway-key-env").value.trim();\n    const defaultModel = document.getElementById("llmgateway-model").value.trim();\n    const switchingToProfileDefaults = selectedKind !== providerKind && selectedKind !== "open_ai_compatible";\n    const updated = await call("save_llm_provider_settings_phase18_p3", {\n      providerKind: selectedKind,\n      baseUrl: switchingToProfileDefaults ? null : baseUrl,\n      apiKeyEnv: switchingToProfileDefaults ? null : apiKeyEnv,\n      defaultModel: switchingToProfileDefaults ? null : defaultModel,\n    });\n    renderLlmGatewayPanel(updated);\n  };\n\n  document.getElementById("llmgateway-refresh").onclick = async function () {\n    renderLlmGatewayPanel(await call("llm_provider_status_phase18_p3"));\n  };\n}\n\nasync function loadLlmGatewayPanel() {\n  const panel = document.getElementById("llmgateway-panel");\n  if (!panel) return;\n  try {\n    renderLlmGatewayPanel(await call("llm_provider_status_phase18_p3"));\n  } catch (_error) {\n    panel.innerHTML = '<p class="eyebrow">CREATOR INTELLIGENCE</p><h3>LLM Provider</h3><div class="notice">Could not load machine-local LLM provider settings. Manual creator takeover remains available.</div>';\n  }\n}\n\n\n'''
-              text = text[:start] + replacement + text[end:]
-              app_js.write_text(text)
-
-          test = Path('apps/desktop/tests/llm-provider-p3-smoke.mjs')
-          if not test.exists():
-              test.write_text('''import assert from "node:assert/strict";\nimport { readFileSync } from "node:fs";\n\nconst app = readFileSync(new URL("../dist/app.js", import.meta.url), "utf8");\nconst backend = readFileSync(new URL("../src-tauri/src/application.rs", import.meta.url), "utf8");\nassert.match(app, /value="llm_gateway"/);\nassert.match(app, /value="open_router"/);\nassert.match(app, /value="open_ai_compatible"/);\nassert.match(app, /save_llm_provider_settings_phase18_p3/);\nassert.match(app, /llm_provider_status_phase18_p3/);\nassert.match(app, /Machine environment only · never Data Root/);\nassert.match(app, /Manual Content and Scene Plan takeover remain available/);\nconst start = app.indexOf("function renderLlmGatewayPanel(status)");\nconst end = app.indexOf("function studioPackItems()", start);\nassert.ok(start >= 0 && end > start);\nconst panel = app.slice(start, end);\nassert.doesNotMatch(panel, /call\\("llmgateway_status"\\)/);\nassert.doesNotMatch(panel, /call\\("save_llmgateway_settings"/);\nassert.match(backend, /llm_provider_status_phase18_p3,/);\nassert.match(backend, /save_llm_provider_settings_phase18_p3,/);\n''')
-          PY
-          node --check apps/desktop/dist/app.js
-          node apps/desktop/tests/llm-provider-p3-smoke.mjs
-          if git diff --quiet; then
-            echo "P3 Desktop provider integration already applied."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add apps/desktop/src-tauri/src/application.rs apps/desktop/dist/app.js apps/desktop/tests/llm-provider-p3-smoke.mjs
-          git commit -m "feat(desktop): expose provider-neutral LLM settings"
-          git push origin HEAD:${GITHUB_HEAD_REF}
-
   rust:
     runs-on: ubuntu-latest
     steps:
