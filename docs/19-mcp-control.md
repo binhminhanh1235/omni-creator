@@ -1,0 +1,127 @@
+# Phase 18 P2 — MCP stdio control surface
+
+Tracking: Phase 18 umbrella #99, P2 #102.
+
+## Boundary
+
+OmniCreator MCP is a transport over `omnicreator-application`. It does not own a scheduler, workflow database, artifact truth, SQL mutation path, or provider-specific shadow state.
+
+```text
+MCP client
+   |
+stdio / MCP 2026-07-28
+   |
+omnicreator mcp serve
+   |
+omnicreator-application
+   |
+omnicreator-core + canonical SQLite + ArtifactStore
+```
+
+The same `ApplicationControlService`, `CreatorRunControlServiceV1`, writer lease, read-only guard, Job/Attempt contracts, dependency invalidation, ArtifactStore verification, manual/external takeover, and ProductionPack recovery semantics remain authoritative.
+
+## Runtime and protocol
+
+P2 targets the stable MCP revision `2026-07-28` through the official Rust SDK `rmcp 3.3.0`.
+
+`rmcp 3.3.0` requires Rust 1.88, so the workspace MSRV is intentionally raised from 1.80 to 1.88. This keeps OmniCreator on the official protocol implementation rather than introducing a private MCP parser/transport.
+
+Local P2 transport is stdio only. Remote Streamable HTTP remains deferred until authentication/authorization is designed and verified.
+
+## One executable
+
+MCP is exposed by the existing Rust executable:
+
+```text
+omnicreator --data-root <path> [--read-only] [--device-id <id>] \
+  [--llmgateway-config <path>] [--studio-pack-catalog <path>] \
+  mcp serve
+```
+
+There is no Python or Node control-plane sidecar. In MCP mode stdout is reserved for protocol frames. Startup/runtime errors go to stderr.
+
+## Tool surface
+
+Inspection:
+
+- `workspace_status`
+- `projects_list`
+- `project_get`
+- `workflow_status`
+- `creator_state`
+- `review_list`
+- `runtime_status`
+- `visual_control` with `status`
+- `voice_control` with `status`
+- `production_control` with `status` or `recovery`
+
+Mutation/control:
+
+- `project_create`
+- `project_update` for rename, Studio Pack binding/clearing, or delete
+- `workflow_set_step_auto`
+- `creator_start_or_resume`
+- `content_control` for manual provide/import
+- `scene_plan_control` for editor/provide/import
+- `visual_control` for manual, asset-library, stock-selection, generated approval, and external handoff/result paths
+- `voice_control` for manual voice/timing and external handoff/result paths
+- `production_control` for assemble, rebuild/export, and recovery repairs
+
+The grouped `*_control` tools deliberately keep the public MCP surface capability-oriented while their payloads map to existing typed application contracts.
+
+## Structured results and errors
+
+Successful tools return MCP `structuredContent` containing the same serialized application response/projection used by other transports.
+
+Application failures are tool errors, not transport failures. They return `structuredContent` using:
+
+```json
+{
+  "schema": "omnicreator.mcp-error",
+  "version": 1,
+  "error": {
+    "schema": "omnicreator.control-error",
+    "version": 1,
+    "code": "read_only",
+    "message": "the active workspace session is read-only"
+  }
+}
+```
+
+Canonical error categories remain `read_only`, `writer_conflict`, `not_found`, `invalid_input`, `invalid_transition`, `blocked`, `capability_unavailable`, `provider_unavailable`, `artifact_invalid`, `stale_input`, and `internal`.
+
+Responses and error messages sanitize the active Data Root and Bearer markers before crossing the MCP boundary.
+
+## Writer and read-only behavior
+
+Writable tool calls acquire the existing `WorkspaceSession` writer lease. MCP never bypasses single-writer semantics.
+
+With `--read-only`, inspection uses `Workspace::inspect` + `ApplicationControlService::for_read_only`. Any mutation reaches the same application-layer guard and returns typed `read_only`.
+
+## Creator automatic runtime
+
+`creator_start_or_resume` delegates to `CreatorRunControlServiceV1::start_or_resume_v1`.
+
+If `--llmgateway-config` is supplied, the MCP-local runtime can execute the existing automatic Content/Scene path through LLMGateway. If it is absent, the tool reports typed `provider_unavailable` without a hidden network attempt.
+
+Automatic visual and voice/compute execution are not fabricated in P2. When machine-local plugin/compute execution is not wired into this process, MCP reports `capability_unavailable`. Canonical manual/external takeover remains available and can complete the project through ProductionPack/export.
+
+## Resources and prompts
+
+P2 does not add duplicate MCP resources or prompt templates. The typed inspection tools already expose the canonical sanitized snapshots needed by clients. Resources/prompts may be added later only when they reduce context cost or add a distinct capability without becoming a second source of truth.
+
+## P2 verification gate
+
+P2 is not DONE / VERIFIED until all of these pass on the exact PR head and again after merge:
+
+1. Official MCP client connects to the `omnicreator` child process over stdio and discovers the typed tools.
+2. A full provider-free manual MCP path toggles AUTO OFF, supplies canonical Content/ScenePlan/visual/voice, reads Review Center/recovery, and reaches ProductionPack + Resolve export.
+3. MCP project projection equals the direct Application Control Service projection for the same canonical state.
+4. A read-only MCP process rejects mutation with structured `read_only`.
+5. Creator Start/Resume reports a typed provider blocker without Desktop or a hidden network fallback when LLMGateway is not configured.
+6. MCP results do not leak Data Root/API-key/Bearer markers in the covered projections/errors.
+7. Existing CLI, Rust, Plugins, and Desktop regressions remain green after the Rust 1.88 MSRV bump.
+8. Exact-head CI passes before guarded squash merge.
+9. Post-merge CI passes on the exact merge SHA before #102 is closed DONE / VERIFIED.
+
+P3 provider-neutral LLM/OpenRouter work is outside P2.

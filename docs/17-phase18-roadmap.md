@@ -23,13 +23,13 @@ The control plane does not own a second scheduler, database, workflow engine or 
 | Slice | Tracking | Scope | Current state |
 | --- | --- | --- | --- |
 | P0 | #100 | Shared Application Control Service + typed operation contracts | DONE / VERIFIED — PR #106 + corrective PR #107; post-merge CI #490 PASS |
-| P1 | #101 | Single-binary CLI + deterministic JSON output | IN PROGRESS |
-| P2 | #102 | MCP server v1 over stdio | NOT STARTED |
+| P1 | #101 | Single-binary CLI + deterministic JSON output | DONE / VERIFIED — PR #108; post-merge CI #501 PASS |
+| P2 | #102 | MCP server v1 over stdio | IN PROGRESS — `feat/phase18-p2-mcp-stdio` |
 | P3 | #103 | Provider-neutral LLM abstraction + OpenRouter direct | NOT STARTED |
 | P4 | #104 | Agent skills/config/examples | NOT STARTED |
 | P5 | #105 | MCP Tasks, security, E2E parity, docs and hardening | NOT STARTED |
 
-Default sequence remains `P0 -> P1 -> P2 -> P3 -> P4 -> P5`. P2 must not start until P1 is DONE / VERIFIED unless the authoritative tracking explicitly changes the order.
+Default sequence remains `P0 -> P1 -> P2 -> P3 -> P4 -> P5`.
 
 ## P0 verified checkpoint
 
@@ -57,40 +57,55 @@ P0 final evidence:
 
 Detailed P0 contract/boundary documentation is in `docs/16-application-control-service.md`.
 
-## P1 architecture checkpoint
+## P1 verified checkpoint
 
-P1 adds one Rust CLI binary, `omnicreator`, as a transport adapter over the P0 Application Control Service.
+P1 added one Rust CLI binary, `omnicreator`, as a transport adapter over the P0 Application Control Service.
 
-Required P1 properties:
+Verified P1 evidence:
 
-- Data Root is selected explicitly with `--data-root`; writable commands acquire the existing `WorkspaceSession` writer lease;
-- `--read-only` uses `ApplicationControlService::for_read_only`, so read-only is enforced at the application layer rather than by presentation logic;
-- CLI resource/verb commands invoke P0 typed operations instead of SQLite, StateStore internals, or duplicated workflow orchestration;
-- `creator start|resume` delegates to `CreatorRunControlServiceV1::start_or_resume_v1`;
-- JSON output uses one versioned deterministic envelope and preserves machine-readable P0 error categories;
-- stable process exit codes map directly from typed control errors;
-- complex content/ScenePlan/visual/voice/recovery requests may arrive through `--stdin` or `--input-file`, avoiding a second request schema and reducing secret/content exposure in shell history;
-- LLMGateway credentials remain environment-backed by the machine-local config; credential values are never accepted as CLI flags or persisted in project state;
-- CLI runtime adapters may report `provider_unavailable` / `capability_unavailable` when a machine-local provider/plugin/ComputeProvider is not configured; they must never fabricate READY/SUCCEEDED state;
-- Phase 16 manual/external takeover remains sufficient for a provider-free full-manual CLI flow through ProductionPack and Resolve export;
-- runtime inspection is sanitized and truthful; an unconfigured CLI-local plugin/compute runtime is reported as unconfigured, not healthy;
-- no MCP protocol, OpenRouter/provider migration, agent package, or MCP Tasks implementation belongs to P1.
+- final exact head `4a07af1aba964823dc48b9795ec671a66d96bf0f`
+- exact-head/merge tree `ddd72257abd132061f71441d599e390320662f84`
+- exact-head CI #500 / run `34799391242`: PASS
+- guarded squash merge/current verified main `b790feae93ccc0fa14619d3d1ec696ab0767178a`
+- post-merge CI #501 / run `34799662666`: PASS
+
+Verified properties include deterministic JSON + stable exit codes, read-only enforcement, canonical manual/external takeover through Resolve export, CLI/Application projection parity, project-scoped Review Center, AUTO OFF + manual satisfaction, and truthful provider/capability blockers.
 
 Command and JSON details are documented in `docs/18-cli-control.md`.
 
-## P1 verification gate
+## P2 architecture checkpoint
 
-P1 is not DONE / VERIFIED until all of the following are true:
+P2 exposes the same application boundary as a standards-based local MCP server from the existing `omnicreator` binary.
 
-1. Exact PR-head workspace Format / Clippy / Tests pass, including CLI integration tests.
-2. Existing Plugins and Desktop regression jobs remain green.
-3. CLI full-manual acceptance reaches canonical ProductionPack + Resolve/DaVinci export.
-4. CLI project projection matches direct Application Control Service projection for the same canonical state.
-5. Read-only mutation returns typed `read_only` without persisting a change.
-6. Automatic Creator Start/Resume can report provider/capability blockers without requiring Desktop or silently falling back to fake success.
-7. CLI JSON regressions reject Data Root/credential marker leakage.
-8. The verified exact PR head is squash-merged with an expected-head guard.
-9. Merge commit/tree are re-fetched from `main` and post-merge CI passes.
-10. #101, #99 and master tracking #1 are updated with exact evidence before P1 is marked DONE / VERIFIED.
+Current implementation decisions:
 
-P2 implementation is not part of the P1 run.
+- branch starts exactly from verified P1 main `b790feae93ccc0fa14619d3d1ec696ab0767178a`, tree `ddd72257abd132061f71441d599e390320662f84`;
+- protocol target is stable MCP `2026-07-28`;
+- implementation uses the official Rust SDK `rmcp 3.3.0` and stdio transport;
+- because `rmcp 3.3.0` requires Rust 1.88, workspace MSRV is intentionally raised from 1.80 to 1.88 and all existing Rust/Desktop regressions must prove the bump safe;
+- one `omnicreator` executable exposes both normal CLI mode and `mcp serve`; stdout stays protocol-only in MCP mode;
+- MCP tools are capability-oriented adapters over `ApplicationControlService` / `CreatorRunControlServiceV1`, never direct SQLite/StateStore mutations;
+- writer calls acquire the same `WorkspaceSession`; `--read-only` uses the same application-level guard;
+- successes use structured MCP results; canonical typed application failures use structured MCP tool errors rather than opaque transport failure;
+- Creator Start/Resume uses the shared P0 controller and truthful local runtime blockers;
+- resources/prompts are intentionally deferred in P2 unless they provide distinct context-efficiency value beyond typed inspection tools;
+- remote Streamable HTTP remains deferred until authenticated/authorized safely;
+- P3 OpenRouter/provider-neutral LLM work, P4 vendor configs and P5 MCP Tasks/hardening remain out of scope.
+
+Detailed P2 behavior is documented in `docs/19-mcp-control.md`.
+
+## P2 verification gate
+
+P2 remains IN PROGRESS until:
+
+1. an official MCP client connects to the real `omnicreator ... mcp serve` child process over stdio and discovers tools;
+2. MCP full-manual acceptance toggles AUTO OFF and reaches canonical ProductionPack + Resolve export;
+3. MCP projection matches direct Application Control Service state;
+4. read-only mutation returns structured `read_only`;
+5. automatic Start/Resume returns truthful provider/capability blockers without Desktop or fake success;
+6. response leakage regressions remain clean;
+7. the Rust 1.88 MSRV bump leaves Rust/CLI/Plugins/Desktop CI green;
+8. exact-head CI passes before guarded squash merge;
+9. post-merge CI passes on the exact merge SHA before #102 is marked DONE / VERIFIED.
+
+P3 implementation must not start during the P2 verification run.
