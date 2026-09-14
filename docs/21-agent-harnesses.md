@@ -61,6 +61,26 @@ Provider configuration never becomes portable Project / WorkflowStep orchestrati
 
 The existing MCP E2E suite remains the executable completion proof for the provider-free manual flow through ProductionPack/export. P4 adds harness packaging and drift protection, not a vendor-specific workflow runtime.
 
+## Phase 18 P5 durable Tasks guidance
+
+P5 keeps the same harness package and the same `omnicreator ... mcp serve` command. No vendor-specific config change is required. A newer MCP client may additionally declare the `io.modelcontextprotocol/tasks` extension.
+
+When Tasks capability is declared, `creator_start_or_resume` may return a durable Task handle instead of an immediate tool result. The handle is backed by canonical OmniCreator Job/Attempt/Artifact state, not an in-memory agent or MCP database.
+
+Agent behavior for a returned Task must be:
+
+1. retain the returned `taskId`;
+2. poll `tasks/get` no faster than the server's suggested `pollIntervalMs`;
+3. reconnect and continue using the same `taskId` if the stdio connection disappears;
+4. treat `completed` as protocol completion, then inspect the embedded `CallToolResult` because it can legitimately contain `isError=true` for a truthful blocker such as `provider_unavailable`;
+5. after terminal task status, inspect the canonical project/workflow state before deciding the next action;
+6. use `tasks/cancel` only when cancellation is actually intended; cancellation does not roll back workflow changes or verified artifacts already committed;
+7. use canonical manual/external takeover and creator resume for missing-provider/capability recovery rather than trying to edit task storage or answer `tasks/update` requests.
+
+Clients that do not declare Tasks capability keep the synchronous MCP behavior verified in P2/P4. The harness therefore remains backwards compatible.
+
+For detailed operator semantics, restart behavior, Data Root portability and cancellation rules, see `docs/22-mcp-tasks-operations.md` and `docs/22-mcp-tasks-operations.vi.md`.
+
 ## Non-goals
 
-P4 does not add remote MCP HTTP, long-running MCP Tasks, an agent database, arbitrary shell tools, direct canonical-storage mutation, or P5 security/task hardening.
+P4 itself did not add remote MCP HTTP, long-running MCP Tasks, an agent database, arbitrary shell tools, direct canonical-storage mutation, or P5 security/task hardening. P5 adds durable Tasks hardening without changing the local-stdio, no-shadow-state and no-arbitrary-shell boundaries.
