@@ -1,3 +1,5 @@
+include!("phase18_p3.rs");
+
 fn with_application_control_phase18<T>(
     state: &State<'_, DesktopState>,
     operation: impl FnOnce(
@@ -81,9 +83,10 @@ impl DesktopCreatorRunRuntimeV1<'_, '_> {
         )
     }
 
-    fn llm_v1(&self) -> omnicreator_application::ControlResultV1<LlmGatewayClient> {
-        let config = load_llmgateway_config(self.app).map_err(Self::provider_error_v1)?;
-        LlmGatewayClient::new(config).map_err(omnicreator_application::ControlErrorV1::from)
+    fn llm_v1(
+        &self,
+    ) -> omnicreator_application::ControlResultV1<omnicreator_core::ConfiguredLlmProviderV1> {
+        load_llm_provider_phase18_p3(self.app).map_err(Self::provider_error_v1)
     }
 }
 
@@ -365,6 +368,8 @@ pub(super) fn run_phase17() {
             export_production_pack,
             llmgateway_status,
             save_llmgateway_settings,
+            llm_provider_status_phase18_p3,
+            save_llm_provider_settings_phase18_p3,
             compute_provider_status,
             connect_compute_provider,
             disconnect_compute_provider,

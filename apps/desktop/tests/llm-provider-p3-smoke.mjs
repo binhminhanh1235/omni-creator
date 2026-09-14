@@ -1,0 +1,20 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+const app = readFileSync(new URL("../dist/app.js", import.meta.url), "utf8");
+const backend = readFileSync(new URL("../src-tauri/src/application.rs", import.meta.url), "utf8");
+assert.match(app, /value="llm_gateway"/);
+assert.match(app, /value="open_router"/);
+assert.match(app, /value="open_ai_compatible"/);
+assert.match(app, /save_llm_provider_settings_phase18_p3/);
+assert.match(app, /llm_provider_status_phase18_p3/);
+assert.match(app, /Machine environment only · never Data Root/);
+assert.match(app, /Manual Content and Scene Plan takeover remain available/);
+const start = app.indexOf("function renderLlmGatewayPanel(status)");
+const end = app.indexOf("function studioPackItems()", start);
+assert.ok(start >= 0 && end > start);
+const panel = app.slice(start, end);
+assert.doesNotMatch(panel, /call\("llmgateway_status"\)/);
+assert.doesNotMatch(panel, /call\("save_llmgateway_settings"/);
+assert.match(backend, /llm_provider_status_phase18_p3,/);
+assert.match(backend, /save_llm_provider_settings_phase18_p3,/);

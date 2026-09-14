@@ -1,6 +1,7 @@
 mod contracts;
 mod creator_run;
 mod error;
+mod llm_runtime_service;
 mod runtime;
 mod service;
 

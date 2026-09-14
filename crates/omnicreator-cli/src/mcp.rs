@@ -9,19 +9,19 @@ use omnicreator_application::{
     BindStudioPackRequestV1, ComputeRuntimeControlSnapshotV1, ControlErrorCodeV1, ControlErrorV1,
     ControlOperationV1, ControlResponseV1, ControlResultV1, CreateProjectRequestV1,
     CreatorRunControlServiceV1, CreatorRunRuntimeV1, ExternalVisualResultRequestV1,
-    ExternalVoiceResultRequestV1, ManualContentImportRequestV1, ManualContentRequestV1,
-    ManualScenePlanImportRequestV1, ManualScenePlanRequestV1, ManualVisualRequestV1,
-    ManualVoiceRequestV1, PluginRuntimeControlSnapshotV1, ProjectIdRequestV1,
-    RecoveryFileRequestV1, RecoveryVoiceBundleRequestV1, RenameProjectRequestV1,
-    ReplaceVoiceTimingRequestV1, SetWorkflowAutomaticExecutionRequestV1,
+    ExternalVoiceResultRequestV1, LlmRuntimeControlSnapshotV1, ManualContentImportRequestV1,
+    ManualContentRequestV1, ManualScenePlanImportRequestV1, ManualScenePlanRequestV1,
+    ManualVisualRequestV1, ManualVoiceRequestV1, PluginRuntimeControlSnapshotV1,
+    ProjectIdRequestV1, RecoveryFileRequestV1, RecoveryVoiceBundleRequestV1,
+    RenameProjectRequestV1, ReplaceVoiceTimingRequestV1, SetWorkflowAutomaticExecutionRequestV1,
     StartOrResumeCreatorRequestV1, CONTROL_CONTRACT_SCHEMA_V1, CONTROL_CONTRACT_VERSION_V1,
 };
 use omnicreator_core::{
     initial_studio_pack_catalog_v1, run_creator_content_stage_v1, run_creator_scene_stage_v1,
-    Artifact, ArtifactStore, CreatorContentSceneOptionsV1, CreatorContentSceneOutcomeV1,
-    CreatorContentV1, CreatorInputV1, CreatorVisualPlanV1, EffectiveStudioPackV1, LlmGatewayClient,
-    LlmGatewayConfig, PortableStudioPackCatalogV1, Project, StateStore, Workspace,
-    WorkspaceSession,
+    Artifact, ArtifactStore, ConfiguredLlmProviderV1, CreatorContentSceneOptionsV1,
+    CreatorContentSceneOutcomeV1, CreatorContentV1, CreatorInputV1, CreatorVisualPlanV1,
+    EffectiveStudioPackV1, LlmGatewayConfig, LlmProviderConfigV1, LlmProviderV1,
+    PortableStudioPackCatalogV1, Project, StateStore, Workspace, WorkspaceSession,
 };
 use rmcp::{
     handler::server::wrapper::Parameters, model::CallToolResult, schemars::JsonSchema, tool,
@@ -38,6 +38,7 @@ struct McpServerConfigV1 {
     data_root: PathBuf,
     read_only: bool,
     device_id: String,
+    llm_provider_config: Option<PathBuf>,
     llmgateway_config: Option<PathBuf>,
     studio_pack_catalog: Option<PathBuf>,
 }
@@ -237,6 +238,7 @@ enum RuntimeInspectionKindV1 {
     All,
     Plugins,
     Compute,
+    Llm,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, JsonSchema)]
@@ -317,6 +319,7 @@ impl OmniCreatorMcpServerV1 {
     fn creator_runtime_v1(&self) -> ControlResultV1<McpCreatorRunRuntimeV1> {
         McpCreatorRunRuntimeV1::new(
             self.load_studio_pack_catalog_v1()?,
+            self.config.llm_provider_config.as_deref(),
             self.config.llmgateway_config.as_deref(),
         )
     }
@@ -713,14 +716,14 @@ impl OmniCreatorMcpServerV1 {
     }
 
     #[tool(
-        description = "Inspect sanitized plugin and/or compute runtime capability state visible to this local MCP process."
+        description = "Inspect sanitized plugin, compute, or LLM runtime capability state visible to this local MCP process."
     )]
     async fn runtime_status(
         &self,
         Parameters(params): Parameters<RuntimeStatusParamsV1>,
     ) -> Result<CallToolResult, McpError> {
         self.render_v1(self.with_service_v1(|service| {
-            let inspector = McpRuntimeInspectorV1;
+            let inspector = McpRuntimeInspectorV1::new(&self.config)?;
             match params.kind.unwrap_or(RuntimeInspectionKindV1::All) {
                 RuntimeInspectionKindV1::All => {
                     to_value_v1(service.runtime_inspection_v1(&inspector)?)
@@ -731,6 +734,9 @@ impl OmniCreatorMcpServerV1 {
                 RuntimeInspectionKindV1::Compute => {
                     to_value_v1(service.compute_runtime_inspection_v1(&inspector)?)
                 }
+                RuntimeInspectionKindV1::Llm => {
+                    to_value_v1(service.llm_runtime_inspection_v1(&inspector)?)
+                }
             }
         }))
     }
@@ -738,29 +744,26 @@ impl OmniCreatorMcpServerV1 {
 
 struct McpCreatorRunRuntimeV1 {
     catalog: PortableStudioPackCatalogV1,
-    llm: Option<LlmGatewayClient>,
+    llm: Option<ConfiguredLlmProviderV1>,
 }
 
 impl McpCreatorRunRuntimeV1 {
     fn new(
         catalog: PortableStudioPackCatalogV1,
+        llm_provider_config: Option<&Path>,
         llmgateway_config: Option<&Path>,
     ) -> ControlResultV1<Self> {
-        let llm = match llmgateway_config {
-            Some(path) => Some(
-                LlmGatewayClient::new(LlmGatewayConfig::load(path).map_err(ControlErrorV1::from)?)
-                    .map_err(ControlErrorV1::from)?,
-            ),
-            None => None,
-        };
-        Ok(Self { catalog, llm })
+        Ok(Self {
+            catalog,
+            llm: load_configured_llm_provider_v1(llm_provider_config, llmgateway_config)?,
+        })
     }
 
-    fn llm_v1(&self) -> ControlResultV1<&LlmGatewayClient> {
+    fn llm_v1(&self) -> ControlResultV1<&ConfiguredLlmProviderV1> {
         self.llm.as_ref().ok_or_else(|| {
             ControlErrorV1::new(
                 ControlErrorCodeV1::ProviderUnavailable,
-                "LLMGateway is not configured for this MCP process; pass --llmgateway-config <path> and provide its credential through the referenced environment variable",
+                "no LLM provider is configured for this MCP process; pass --llm-provider-config <path> (or legacy --llmgateway-config <path>) and provide credentials through the configured environment variable",
             )
         })
     }
@@ -844,7 +847,21 @@ impl CreatorRunRuntimeV1 for McpCreatorRunRuntimeV1 {
     }
 }
 
-struct McpRuntimeInspectorV1;
+struct McpRuntimeInspectorV1 {
+    llm: LlmRuntimeControlSnapshotV1,
+}
+
+impl McpRuntimeInspectorV1 {
+    fn new(config: &McpServerConfigV1) -> ControlResultV1<Self> {
+        let provider = load_configured_llm_provider_v1(
+            config.llm_provider_config.as_deref(),
+            config.llmgateway_config.as_deref(),
+        )?;
+        Ok(Self {
+            llm: llm_runtime_snapshot_v1(provider.as_ref()),
+        })
+    }
+}
 
 impl ApplicationRuntimeInspectorV1 for McpRuntimeInspectorV1 {
     fn plugin_runtime_snapshot_v1(&self) -> ControlResultV1<PluginRuntimeControlSnapshotV1> {
@@ -865,13 +882,21 @@ impl ApplicationRuntimeInspectorV1 for McpRuntimeInspectorV1 {
             reason_code: Some("mcp_runtime_not_configured".to_owned()),
         })
     }
+
+    fn llm_runtime_snapshot_v1(&self) -> ControlResultV1<LlmRuntimeControlSnapshotV1> {
+        Ok(self.llm.clone())
+    }
 }
 
 pub fn is_mcp_invocation_v1(args: &[String]) -> bool {
     let mut index = 0usize;
     while index < args.len() {
         match args[index].as_str() {
-            "--data-root" | "--device-id" | "--llmgateway-config" | "--studio-pack-catalog" => {
+            "--data-root"
+            | "--device-id"
+            | "--llm-provider-config"
+            | "--llmgateway-config"
+            | "--studio-pack-catalog" => {
                 index += 2;
             }
             "--read-only" | "--json" => {
@@ -900,6 +925,7 @@ fn parse_mcp_config_v1(args: Vec<String>) -> ControlResultV1<McpServerConfigV1> 
     let mut data_root = None::<PathBuf>;
     let mut read_only = false;
     let mut device_id = None::<String>;
+    let mut llm_provider_config = None::<PathBuf>;
     let mut llmgateway_config = None::<PathBuf>;
     let mut studio_pack_catalog = None::<PathBuf>;
     let mut command = Vec::<String>::new();
@@ -926,6 +952,14 @@ fn parse_mcp_config_v1(args: Vec<String>) -> ControlResultV1<McpServerConfigV1> 
                 device_id = Some(require_next_arg_v1(&args, index, "--device-id")?);
                 index += 2;
             }
+            "--llm-provider-config" => {
+                llm_provider_config = Some(PathBuf::from(require_next_arg_v1(
+                    &args,
+                    index,
+                    "--llm-provider-config",
+                )?));
+                index += 2;
+            }
             "--llmgateway-config" => {
                 llmgateway_config = Some(PathBuf::from(require_next_arg_v1(
                     &args,
@@ -949,6 +983,12 @@ fn parse_mcp_config_v1(args: Vec<String>) -> ControlResultV1<McpServerConfigV1> 
         }
     }
 
+    if llm_provider_config.is_some() && llmgateway_config.is_some() {
+        return Err(ControlErrorV1::new(
+            ControlErrorCodeV1::InvalidInput,
+            "use only one of --llm-provider-config or legacy --llmgateway-config",
+        ));
+    }
     if command.len() != 2 || command[0] != "mcp" || command[1] != "serve" {
         return Err(ControlErrorV1::new(
             ControlErrorCodeV1::InvalidInput,
@@ -965,9 +1005,56 @@ fn parse_mcp_config_v1(args: Vec<String>) -> ControlResultV1<McpServerConfigV1> 
         })?,
         read_only,
         device_id: device_id.unwrap_or_else(default_mcp_device_id_v1),
+        llm_provider_config,
         llmgateway_config,
         studio_pack_catalog,
     })
+}
+
+fn load_configured_llm_provider_v1(
+    llm_provider_config: Option<&Path>,
+    llmgateway_config: Option<&Path>,
+) -> ControlResultV1<Option<ConfiguredLlmProviderV1>> {
+    if llm_provider_config.is_some() && llmgateway_config.is_some() {
+        return Err(ControlErrorV1::new(
+            ControlErrorCodeV1::InvalidInput,
+            "use only one of --llm-provider-config or legacy --llmgateway-config",
+        ));
+    }
+    let config = if let Some(path) = llm_provider_config {
+        Some(LlmProviderConfigV1::load(path).map_err(ControlErrorV1::from)?)
+    } else if let Some(path) = llmgateway_config {
+        let legacy = LlmGatewayConfig::load(path).map_err(ControlErrorV1::from)?;
+        Some(LlmProviderConfigV1::llmgateway_v1(legacy).map_err(ControlErrorV1::from)?)
+    } else {
+        None
+    };
+    config
+        .map(ConfiguredLlmProviderV1::new)
+        .transpose()
+        .map_err(ControlErrorV1::from)
+}
+
+fn llm_runtime_snapshot_v1(
+    provider: Option<&ConfiguredLlmProviderV1>,
+) -> LlmRuntimeControlSnapshotV1 {
+    let Some(provider) = provider else {
+        return LlmRuntimeControlSnapshotV1::not_configured_v1();
+    };
+    let readiness = provider.readiness_v1();
+    LlmRuntimeControlSnapshotV1 {
+        schema: CONTROL_CONTRACT_SCHEMA_V1.to_owned(),
+        version: CONTROL_CONTRACT_VERSION_V1,
+        provider_id: Some(readiness.provider_id),
+        provider_kind: Some(readiness.kind),
+        state: readiness.state,
+        base_url: Some(readiness.base_url),
+        api_key_env: Some(readiness.api_key_env),
+        default_model: Some(readiness.default_model),
+        credential_present: readiness.credential_present,
+        model_discovery_supported: readiness.model_discovery_supported,
+        reason_code: readiness.reason_code,
+    }
 }
 
 fn require_next_arg_v1(args: &[String], index: usize, flag: &str) -> ControlResultV1<String> {

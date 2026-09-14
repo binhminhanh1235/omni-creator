@@ -10,19 +10,19 @@ use omnicreator_application::{
     BindStudioPackRequestV1, ComputeRuntimeControlSnapshotV1, ControlErrorCodeV1, ControlErrorV1,
     ControlOperationV1, ControlResponseV1, ControlResultV1, CreatorRunControlServiceV1,
     CreatorRunRuntimeV1, ExternalVisualResultRequestV1, ExternalVoiceResultRequestV1,
-    ManualContentImportRequestV1, ManualContentRequestV1, ManualScenePlanImportRequestV1,
-    ManualScenePlanRequestV1, ManualVisualRequestV1, ManualVoiceRequestV1,
-    PluginRuntimeControlSnapshotV1, ProjectIdRequestV1, RecoveryFileRequestV1,
-    RecoveryVoiceBundleRequestV1, RenameProjectRequestV1, ReplaceVoiceTimingRequestV1,
-    SetWorkflowAutomaticExecutionRequestV1, StartOrResumeCreatorRequestV1,
-    CONTROL_CONTRACT_SCHEMA_V1, CONTROL_CONTRACT_VERSION_V1,
+    LlmRuntimeControlSnapshotV1, ManualContentImportRequestV1, ManualContentRequestV1,
+    ManualScenePlanImportRequestV1, ManualScenePlanRequestV1, ManualVisualRequestV1,
+    ManualVoiceRequestV1, PluginRuntimeControlSnapshotV1, ProjectIdRequestV1,
+    RecoveryFileRequestV1, RecoveryVoiceBundleRequestV1, RenameProjectRequestV1,
+    ReplaceVoiceTimingRequestV1, SetWorkflowAutomaticExecutionRequestV1,
+    StartOrResumeCreatorRequestV1, CONTROL_CONTRACT_SCHEMA_V1, CONTROL_CONTRACT_VERSION_V1,
 };
 use omnicreator_core::{
     initial_studio_pack_catalog_v1, run_creator_content_stage_v1, run_creator_scene_stage_v1,
-    Artifact, ArtifactStore, CreatorContentSceneOptionsV1, CreatorContentSceneOutcomeV1,
-    CreatorContentV1, CreatorInputV1, CreatorVisualPlanV1, EffectiveStudioPackV1, LlmGatewayClient,
-    LlmGatewayConfig, PortableStudioPackCatalogV1, Project, StateStore, Workspace,
-    WorkspaceSession,
+    Artifact, ArtifactStore, ConfiguredLlmProviderV1, CreatorContentSceneOptionsV1,
+    CreatorContentSceneOutcomeV1, CreatorContentV1, CreatorInputV1, CreatorVisualPlanV1,
+    EffectiveStudioPackV1, LlmGatewayConfig, LlmProviderConfigV1, LlmProviderV1,
+    PortableStudioPackCatalogV1, Project, StateStore, Workspace, WorkspaceSession,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
@@ -54,6 +54,7 @@ struct GlobalOptionsV1 {
     read_only: bool,
     json: bool,
     device_id: String,
+    llm_provider_config: Option<PathBuf>,
     llmgateway_config: Option<PathBuf>,
     studio_pack_catalog: Option<PathBuf>,
 }
@@ -206,6 +207,7 @@ fn parse_invocation_v1(args: Vec<String>) -> ControlResultV1<CliInvocationV1> {
     let mut read_only = false;
     let mut json = false;
     let mut device_id = None::<String>;
+    let mut llm_provider_config = None::<PathBuf>;
     let mut llmgateway_config = None::<PathBuf>;
     let mut studio_pack_catalog = None::<PathBuf>;
     let mut command = Vec::<String>::new();
@@ -235,6 +237,13 @@ fn parse_invocation_v1(args: Vec<String>) -> ControlResultV1<CliInvocationV1> {
                 device_id = Some(value.clone());
                 index += 2;
             }
+            "--llm-provider-config" => {
+                let value = args
+                    .get(index + 1)
+                    .ok_or_else(|| invalid_input_v1("--llm-provider-config requires a value"))?;
+                llm_provider_config = Some(PathBuf::from(value));
+                index += 2;
+            }
             "--llmgateway-config" => {
                 let value = args
                     .get(index + 1)
@@ -256,6 +265,11 @@ fn parse_invocation_v1(args: Vec<String>) -> ControlResultV1<CliInvocationV1> {
         }
     }
 
+    if llm_provider_config.is_some() && llmgateway_config.is_some() {
+        return Err(invalid_input_v1(
+            "use only one of --llm-provider-config or legacy --llmgateway-config",
+        ));
+    }
     if command.len() < 2 {
         return Err(invalid_input_v1(
             "expected <resource> <verb>; for example: workspace status",
@@ -270,6 +284,7 @@ fn parse_invocation_v1(args: Vec<String>) -> ControlResultV1<CliInvocationV1> {
             read_only,
             json,
             device_id: device_id.unwrap_or_else(default_device_id_v1),
+            llm_provider_config,
             llmgateway_config,
             studio_pack_catalog,
         },
@@ -324,8 +339,11 @@ fn execute_creator_run_v1(
 ) -> ControlResultV1<Value> {
     let request = creator_request_v1(invocation.command_args.clone(), stdin)?;
     let catalog = load_studio_pack_catalog_v1(invocation.global.studio_pack_catalog.as_deref())?;
-    let mut runtime =
-        CliCreatorRunRuntimeV1::new(catalog, invocation.global.llmgateway_config.as_deref())?;
+    let mut runtime = CliCreatorRunRuntimeV1::new(
+        catalog,
+        invocation.global.llm_provider_config.as_deref(),
+        invocation.global.llmgateway_config.as_deref(),
+    )?;
 
     if invocation.global.read_only {
         let workspace =
@@ -619,15 +637,23 @@ fn execute_service_command_v1(
         }
         ("runtime", "status") => {
             args.finish()?;
-            value_v1(service.runtime_inspection_v1(&CliRuntimeInspectorV1)?)
+            let inspector = CliRuntimeInspectorV1::new(&invocation.global)?;
+            value_v1(service.runtime_inspection_v1(&inspector)?)
         }
         ("runtime", "plugins") | ("plugin", "status") => {
             args.finish()?;
-            value_v1(service.plugin_runtime_inspection_v1(&CliRuntimeInspectorV1)?)
+            let inspector = CliRuntimeInspectorV1::new(&invocation.global)?;
+            value_v1(service.plugin_runtime_inspection_v1(&inspector)?)
         }
         ("runtime", "compute") | ("compute", "status") => {
             args.finish()?;
-            value_v1(service.compute_runtime_inspection_v1(&CliRuntimeInspectorV1)?)
+            let inspector = CliRuntimeInspectorV1::new(&invocation.global)?;
+            value_v1(service.compute_runtime_inspection_v1(&inspector)?)
+        }
+        ("runtime", "llm") | ("llm", "status") => {
+            args.finish()?;
+            let inspector = CliRuntimeInspectorV1::new(&invocation.global)?;
+            value_v1(service.llm_runtime_inspection_v1(&inspector)?)
         }
         _ => Err(invalid_input_v1(format!(
             "unsupported command {} {}",
@@ -638,29 +664,26 @@ fn execute_service_command_v1(
 
 struct CliCreatorRunRuntimeV1 {
     catalog: PortableStudioPackCatalogV1,
-    llm: Option<LlmGatewayClient>,
+    llm: Option<ConfiguredLlmProviderV1>,
 }
 
 impl CliCreatorRunRuntimeV1 {
     fn new(
         catalog: PortableStudioPackCatalogV1,
+        llm_provider_config: Option<&Path>,
         llmgateway_config: Option<&Path>,
     ) -> ControlResultV1<Self> {
-        let llm = match llmgateway_config {
-            Some(path) => Some(
-                LlmGatewayClient::new(LlmGatewayConfig::load(path).map_err(ControlErrorV1::from)?)
-                    .map_err(ControlErrorV1::from)?,
-            ),
-            None => None,
-        };
-        Ok(Self { catalog, llm })
+        Ok(Self {
+            catalog,
+            llm: load_configured_llm_provider_v1(llm_provider_config, llmgateway_config)?,
+        })
     }
 
-    fn llm_v1(&self) -> ControlResultV1<&LlmGatewayClient> {
+    fn llm_v1(&self) -> ControlResultV1<&ConfiguredLlmProviderV1> {
         self.llm.as_ref().ok_or_else(|| {
             ControlErrorV1::new(
                 ControlErrorCodeV1::ProviderUnavailable,
-                "LLMGateway is not configured for this CLI process; pass --llmgateway-config <path> and provide its credential through the referenced environment variable",
+                "no LLM provider is configured for this CLI process; pass --llm-provider-config <path> (or legacy --llmgateway-config <path>) and provide credentials through the configured environment variable",
             )
         })
     }
@@ -744,7 +767,21 @@ impl CreatorRunRuntimeV1 for CliCreatorRunRuntimeV1 {
     }
 }
 
-struct CliRuntimeInspectorV1;
+struct CliRuntimeInspectorV1 {
+    llm: LlmRuntimeControlSnapshotV1,
+}
+
+impl CliRuntimeInspectorV1 {
+    fn new(global: &GlobalOptionsV1) -> ControlResultV1<Self> {
+        let provider = load_configured_llm_provider_v1(
+            global.llm_provider_config.as_deref(),
+            global.llmgateway_config.as_deref(),
+        )?;
+        Ok(Self {
+            llm: llm_runtime_snapshot_v1(provider.as_ref()),
+        })
+    }
+}
 
 impl ApplicationRuntimeInspectorV1 for CliRuntimeInspectorV1 {
     fn plugin_runtime_snapshot_v1(&self) -> ControlResultV1<PluginRuntimeControlSnapshotV1> {
@@ -764,6 +801,55 @@ impl ApplicationRuntimeInspectorV1 for CliRuntimeInspectorV1 {
             capabilities: Vec::new(),
             reason_code: Some("cli_runtime_not_configured".to_owned()),
         })
+    }
+
+    fn llm_runtime_snapshot_v1(&self) -> ControlResultV1<LlmRuntimeControlSnapshotV1> {
+        Ok(self.llm.clone())
+    }
+}
+
+fn load_configured_llm_provider_v1(
+    llm_provider_config: Option<&Path>,
+    llmgateway_config: Option<&Path>,
+) -> ControlResultV1<Option<ConfiguredLlmProviderV1>> {
+    if llm_provider_config.is_some() && llmgateway_config.is_some() {
+        return Err(invalid_input_v1(
+            "use only one of --llm-provider-config or legacy --llmgateway-config",
+        ));
+    }
+    let config = if let Some(path) = llm_provider_config {
+        Some(LlmProviderConfigV1::load(path).map_err(ControlErrorV1::from)?)
+    } else if let Some(path) = llmgateway_config {
+        let legacy = LlmGatewayConfig::load(path).map_err(ControlErrorV1::from)?;
+        Some(LlmProviderConfigV1::llmgateway_v1(legacy).map_err(ControlErrorV1::from)?)
+    } else {
+        None
+    };
+    config
+        .map(ConfiguredLlmProviderV1::new)
+        .transpose()
+        .map_err(ControlErrorV1::from)
+}
+
+fn llm_runtime_snapshot_v1(
+    provider: Option<&ConfiguredLlmProviderV1>,
+) -> LlmRuntimeControlSnapshotV1 {
+    let Some(provider) = provider else {
+        return LlmRuntimeControlSnapshotV1::not_configured_v1();
+    };
+    let readiness = provider.readiness_v1();
+    LlmRuntimeControlSnapshotV1 {
+        schema: CONTROL_CONTRACT_SCHEMA_V1.to_owned(),
+        version: CONTROL_CONTRACT_VERSION_V1,
+        provider_id: Some(readiness.provider_id),
+        provider_kind: Some(readiness.kind),
+        state: readiness.state,
+        base_url: Some(readiness.base_url),
+        api_key_env: Some(readiness.api_key_env),
+        default_model: Some(readiness.default_model),
+        credential_present: readiness.credential_present,
+        model_discovery_supported: readiness.model_discovery_supported,
+        reason_code: readiness.reason_code,
     }
 }
 
