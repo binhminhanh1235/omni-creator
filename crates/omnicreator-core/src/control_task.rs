@@ -25,6 +25,8 @@ impl StateStore {
     /// Creates the canonical durable record for an agent/control-plane task.
     ///
     /// The returned Job id is the durable task id. No MCP-specific task table is created.
+    /// Control tasks retain a canonical pointer to their active attempt from creation so the
+    /// transport can persist or fail the same attempt without inventing process-local state.
     pub fn create_control_task_v1(
         &mut self,
         project_id: &str,
@@ -38,7 +40,11 @@ impl StateStore {
             )));
         }
         let job = self.create_job(project_id, step, CONTROL_TASK_UNIT_PROJECT_V1, input_hash)?;
-        self.start_attempt(&job.job_id, worker)?;
+        let attempt = self.start_attempt(&job.job_id, worker)?;
+        self.connection.execute(
+            "UPDATE jobs SET selected_attempt_id=?1 WHERE id=?2",
+            params![&attempt.attempt_id, &job.job_id],
+        )?;
         self.get_control_task_v1(&job.job_id)
     }
 
@@ -149,6 +155,10 @@ mod tests {
             .unwrap();
         assert_eq!(created.job.status, StepStatus::Running);
         assert_eq!(created.attempts.len(), 1);
+        assert_eq!(
+            created.job.selected_attempt.as_deref(),
+            Some(created.attempts[0].attempt_id.as_str())
+        );
         let task_id = created.job.job_id.clone();
         drop(store);
 
@@ -156,6 +166,10 @@ mod tests {
         let recovered = reopened.get_control_task_v1(&task_id).unwrap();
         assert_eq!(recovered.job.status, StepStatus::Running);
         assert_eq!(recovered.attempts[0].status, StepStatus::Running);
+        assert_eq!(
+            recovered.job.selected_attempt.as_deref(),
+            Some(recovered.attempts[0].attempt_id.as_str())
+        );
 
         let cancelled = reopened.cancel_control_task_v1(&task_id).unwrap();
         assert_eq!(cancelled.job.status, StepStatus::Cancelled);
