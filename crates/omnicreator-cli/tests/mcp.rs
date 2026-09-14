@@ -8,12 +8,12 @@ use omnicreator_core::{
     derive_manual_voice_timing_v1, ManualResultProvenanceV1, ManualScenePlanDraftV1, Workspace,
 };
 use rmcp::{
-    ServiceExt,
     model::{CallToolRequestParams, CallToolResult},
     transport::{ConfigureCommandExt, TokioChildProcess},
+    ServiceExt,
 };
 use serde::Serialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use tokio::process::Command;
 
 fn png() -> Vec<u8> {
@@ -77,18 +77,20 @@ async fn call(
 }
 
 fn mcp_transport(root: &Path, read_only: bool) -> TokioChildProcess {
-    TokioChildProcess::new(Command::new(env!("CARGO_BIN_EXE_omnicreator")).configure(|command| {
-        command
-            .arg("--data-root")
-            .arg(root)
-            .arg("--device-id")
-            .arg("phase18-p2-mcp-test");
-        if read_only {
-            command.arg("--read-only");
-        }
-        command.arg("mcp").arg("serve");
-        command.stderr(Stdio::inherit());
-    }))
+    TokioChildProcess::new(
+        Command::new(env!("CARGO_BIN_EXE_omnicreator")).configure(|command| {
+            command
+                .arg("--data-root")
+                .arg(root)
+                .arg("--device-id")
+                .arg("phase18-p2-mcp-test");
+            if read_only {
+                command.arg("--read-only");
+            }
+            command.arg("mcp").arg("serve");
+            command.stderr(Stdio::inherit());
+        }),
+    )
     .unwrap()
 }
 
@@ -127,7 +129,10 @@ async fn mcp_stdio_discovers_tools_and_full_manual_flow_matches_application_stat
         "production_control",
         "runtime_status",
     ] {
-        assert!(names.contains(&required), "missing MCP tool {required}: {names:?}");
+        assert!(
+            names.contains(&required),
+            "missing MCP tool {required}: {names:?}"
+        );
     }
 
     let created = call(
@@ -152,7 +157,10 @@ async fn mcp_stdio_discovers_tools_and_full_manual_flow_matches_application_stat
     )
     .await;
     assert_eq!(auto_off.is_error, Some(false));
-    assert_eq!(structured(&auto_off)["data"]["automatic_execution_enabled"], false);
+    assert_eq!(
+        structured(&auto_off)["data"]["automatic_execution_enabled"],
+        false
+    );
 
     let script = "MCP must preserve the same canonical workflow truth as CLI and Desktop.";
     let content_request = ManualContentRequestV1 {
@@ -182,7 +190,11 @@ async fn mcp_stdio_discovers_tools_and_full_manual_flow_matches_application_stat
         .as_array()
         .unwrap()
         .iter()
-        .find(|item| item["step_id"].as_str().is_some_and(|value| value.contains("content")))
+        .find(|item| {
+            item["step_id"]
+                .as_str()
+                .is_some_and(|value| value.contains("content"))
+        })
         .expect("content policy");
     assert_eq!(content_policy["automatic_execution_enabled"], false);
 
@@ -249,12 +261,7 @@ async fn mcp_stdio_discovers_tools_and_full_manual_flow_matches_application_stat
     .await;
     assert_eq!(voice.is_error, Some(false));
 
-    let review = call(
-        &client,
-        "review_list",
-        json!({"project_id": project_id}),
-    )
-    .await;
+    let review = call(&client, "review_list", json!({"project_id": project_id})).await;
     assert_eq!(review.is_error, Some(false));
     assert_eq!(structured(&review)["operation"], "review_center");
 
@@ -265,7 +272,10 @@ async fn mcp_stdio_discovers_tools_and_full_manual_flow_matches_application_stat
     )
     .await;
     assert_eq!(recovery.is_error, Some(false));
-    assert_eq!(structured(&recovery)["data"]["recovery"]["ready_for_rebuild"], true);
+    assert_eq!(
+        structured(&recovery)["data"]["recovery"]["ready_for_rebuild"],
+        true
+    );
 
     let exported = call(
         &client,
@@ -274,19 +284,16 @@ async fn mcp_stdio_discovers_tools_and_full_manual_flow_matches_application_stat
     )
     .await;
     assert_eq!(exported.is_error, Some(false));
-    assert!(structured(&exported)["data"]["assembly"]["production_pack"]["tracks"]
-        .as_array()
-        .is_some_and(|items| !items.is_empty()));
+    assert!(
+        structured(&exported)["data"]["assembly"]["production_pack"]["tracks"]
+            .as_array()
+            .is_some_and(|items| !items.is_empty())
+    );
     assert!(structured(&exported)["data"]["export"]["artifacts"]
         .as_array()
         .is_some_and(|items| !items.is_empty()));
 
-    let project = call(
-        &client,
-        "project_get",
-        json!({"project_id": project_id}),
-    )
-    .await;
+    let project = call(&client, "project_get", json!({"project_id": project_id})).await;
     assert_eq!(project.is_error, Some(false));
     let encoded = serde_json::to_string(structured(&project)).unwrap();
     assert!(!encoded.contains(root.to_string_lossy().as_ref()));

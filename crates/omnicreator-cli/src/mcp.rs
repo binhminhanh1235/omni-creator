@@ -19,17 +19,13 @@ use omnicreator_application::{
 use omnicreator_core::{
     initial_studio_pack_catalog_v1, run_creator_content_stage_v1, run_creator_scene_stage_v1,
     Artifact, ArtifactStore, CreatorContentSceneOptionsV1, CreatorContentSceneOutcomeV1,
-    CreatorContentV1, CreatorInputV1, CreatorVisualPlanV1, EffectiveStudioPackV1,
-    LlmGatewayClient, LlmGatewayConfig, PortableStudioPackCatalogV1, Project, StateStore, Workspace,
+    CreatorContentV1, CreatorInputV1, CreatorVisualPlanV1, EffectiveStudioPackV1, LlmGatewayClient,
+    LlmGatewayConfig, PortableStudioPackCatalogV1, Project, StateStore, Workspace,
     WorkspaceSession,
 };
 use rmcp::{
-    ErrorData as McpError, ServiceExt,
-    handler::server::wrapper::Parameters,
-    model::CallToolResult,
-    schemars::JsonSchema,
-    tool, tool_router,
-    transport::stdio,
+    handler::server::wrapper::Parameters, model::CallToolResult, schemars::JsonSchema, tool,
+    tool_router, transport::stdio, ErrorData as McpError, ServiceExt,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -260,7 +256,9 @@ impl OmniCreatorMcpServerV1 {
 
     fn with_service_v1(
         &self,
-        operation: impl for<'service> FnOnce(&mut ApplicationControlService<'service>) -> ControlResultV1<Value>,
+        operation: impl for<'service> FnOnce(
+            &mut ApplicationControlService<'service>,
+        ) -> ControlResultV1<Value>,
     ) -> ControlResultV1<Value> {
         if self.config.read_only {
             let workspace =
@@ -268,7 +266,8 @@ impl OmniCreatorMcpServerV1 {
             let mut service = ApplicationControlService::for_read_only(&workspace)?;
             operation(&mut service)
         } else {
-            let workspace = Workspace::open(&self.config.data_root).map_err(ControlErrorV1::from)?;
+            let workspace =
+                Workspace::open(&self.config.data_root).map_err(ControlErrorV1::from)?;
             let session = WorkspaceSession::acquire(workspace, &self.config.device_id)
                 .map_err(ControlErrorV1::from)?;
             let mut service = ApplicationControlService::for_writer(&session)?;
@@ -328,7 +327,8 @@ impl OmniCreatorMcpServerV1 {
             let mut control = CreatorRunControlServiceV1::for_read_only(&workspace)?;
             to_value_v1(control.start_or_resume_v1(&request, &mut runtime)?)
         } else {
-            let workspace = Workspace::open(&self.config.data_root).map_err(ControlErrorV1::from)?;
+            let workspace =
+                Workspace::open(&self.config.data_root).map_err(ControlErrorV1::from)?;
             let session = WorkspaceSession::acquire(workspace, &self.config.device_id)
                 .map_err(ControlErrorV1::from)?;
             let mut control = CreatorRunControlServiceV1::for_writer(&session)?;
@@ -339,11 +339,11 @@ impl OmniCreatorMcpServerV1 {
 
 #[tool_router(server_handler)]
 impl OmniCreatorMcpServerV1 {
-    #[tool(description = "Inspect the active OmniCreator Data Root and writer/read-only access state.")]
+    #[tool(
+        description = "Inspect the active OmniCreator Data Root and writer/read-only access state."
+    )]
     async fn workspace_status(&self) -> Result<CallToolResult, McpError> {
-        self.render_v1(
-            self.with_service_v1(|service| to_value_v1(service.workspace_status_v1()?)),
-        )
+        self.render_v1(self.with_service_v1(|service| to_value_v1(service.workspace_status_v1()?)))
     }
 
     #[tool(description = "List canonical OmniCreator projects visible in the active Data Root.")]
@@ -363,7 +363,9 @@ impl OmniCreatorMcpServerV1 {
         }))
     }
 
-    #[tool(description = "Create a project. Supply studio_pack_id to materialize the canonical creator workflow immediately.")]
+    #[tool(
+        description = "Create a project. Supply studio_pack_id to materialize the canonical creator workflow immediately."
+    )]
     async fn project_create(
         &self,
         Parameters(params): Parameters<ProjectCreateParamsV1>,
@@ -393,7 +395,9 @@ impl OmniCreatorMcpServerV1 {
         })
     }
 
-    #[tool(description = "Rename, bind/clear Studio Pack, or delete a canonical project through the shared application service.")]
+    #[tool(
+        description = "Rename, bind/clear Studio Pack, or delete a canonical project through the shared application service."
+    )]
     async fn project_update(
         &self,
         Parameters(params): Parameters<ProjectUpdateParamsV1>,
@@ -407,8 +411,7 @@ impl OmniCreatorMcpServerV1 {
                 })?)
             }
             ProjectUpdateActionV1::BindStudioPack => {
-                let studio_pack_id =
-                    required_option_v1(params.studio_pack_id, "studio_pack_id")?;
+                let studio_pack_id = required_option_v1(params.studio_pack_id, "studio_pack_id")?;
                 to_value_v1(service.bind_studio_pack_v1(&BindStudioPackRequestV1 {
                     project_id: params.project_id,
                     studio_pack_id: Some(studio_pack_id),
@@ -434,15 +437,15 @@ impl OmniCreatorMcpServerV1 {
         Parameters(params): Parameters<ProjectIdParamsV1>,
     ) -> Result<CallToolResult, McpError> {
         self.render_v1(self.with_service_v1(|service| {
-            to_value_v1(
-                service.workflow_execution_policies_v1(&ProjectIdRequestV1 {
-                    project_id: params.project_id,
-                })?,
-            )
+            to_value_v1(service.workflow_execution_policies_v1(&ProjectIdRequestV1 {
+                project_id: params.project_id,
+            })?)
         }))
     }
 
-    #[tool(description = "Turn one canonical workflow stage automatic execution ON or OFF without changing its completion state.")]
+    #[tool(
+        description = "Turn one canonical workflow stage automatic execution ON or OFF without changing its completion state."
+    )]
     async fn workflow_set_step_auto(
         &self,
         Parameters(params): Parameters<WorkflowAutoParamsV1>,
@@ -487,7 +490,9 @@ impl OmniCreatorMcpServerV1 {
         }))
     }
 
-    #[tool(description = "Start or resume canonical creator execution. Automatic stages run only when their shared policy and local runtime capability allow it.")]
+    #[tool(
+        description = "Start or resume canonical creator execution. Automatic stages run only when their shared policy and local runtime capability allow it."
+    )]
     async fn creator_start_or_resume(
         &self,
         Parameters(params): Parameters<CreatorStartParamsV1>,
@@ -509,8 +514,7 @@ impl OmniCreatorMcpServerV1 {
     ) -> Result<CallToolResult, McpError> {
         self.render_v1(self.with_service_v1(|service| {
             if let Some(project_id) = params.project_id {
-                let snapshot =
-                    service.project_status_v1(&ProjectIdRequestV1 { project_id })?;
+                let snapshot = service.project_status_v1(&ProjectIdRequestV1 { project_id })?;
                 to_value_v1(ControlResponseV1::new(
                     ControlOperationV1::ReviewCenter,
                     snapshot.data.review_center,
@@ -521,7 +525,9 @@ impl OmniCreatorMcpServerV1 {
         }))
     }
 
-    #[tool(description = "Provide or import canonical creator Content. payload must match the application-control request for the selected action.")]
+    #[tool(
+        description = "Provide or import canonical creator Content. payload must match the application-control request for the selected action."
+    )]
     async fn content_control(
         &self,
         Parameters(params): Parameters<ContentControlParamsV1>,
@@ -538,7 +544,9 @@ impl OmniCreatorMcpServerV1 {
         }))
     }
 
-    #[tool(description = "Open the ScenePlan editor projection, provide a canonical manual ScenePlan, or import one from an approved file path.")]
+    #[tool(
+        description = "Open the ScenePlan editor projection, provide a canonical manual ScenePlan, or import one from an approved file path."
+    )]
     async fn scene_plan_control(
         &self,
         Parameters(params): Parameters<SceneControlParamsV1>,
@@ -546,9 +554,7 @@ impl OmniCreatorMcpServerV1 {
         self.render_v1(self.with_service_v1(|service| match params.action {
             SceneActionV1::Editor => {
                 let project_id = required_option_v1(params.project_id, "project_id")?;
-                to_value_v1(
-                    service.scene_plan_editor_v1(&ProjectIdRequestV1 { project_id })?,
-                )
+                to_value_v1(service.scene_plan_editor_v1(&ProjectIdRequestV1 { project_id })?)
             }
             SceneActionV1::Provide => {
                 let request: ManualScenePlanRequestV1 =
@@ -563,7 +569,9 @@ impl OmniCreatorMcpServerV1 {
         }))
     }
 
-    #[tool(description = "Inspect or satisfy creator visual work through canonical manual, asset-library, stock, generated approval, or external handoff operations.")]
+    #[tool(
+        description = "Inspect or satisfy creator visual work through canonical manual, asset-library, stock, generated approval, or external handoff operations."
+    )]
     async fn visual_control(
         &self,
         Parameters(params): Parameters<VisualControlParamsV1>,
@@ -595,9 +603,7 @@ impl OmniCreatorMcpServerV1 {
             VisualActionV1::ApproveGenerated => {
                 let request: GeneratedApprovalPayloadV1 =
                     parse_payload_v1(required_option_v1(params.payload, "payload")?)?;
-                to_value_v1(
-                    service.approve_generated_visual_v1(request.plan, &request.scene_id)?,
-                )
+                to_value_v1(service.approve_generated_visual_v1(request.plan, &request.scene_id)?)
             }
             VisualActionV1::PrepareExternal => {
                 let project_id = required_option_v1(params.project_id, "project_id")?;
@@ -612,7 +618,9 @@ impl OmniCreatorMcpServerV1 {
         }))
     }
 
-    #[tool(description = "Inspect or satisfy creator voice/audio/timing work through canonical manual or external handoff operations.")]
+    #[tool(
+        description = "Inspect or satisfy creator voice/audio/timing work through canonical manual or external handoff operations."
+    )]
     async fn voice_control(
         &self,
         Parameters(params): Parameters<VoiceControlParamsV1>,
@@ -645,7 +653,9 @@ impl OmniCreatorMcpServerV1 {
         }))
     }
 
-    #[tool(description = "Inspect, assemble, recover, or export the canonical ProductionPack and Resolve-ready interchange artifacts.")]
+    #[tool(
+        description = "Inspect, assemble, recover, or export the canonical ProductionPack and Resolve-ready interchange artifacts."
+    )]
     async fn production_control(
         &self,
         Parameters(params): Parameters<ProductionControlParamsV1>,
@@ -653,15 +663,11 @@ impl OmniCreatorMcpServerV1 {
         self.render_v1(self.with_service_v1(|service| match params.action {
             ProductionActionV1::Status => {
                 let project_id = required_option_v1(params.project_id, "project_id")?;
-                to_value_v1(
-                    service.latest_production_pack_v1(&ProjectIdRequestV1 { project_id })?,
-                )
+                to_value_v1(service.latest_production_pack_v1(&ProjectIdRequestV1 { project_id })?)
             }
             ProductionActionV1::Recovery => {
                 let project_id = required_option_v1(params.project_id, "project_id")?;
-                to_value_v1(
-                    service.production_recovery_v1(&ProjectIdRequestV1 { project_id })?,
-                )
+                to_value_v1(service.production_recovery_v1(&ProjectIdRequestV1 { project_id })?)
             }
             ProductionActionV1::Assemble => {
                 let project_id = required_option_v1(params.project_id, "project_id")?;
@@ -671,9 +677,9 @@ impl OmniCreatorMcpServerV1 {
             }
             ProductionActionV1::RebuildExport => {
                 let project_id = required_option_v1(params.project_id, "project_id")?;
-                to_value_v1(service.rebuild_and_export_production_v1(
-                    &ProjectIdRequestV1 { project_id },
-                )?)
+                to_value_v1(
+                    service.rebuild_and_export_production_v1(&ProjectIdRequestV1 { project_id })?,
+                )
             }
             ProductionActionV1::RepairVisual => {
                 let request: RecoveryFileRequestV1 =
@@ -698,7 +704,9 @@ impl OmniCreatorMcpServerV1 {
         }))
     }
 
-    #[tool(description = "Inspect sanitized plugin and/or compute runtime capability state visible to this local MCP process.")]
+    #[tool(
+        description = "Inspect sanitized plugin and/or compute runtime capability state visible to this local MCP process."
+    )]
     async fn runtime_status(
         &self,
         Parameters(params): Parameters<RuntimeStatusParamsV1>,
@@ -892,7 +900,11 @@ fn parse_mcp_config_v1(args: Vec<String>) -> ControlResultV1<McpServerConfigV1> 
     while index < args.len() {
         match args[index].as_str() {
             "--data-root" => {
-                data_root = Some(PathBuf::from(require_next_arg_v1(&args, index, "--data-root")?));
+                data_root = Some(PathBuf::from(require_next_arg_v1(
+                    &args,
+                    index,
+                    "--data-root",
+                )?));
                 index += 2;
             }
             "--read-only" => {
@@ -950,11 +962,7 @@ fn parse_mcp_config_v1(args: Vec<String>) -> ControlResultV1<McpServerConfigV1> 
     })
 }
 
-fn require_next_arg_v1(
-    args: &[String],
-    index: usize,
-    flag: &str,
-) -> ControlResultV1<String> {
+fn require_next_arg_v1(args: &[String], index: usize, flag: &str) -> ControlResultV1<String> {
     args.get(index + 1).cloned().ok_or_else(|| {
         ControlErrorV1::new(
             ControlErrorCodeV1::InvalidInput,
