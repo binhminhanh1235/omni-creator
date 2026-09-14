@@ -436,6 +436,8 @@ impl rmcp::ServerHandler for OmniCreatorMcpTaskServerV1 {
 }
 
 pub async fn serve_mcp_stdio_p5_from_args_v1(args: Vec<String>) -> Result<(), String> {
+    // Keep the Phase 18 P2 entrypoint type-checked while P5 wraps the same server contract.
+    let _legacy_stdio_entrypoint_v1 = serve_mcp_stdio_from_args_v1;
     let config = parse_mcp_config_v1(args).map_err(|error| error.to_string())?;
     OmniCreatorMcpTaskServerV1::reconcile_interrupted_control_tasks_v1(&config)?;
     let service = OmniCreatorMcpTaskServerV1::new(config)
