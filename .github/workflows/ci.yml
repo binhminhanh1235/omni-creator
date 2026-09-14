@@ -5,7 +5,262 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: write
+
 jobs:
+  p3_openrouter_acceptance_patch:
+    if: github.event_name == 'pull_request' && github.head_ref == 'feat/phase18-p3-llm-provider-openrouter'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Make HTTP mock deterministic and add direct-provider acceptance
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('crates/omnicreator-core/src/llm_provider.rs')
+          text = path.read_text()
+
+          old_import = '''        io::{Read, Write},\n        net::TcpListener,\n        sync::{Arc, Mutex},\n'''
+          new_import = '''        io::{Read, Write},\n        net::{TcpListener, TcpStream},\n        sync::{Arc, Mutex},\n'''
+          if old_import in text:
+              text = text.replace(old_import, new_import, 1)
+
+          old_with_env = '''    fn with_env_var<T>(name: &str, value: &str, operation: impl FnOnce() -> T) -> T {\n        let previous = env::var(name).ok();\n        env::set_var(name, value);\n        let result = operation();\n        if let Some(previous) = previous {\n            env::set_var(name, previous);\n        } else {\n            env::remove_var(name);\n        }\n        result\n    }\n'''
+          new_helpers = r'''    static ENV_LOCK_V1: Mutex<()> = Mutex::new(());
+
+    fn with_env_var<T>(name: &str, value: &str, operation: impl FnOnce() -> T) -> T {
+        let _guard = ENV_LOCK_V1.lock().unwrap();
+        let previous = env::var(name).ok();
+        env::set_var(name, value);
+        let result = operation();
+        if let Some(previous) = previous {
+            env::set_var(name, previous);
+        } else {
+            env::remove_var(name);
+        }
+        result
+    }
+
+    fn read_http_request_v1(stream: &mut TcpStream) -> String {
+        let mut bytes = Vec::new();
+        let mut chunk = [0_u8; 4_096];
+        loop {
+            let read = stream.read(&mut chunk).unwrap();
+            if read == 0 {
+                break;
+            }
+            bytes.extend_from_slice(&chunk[..read]);
+            let Some(header_end) = bytes.windows(4).position(|window| window == b"\r\n\r\n") else {
+                continue;
+            };
+            let headers = String::from_utf8_lossy(&bytes[..header_end]);
+            let content_length = headers
+                .lines()
+                .find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.eq_ignore_ascii_case("content-length")
+                        .then(|| value.trim().parse::<usize>().ok())
+                        .flatten()
+                })
+                .unwrap_or(0);
+            if bytes.len() >= header_end + 4 + content_length {
+                break;
+            }
+        }
+        String::from_utf8(bytes).unwrap()
+    }
+
+    fn write_openai_chat_response_v1(stream: &mut TcpStream, content: &str) {
+        let body = serde_json::to_string(&json!({
+            "id": "chat-test",
+            "model": DEFAULT_OPENROUTER_MODEL_V1,
+            "choices": [{"message": {"role": "assistant", "content": content}}],
+        }))
+        .unwrap();
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        )
+        .unwrap();
+    }
+'''
+          if old_with_env not in text:
+              raise SystemExit('with_env_var anchor missing')
+          text = text.replace(old_with_env, new_helpers, 1)
+
+          old_server = r'''        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buffer = vec![0_u8; 16_384];
+            let read = stream.read(&mut buffer).unwrap();
+            *server_capture.lock().unwrap() = String::from_utf8_lossy(&buffer[..read]).into_owned();
+            let body = r#"{"id":"chat-1","model":"openrouter/auto","choices":[{"message":{"role":"assistant","content":"Creator script"}}]}"#;
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .unwrap();
+        });
+'''
+          new_server = r'''        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            *server_capture.lock().unwrap() = read_http_request_v1(&mut stream);
+            write_openai_chat_response_v1(&mut stream, "Creator script");
+        });
+'''
+          if old_server not in text:
+              raise SystemExit('existing mock server anchor missing')
+          text = text.replace(old_server, new_server, 1)
+
+          final = text.rfind('\n}')
+          if final < 0:
+              raise SystemExit('test module closing brace missing')
+          acceptance = r'''
+
+    #[derive(Debug, serde::Deserialize)]
+    struct QualityVerdictV1 {
+        score: u8,
+        decision: String,
+    }
+
+    #[test]
+    fn openrouter_direct_provider_runs_content_scene_and_quality_without_gateway_semantics() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let captured = Arc::new(Mutex::new(Vec::<String>::new()));
+        let server_capture = Arc::clone(&captured);
+        let segment_text = "Morning light enters a quiet room as hope returns.";
+        let scene_json = json!({
+            "schema": SCENE_INTENT_SCHEMA,
+            "schema_version": SCENE_INTENT_SCHEMA_VERSION,
+            "id": "scene-1",
+            "segment_id": "segment-1",
+            "narration": segment_text,
+            "purpose": "Show a concrete transition from uncertainty to hope.",
+            "scene_type": "conceptual",
+            "emotion_before": "uncertain",
+            "emotion_after": "hopeful",
+            "duration_hint": 6.0,
+            "visual_ideas": [
+                "Closed curtains slowly opening to morning light",
+                "A quiet room becoming brighter as a person stands by the window"
+            ],
+            "search_queries": [
+                "morning light through curtains interior",
+                "person opening curtains sunrise room",
+                "quiet bedroom warm dawn window"
+            ],
+            "avoid": [],
+            "continuity": {},
+            "aspect_ratio": "16:9"
+        })
+        .to_string();
+        let responses = vec![
+            "A calm production-ready narration script.".to_owned(),
+            scene_json,
+            r#"{"score":92,"decision":"pass"}"#.to_owned(),
+        ];
+        let server = thread::spawn(move || {
+            for content in responses {
+                let (mut stream, _) = listener.accept().unwrap();
+                let request = read_http_request_v1(&mut stream);
+                server_capture.lock().unwrap().push(request);
+                write_openai_chat_response_v1(&mut stream, &content);
+            }
+        });
+
+        let provider = OpenAiCompatibleProviderV1::new(OpenAiCompatibleConfigV1 {
+            base_url: format!("http://{address}/api/v1"),
+            ..OpenAiCompatibleConfigV1::openrouter_v1()
+        })
+        .unwrap();
+
+        with_env_var(DEFAULT_OPENROUTER_API_KEY_ENV_V1, "test-secret", || {
+            let script = provider
+                .create_script_v1(&CreatorInputV1::topic("How hope grows after uncertainty"))
+                .unwrap();
+            assert_eq!(script, "A calm production-ready narration script.");
+
+            let segment = SegmentV1 {
+                schema: crate::SEGMENT_SCHEMA.to_owned(),
+                schema_version: crate::SEGMENT_SCHEMA_VERSION,
+                id: "segment-1".to_owned(),
+                order: 1,
+                text: segment_text.to_owned(),
+                voice_direction: crate::VoiceDirectionV1::default(),
+            };
+            let scene = provider
+                .create_scene_intent_v1(
+                    &segment,
+                    "scene-1",
+                    &crate::CreatorContentSceneOptionsV1::default(),
+                )
+                .unwrap();
+            assert_eq!(scene.id, "scene-1");
+            assert_eq!(scene.segment_id, "segment-1");
+            assert_eq!(scene.narration, segment_text);
+
+            let quality: QualityVerdictV1 = evaluate_quality_with_provider_v1(
+                &provider,
+                "quality-verdict-v1",
+                "Pass only when the narration is clear and production-ready.",
+                &script,
+                &CreatorQualityOptions {
+                    max_attempts: 1,
+                    ..CreatorQualityOptions::default()
+                },
+                |verdict: &QualityVerdictV1| {
+                    if verdict.score >= 80 && verdict.decision == "pass" {
+                        Ok(())
+                    } else {
+                        Err(Error::InvalidContract("quality verdict did not pass".to_owned()))
+                    }
+                },
+            )
+            .unwrap();
+            assert_eq!(quality.score, 92);
+            assert_eq!(quality.decision, "pass");
+        });
+
+        server.join().unwrap();
+        let requests = captured.lock().unwrap();
+        assert_eq!(requests.len(), 3);
+        for request in requests.iter() {
+            assert!(request.starts_with("POST /api/v1/chat/completions "));
+            assert!(request
+                .to_ascii_lowercase()
+                .contains("authorization: bearer test-secret"));
+            assert!(request.contains("\"model\":\"openrouter/auto\""));
+            assert!(!request.contains("llmgateway_task"));
+            assert!(!request.contains("/_llmgateway/"));
+        }
+    }
+'''
+          text = text[:final] + acceptance + text[final:]
+          path.write_text(text)
+          PY
+          cargo fmt --all
+          cargo test -p omnicreator-core llm_provider::tests -- --test-threads=1
+      - name: Commit acceptance coverage
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add crates/omnicreator-core/src/llm_provider.rs
+          git commit -m "test(llm): verify direct OpenRouter creator paths"
+          git push origin HEAD:${GITHUB_HEAD_REF}
+
   rust:
     runs-on: ubuntu-latest
     steps:
