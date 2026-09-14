@@ -3955,6 +3955,8 @@ fn main() {
             rebuild_recovered_production,
             assemble_production_pack,
             export_production_pack,
+            llm_provider_status_phase18_p3,
+            save_llm_provider_settings_phase18_p3,
             llmgateway_status,
             save_llmgateway_settings,
             compute_provider_status,

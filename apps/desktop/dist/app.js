@@ -1705,6 +1705,7 @@ function llmStateLabel(state) {
     case "ready":
       return "READY";
     case "needs_api_key":
+    case "setup_required":
       return "NEEDS API KEY";
     case "offline":
       return "OFFLINE";
@@ -1747,83 +1748,76 @@ function llmModelOptions(status) {
   return rows.join("");
 }
 
+function llmProviderLabel(kind) {
+  switch (String(kind || "llm_gateway")) {
+    case "open_router":
+      return "OpenRouter";
+    case "open_ai_compatible":
+      return "OpenAI-compatible";
+    default:
+      return "LLMGateway";
+  }
+}
+
 function renderLlmGatewayPanel(status) {
   const panel = document.getElementById("llmgateway-panel");
   if (!panel) return;
 
   const state = String(status.state || "offline");
-  const health = status.health_status
-    ? '<div class="info-row"><div class="info-label">HEALTH</div><div class="info-value">' +
-      escapeHtml(status.health_status) +
-      "</div></div>"
-    : "";
+  const providerKind = String(status.provider_kind || "llm_gateway");
   const discovered = Array.isArray(status.models) ? status.models.length : 0;
+  const discoveryText = status.model_discovery_supported === false ? "not supported" : String(discovered);
 
   panel.innerHTML =
     '<div class="panel-heading">' +
-    '<div><p class="eyebrow">LLM ROUTER</p><h3>LLMGateway</h3></div>' +
-    '<span class="llm-state ' +
-    escapeHtml(state) +
-    '">' +
-    escapeHtml(llmStateLabel(state)) +
-    "</span></div>" +
-    '<p class="muted compact">' +
-    escapeHtml(status.message) +
-    "</p>" +
-    '<div class="field compact-field"><label>ENDPOINT</label><input id="llmgateway-url" value="' +
-    escapeHtml(status.base_url) +
-    '" /></div>' +
-    '<div class="field compact-field"><label>API KEY ENVIRONMENT VARIABLE</label><input id="llmgateway-key-env" value="' +
-    escapeHtml(status.api_key_env) +
-    '" /></div>' +
-    '<div class="field compact-field"><label>MODEL POLICY</label><input id="llmgateway-model" list="llmgateway-model-options" value="' +
-    escapeHtml(status.default_model) +
-    '" /><datalist id="llmgateway-model-options">' +
-    llmModelOptions(status) +
-    "</datalist></div>" +
+    '<div><p class="eyebrow">CREATOR INTELLIGENCE</p><h3>LLM Provider</h3></div>' +
+    '<span class="llm-state ' + escapeHtml(state) + '">' + escapeHtml(llmStateLabel(state)) + "</span></div>" +
+    '<p class="muted compact">' + escapeHtml(status.message || "") + "</p>" +
+    '<div class="field compact-field"><label>PROVIDER</label><select id="llm-provider-kind">' +
+    '<option value="llm_gateway"' + (providerKind === "llm_gateway" ? " selected" : "") + '>LLMGateway</option>' +
+    '<option value="open_router"' + (providerKind === "open_router" ? " selected" : "") + '>OpenRouter</option>' +
+    '<option value="open_ai_compatible"' + (providerKind === "open_ai_compatible" ? " selected" : "") + '>OpenAI-compatible</option>' +
+    "</select></div>" +
+    '<div class="field compact-field"><label>ENDPOINT</label><input id="llmgateway-url" value="' + escapeHtml(status.base_url || "") + '" /></div>' +
+    '<div class="field compact-field"><label>API KEY ENVIRONMENT VARIABLE</label><input id="llmgateway-key-env" value="' + escapeHtml(status.api_key_env || "") + '" /></div>' +
+    '<div class="field compact-field"><label>MODEL</label><input id="llmgateway-model" list="llmgateway-model-options" value="' + escapeHtml(status.default_model || "") + '" /><datalist id="llmgateway-model-options">' + llmModelOptions(status) + "</datalist></div>" +
     '<div class="info-list llm-meta">' +
-    health +
-    '<div class="info-row"><div class="info-label">DISCOVERED MODELS</div><div class="info-value">' +
-    escapeHtml(discovered) +
-    " · virtual models first</div></div>" +
+    '<div class="info-row"><div class="info-label">ACTIVE PROVIDER</div><div class="info-value">' + escapeHtml(llmProviderLabel(providerKind)) + "</div></div>" +
+    '<div class="info-row"><div class="info-label">DISCOVERED MODELS</div><div class="info-value">' + escapeHtml(discoveryText) + "</div></div>" +
     '<div class="info-row"><div class="info-label">SECRET STORAGE</div><div class="info-value">Machine environment only · never Data Root</div></div>' +
     "</div>" +
-    '<div class="actions compact-actions">' +
-    '<button class="btn primary" id="llmgateway-save">Save &amp; Check</button>' +
-    '<button class="btn" id="llmgateway-refresh">Refresh</button>' +
-    "</div>";
+    '<p class="muted compact">Manual Content and Scene Plan takeover remain available even when no LLM provider is ready.</p>' +
+    '<div class="actions compact-actions"><button class="btn primary" id="llmgateway-save">Save &amp; Check</button><button class="btn" id="llmgateway-refresh">Refresh</button></div>';
 
   document.getElementById("llmgateway-save").onclick = async function () {
+    const selectedKind = document.getElementById("llm-provider-kind").value;
     const baseUrl = document.getElementById("llmgateway-url").value.trim();
     const apiKeyEnv = document.getElementById("llmgateway-key-env").value.trim();
     const defaultModel = document.getElementById("llmgateway-model").value.trim();
-
-    const updated = await call("save_llmgateway_settings", {
-      baseUrl: baseUrl,
-      apiKeyEnv: apiKeyEnv,
-      defaultModel: defaultModel,
+    const switchingToProfileDefaults = selectedKind !== providerKind && selectedKind !== "open_ai_compatible";
+    const updated = await call("save_llm_provider_settings_phase18_p3", {
+      providerKind: selectedKind,
+      baseUrl: switchingToProfileDefaults ? null : baseUrl,
+      apiKeyEnv: switchingToProfileDefaults ? null : apiKeyEnv,
+      defaultModel: switchingToProfileDefaults ? null : defaultModel,
     });
     renderLlmGatewayPanel(updated);
   };
 
   document.getElementById("llmgateway-refresh").onclick = async function () {
-    renderLlmGatewayPanel(await call("llmgateway_status"));
+    renderLlmGatewayPanel(await call("llm_provider_status_phase18_p3"));
   };
 }
 
 async function loadLlmGatewayPanel() {
   const panel = document.getElementById("llmgateway-panel");
   if (!panel) return;
-
   try {
-    renderLlmGatewayPanel(await call("llmgateway_status"));
+    renderLlmGatewayPanel(await call("llm_provider_status_phase18_p3"));
   } catch (_error) {
-    panel.innerHTML =
-      '<p class="eyebrow">LLM ROUTER</p><h3>LLMGateway</h3>' +
-      '<div class="notice">Could not load LLMGateway settings. Check the desktop configuration and try again.</div>';
+    panel.innerHTML = '<p class="eyebrow">CREATOR INTELLIGENCE</p><h3>LLM Provider</h3><div class="notice">Could not load machine-local LLM provider settings. Manual creator takeover remains available.</div>';
   }
 }
-
 
 
 function studioPackItems() {
