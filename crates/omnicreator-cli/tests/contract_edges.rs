@@ -125,6 +125,6 @@ fn auto_off_still_accepts_manual_result_and_project_review_accepts_project_filte
         "",
     );
     assert_eq!(review.exit_code, 0, "{}", review.output);
-    assert_eq!(json(&review)["data"]["operation"], "ReviewCenter");
+    assert_eq!(json(&review)["data"]["operation"], "review_center");
     assert!(json(&review)["data"]["data"].is_object());
 }
