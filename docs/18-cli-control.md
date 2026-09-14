@@ -29,7 +29,8 @@ omnicreator --data-root <path> [--read-only] [--json] <resource> <verb> [args]
 Machine-local options:
 
 - `--device-id <id>` overrides the writer device identity; otherwise the CLI derives one from `OMNICREATOR_DEVICE_ID`, `HOSTNAME`, or `COMPUTERNAME`.
-- `--llmgateway-config <path>` enables automatic Content/Scene execution through the existing LLMGateway adapter. Credential values remain environment-backed by the referenced config and are never accepted as CLI arguments.
+- `--llm-provider-config <path>` selects the provider-neutral P3 LLM runtime config for automatic Content/Scene execution and sanitized LLM readiness inspection. Credential values remain environment-backed by the referenced config and are never accepted as CLI arguments.
+- `--llmgateway-config <path>` remains a legacy compatibility option for the LLMGateway provider. Do not combine it with `--llm-provider-config`.
 - `--studio-pack-catalog <path>` supplies an alternate portable Studio Pack catalog; the checked-in initial catalog is the default.
 
 `--json` emits a compact deterministic envelope. Without it, the same envelope is pretty-printed. Human prose is intentionally not authoritative.
@@ -116,6 +117,7 @@ Sanitized runtime inspection:
 - `runtime status`
 - `runtime plugins` / `plugin status`
 - `runtime compute` / `compute status`
+- `runtime llm` / `llm status`
 
 Complex typed mutations accept exactly one of:
 
@@ -133,14 +135,19 @@ Cross-stage sequencing remains in `CreatorRunControlServiceV1::start_or_resume_v
 The CLI runtime adapter may supply machine-local execution only:
 
 - Studio Pack resolution uses the portable catalog.
-- Content/Scene automatic execution uses the existing LLMGateway core adapter when `--llmgateway-config` is supplied.
+- Content/Scene automatic execution uses the configured provider-neutral LLM runtime when `--llm-provider-config` is supplied. The legacy `--llmgateway-config` path is adapted into the same provider-neutral runtime contract.
+- If no LLM provider is configured, automatic Content/Scene execution returns a machine-readable `provider_unavailable`; manual Script + manual ScenePlan takeover remains valid.
 - If CLI-local visual/plugin or voice/ComputeProvider execution is unavailable, the adapter returns machine-readable `capability_unavailable`. It does not pretend that a provider ran or mark the canonical step successful.
-- Manual/external Phase 16 takeover remains available and a fully manual project can resume through ProductionPack/Resolve export without LLMGateway, plugins, TTS, or GPU.
+- Manual/external Phase 16 takeover remains available and a fully manual project can resume through ProductionPack/Resolve export without LLMGateway, OpenRouter, plugins, TTS, or GPU.
 - Turning automatic execution OFF remains Phase 17 policy only. Manual/external canonical results can still satisfy that step; OFF is never translated into SKIPPED or SUCCEEDED.
 
 ## Safety and portability
 
-The CLI does not expose raw SQL, arbitrary shell execution, a generic filesystem API, or direct SQLite mutation. Machine-local file paths are accepted only where an existing guarded import/recovery/input contract already requires a source file. Application responses retain logical/canonical identifiers and P1 regressions reject Data Root path, bearer-token marker, and API-key marker leakage.
+The CLI does not expose raw SQL, arbitrary shell execution, a generic filesystem API, or direct SQLite mutation. Machine-local file paths are accepted only where an existing guarded import/recovery/input contract already requires a source file. Application responses retain logical/canonical identifiers and regressions reject Data Root path, bearer-token marker, API-key marker, and credential-value leakage.
+
+Provider selection, base URL, default model, API-key environment-variable name and credential-presence boolean are machine-local runtime metadata. The credential value itself never belongs in portable project/workflow state.
+
+Provider-neutral LLM configuration and OpenRouter behavior are documented in `docs/20-llm-providers.md`.
 
 ## P1 verification requirements
 
@@ -158,4 +165,4 @@ P1 is DONE / VERIFIED only after:
 10. guarded squash merge uses the verified exact PR head;
 11. post-merge `main` CI passes on the exact merge SHA.
 
-P2 MCP, P3 provider abstraction/OpenRouter, P4 agent packages, and P5 MCP Tasks/hardening are not part of P1.
+P2 MCP, P3 provider abstraction/OpenRouter, P4 agent packages, and P5 MCP Tasks/hardening are not part of P1. P3 extends this verified CLI surface without changing P1 ownership boundaries.
