@@ -1,0 +1,19 @@
+{
+  "schema": "omnicreator.llm-provider-config",
+  "version": 1,
+  "provider": {
+    "kind": "open_router",
+    "config": {
+      "schema": "omnicreator.openai-compatible-config",
+      "version": 1,
+      "provider_id": "openrouter",
+      "provider_kind": "open_router",
+      "base_url": "https://openrouter.ai/api/v1",
+      "api_key_env": "OPENROUTER_API_KEY",
+      "default_model": "openrouter/auto",
+      "timeout_seconds": 60,
+      "http_referer": null,
+      "app_title": "OmniCreator"
+    }
+  }
+}
