@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   format:
-    if: github.actor != 'github-actions[bot]' || !contains(github.event.head_commit.message, 'style: apply rustfmt')
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
