@@ -1,0 +1,68 @@
+name: Phase 18 P2 MSRV fix
+
+on:
+  push:
+    branches:
+      - feat/phase18-p2-mcp-stdio
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/phase18-p2-mcp-stdio
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Apply semantics-preserving MSRV and MCP acceptance fixes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          for name in [
+              'crates/omnicreator-core/src/creator_run_coordinator.rs',
+              'crates/omnicreator-core/src/creator_step_execution.rs',
+              'crates/omnicreator-core/src/creator_visual_orchestration.rs',
+              'crates/omnicreator-core/src/generated_image.rs',
+              'crates/omnicreator-core/src/plugin_lifecycle.rs',
+              'crates/omnicreator-core/src/review_center_recovery.rs',
+          ]:
+              path = Path(name)
+              text = path.read_text()
+              text = text.replace('.map_or(true,', '.is_none_or(')
+              path.write_text(text)
+
+          path = Path('crates/omnicreator-core/src/fcpxml.rs')
+          text = path.read_text().replace('milliseconds % 1000 == 0', 'milliseconds.is_multiple_of(1000)')
+          path.write_text(text)
+
+          path = Path('crates/omnicreator-cli/tests/mcp.rs')
+          text = path.read_text()
+          old = '''        .find(|item| {
+            item["step_id"]
+                .as_str()
+                .is_some_and(|value| value.contains("content"))
+        })'''
+          new = '''        .find(|item| item["step"] == "content.prepare")'''
+          if old not in text:
+              raise SystemExit('expected workflow policy assertion block not found')
+          text = text.replace(old, new)
+          old = 'serde_json::from_value(structured(&editor)[2].clone()).unwrap();'
+          new = 'serde_json::from_value(structured(&editor)["data"][2].clone()).unwrap();'
+          if old not in text:
+              raise SystemExit('expected ScenePlan editor assertion not found')
+          path.write_text(text.replace(old, new))
+          PY
+          cargo fmt --all
+      - name: Commit fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add crates/omnicreator-core/src crates/omnicreator-cli/tests/mcp.rs
+          git commit -m "fix: align Phase 18 P2 with Rust 1.88 MSRV"
+          git push origin HEAD:feat/phase18-p2-mcp-stdio
