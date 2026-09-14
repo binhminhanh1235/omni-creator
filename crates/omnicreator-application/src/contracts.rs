@@ -2,9 +2,9 @@ use std::path::PathBuf;
 
 use omnicreator_core::{
     CreatorRunCoordinatorV1, ExternalGeneratedVisualRequestV1, ExternalVoiceRequestV1, Job,
-    ManualResultProvenanceV1, ManualScenePlanDraftV1, ProductionRecoveryViewV1, Project,
-    ProjectBoardProjectionV1, ProjectDisplayStatus, StudioReviewCenterV1, VoiceTimingV1,
-    WorkflowStep, WorkflowStepExecutionPolicyV1,
+    LlmProviderKindV1, ManualResultProvenanceV1, ManualScenePlanDraftV1,
+    ProductionRecoveryViewV1, Project, ProjectBoardProjectionV1, ProjectDisplayStatus,
+    StudioReviewCenterV1, VoiceTimingV1, WorkflowStep, WorkflowStepExecutionPolicyV1,
 };
 use serde::{Deserialize, Serialize};
 
@@ -62,6 +62,7 @@ pub enum ControlOperationV1 {
     RebuildAndExportProduction,
     PluginRuntimeInspection,
     ComputeRuntimeInspection,
+    LlmRuntimeInspection,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -289,9 +290,44 @@ pub struct ComputeRuntimeControlSnapshotV1 {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
+pub struct LlmRuntimeControlSnapshotV1 {
+    pub schema: String,
+    pub version: u32,
+    pub provider_id: Option<String>,
+    pub provider_kind: Option<LlmProviderKindV1>,
+    pub state: String,
+    pub base_url: Option<String>,
+    pub api_key_env: Option<String>,
+    pub default_model: Option<String>,
+    pub credential_present: bool,
+    pub model_discovery_supported: bool,
+    pub reason_code: Option<String>,
+}
+
+impl LlmRuntimeControlSnapshotV1 {
+    pub fn not_configured_v1() -> Self {
+        Self {
+            schema: CONTROL_CONTRACT_SCHEMA_V1.to_owned(),
+            version: CONTROL_CONTRACT_VERSION_V1,
+            provider_id: None,
+            provider_kind: None,
+            state: "not_configured".to_owned(),
+            base_url: None,
+            api_key_env: None,
+            default_model: None,
+            credential_present: false,
+            model_discovery_supported: false,
+            reason_code: Some("llm_provider_not_configured".to_owned()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct RuntimeInspectionSnapshotV1 {
     pub plugin: PluginRuntimeControlSnapshotV1,
     pub compute: ComputeRuntimeControlSnapshotV1,
+    pub llm: LlmRuntimeControlSnapshotV1,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
