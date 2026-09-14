@@ -137,7 +137,11 @@ fn direct_openrouter_profile_runs_content_scene_and_quality_without_llmgateway_s
         voice_direction: VoiceDirectionV1::default(),
     };
     let scene = provider
-        .create_scene_intent_v1(&segment, "scene-1", &CreatorContentSceneOptionsV1::default())
+        .create_scene_intent_v1(
+            &segment,
+            "scene-1",
+            &CreatorContentSceneOptionsV1::default(),
+        )
         .unwrap();
     assert_eq!(scene.id, "scene-1");
     assert_eq!(scene.segment_id, "segment-1");
