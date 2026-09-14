@@ -327,7 +327,6 @@ impl LlmRuntimeControlSnapshotV1 {
 pub struct RuntimeInspectionSnapshotV1 {
     pub plugin: PluginRuntimeControlSnapshotV1,
     pub compute: ComputeRuntimeControlSnapshotV1,
-    pub llm: LlmRuntimeControlSnapshotV1,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
