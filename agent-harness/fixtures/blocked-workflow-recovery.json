@@ -1,0 +1,35 @@
+{
+  "schema": "omnicreator.agent-harness-fixture",
+  "version": 1,
+  "scenario": "provider-free blocked workflow recovered through canonical manual controls",
+  "invariants": [
+    "inspect before mutation",
+    "reuse returned canonical ids",
+    "provider_unavailable is not success",
+    "automatic execution off remains off after manual satisfaction",
+    "re-read status after every mutation",
+    "never edit sqlite or artifact store directly",
+    "report completion only after production status confirms it"
+  ],
+  "steps": [
+    { "sequence": 1, "tool": "workspace_status", "kind": "inspect" },
+    { "sequence": 2, "tool": "projects_list", "kind": "inspect" },
+    { "sequence": 3, "tool": "project_create", "kind": "mutate" },
+    { "sequence": 4, "tool": "project_get", "kind": "inspect" },
+    { "sequence": 5, "tool": "creator_start_or_resume", "kind": "mutate", "expected": "provider_unavailable" },
+    { "sequence": 6, "tool": "review_list", "kind": "inspect" },
+    { "sequence": 7, "tool": "workflow_set_step_auto", "kind": "mutate", "stage": "content.prepare", "enabled": false },
+    { "sequence": 8, "tool": "workflow_status", "kind": "inspect" },
+    { "sequence": 9, "tool": "content_control", "kind": "mutate", "action": "provide" },
+    { "sequence": 10, "tool": "workflow_status", "kind": "inspect", "expected": "content.prepare remains automatic_execution_enabled=false and is canonically satisfied" },
+    { "sequence": 11, "tool": "scene_plan_control", "kind": "mutate", "action": "editor_then_provide" },
+    { "sequence": 12, "tool": "workflow_status", "kind": "inspect" },
+    { "sequence": 13, "tool": "visual_control", "kind": "mutate", "action": "manual_or_external" },
+    { "sequence": 14, "tool": "visual_control", "kind": "inspect", "action": "status" },
+    { "sequence": 15, "tool": "voice_control", "kind": "mutate", "action": "manual_or_external" },
+    { "sequence": 16, "tool": "voice_control", "kind": "inspect", "action": "status" },
+    { "sequence": 17, "tool": "review_list", "kind": "inspect" },
+    { "sequence": 18, "tool": "production_control", "kind": "mutate", "action": "assemble" },
+    { "sequence": 19, "tool": "production_control", "kind": "inspect", "action": "status", "expected": "valid ProductionPack/export state before completion is reported" }
+  ]
+}
