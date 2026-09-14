@@ -34,9 +34,11 @@ MCP is exposed by the existing Rust executable:
 
 ```text
 omnicreator --data-root <path> [--read-only] [--device-id <id>] \
-  [--llmgateway-config <path>] [--studio-pack-catalog <path>] \
-  mcp serve
+  [--llm-provider-config <path> | --llmgateway-config <path>] \
+  [--studio-pack-catalog <path>] mcp serve
 ```
+
+`--llm-provider-config` is the P3 provider-neutral machine-local config. `--llmgateway-config` remains a legacy compatibility option; the two are mutually exclusive. Secret values stay environment-backed and are never passed in MCP arguments or protocol payloads.
 
 There is no Python or Node control-plane sidecar. In MCP mode stdout is reserved for protocol frames. Startup/runtime errors go to stderr.
 
@@ -54,6 +56,8 @@ Inspection:
 - `visual_control` with `status`
 - `voice_control` with `status`
 - `production_control` with `status` or `recovery`
+
+`runtime_status` can inspect the combined snapshot or the plugin, compute, or LLM runtime specifically. LLM inspection returns sanitized provider/readiness metadata only, never the credential value or authorization header.
 
 Mutation/control:
 
@@ -104,9 +108,13 @@ With `--read-only`, inspection uses `Workspace::inspect` + `ApplicationControlSe
 
 `creator_start_or_resume` delegates to `CreatorRunControlServiceV1::start_or_resume_v1`.
 
-If `--llmgateway-config` is supplied, the MCP-local runtime can execute the existing automatic Content/Scene path through LLMGateway. If it is absent, the tool reports typed `provider_unavailable` without a hidden network attempt.
+With P3, MCP automatic Content/Scene execution uses the same configured provider-neutral runtime as CLI/Desktop. `--llm-provider-config` can select LLMGateway, OpenRouter, or a supported generic OpenAI-compatible provider. The legacy `--llmgateway-config` path is adapted into that same shared contract.
 
-Automatic visual and voice/compute execution are not fabricated in P2. When machine-local plugin/compute execution is not wired into this process, MCP reports `capability_unavailable`. Canonical manual/external takeover remains available and can complete the project through ProductionPack/export.
+If no LLM provider is configured, the tool reports typed `provider_unavailable` without a hidden network attempt. Provider selection never becomes MCP-owned workflow state.
+
+Automatic visual and voice/compute execution are not fabricated in P2/P3. When machine-local plugin/compute execution is not wired into this process, MCP reports `capability_unavailable`. Canonical manual/external takeover remains available and can complete the project through ProductionPack/export.
+
+Provider-neutral LLM configuration, OpenRouter protocol behavior and secret boundaries are documented in `docs/20-llm-providers.md`.
 
 ## Resources and prompts
 
@@ -114,17 +122,17 @@ P2 does not add duplicate MCP resources or prompt templates. The typed inspectio
 
 ## P2 verification gate
 
-P2 is not DONE / VERIFIED until all of these pass on the exact PR head and again after merge:
+P2 is DONE / VERIFIED with PR #109, exact-head CI #526 / run `34805856829`, guarded squash merge `026871cdeeaae61f69da4c7bde76c19742b01842`, and post-merge CI #527 / run `34806301978`.
+
+Verified properties include:
 
 1. Official MCP client connects to the `omnicreator` child process over stdio and discovers the typed tools.
 2. A full provider-free manual MCP path toggles AUTO OFF, supplies canonical Content/ScenePlan/visual/voice, reads Review Center/recovery, and reaches ProductionPack + Resolve export.
 3. MCP project projection equals the direct Application Control Service projection for the same canonical state.
 4. A read-only MCP process rejects mutation with structured `read_only`.
 5. Destructive project delete requires explicit confirmation; an unconfirmed request is rejected without changing canonical state.
-6. Creator Start/Resume reports a typed provider blocker without Desktop or a hidden network fallback when LLMGateway is not configured.
+6. Creator Start/Resume reports a typed provider blocker without Desktop or a hidden network fallback when no LLM provider is configured.
 7. MCP results do not leak Data Root/API-key/Bearer markers in the covered projections/errors.
 8. Existing CLI, Rust, Plugins, and Desktop regressions remain green after the Rust 1.88 MSRV bump.
-9. Exact-head CI passes before guarded squash merge.
-10. Post-merge CI passes on the exact merge SHA before #102 is closed DONE / VERIFIED.
 
-P3 provider-neutral LLM/OpenRouter work is outside P2.
+P3 extends the verified P2 transport with provider-neutral LLM runtime configuration and sanitized LLM readiness; it does not add a second MCP workflow engine, remote MCP HTTP, or P4/P5 behavior.
