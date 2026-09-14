@@ -66,7 +66,7 @@ pub mod workflow;
 pub mod workflow_step_controls;
 pub mod workspace;
 
-pub use artifact_store::ArtifactStore;
+pub use artifact_store::{ArtifactStore, AttemptOutputPromotion, AttemptPromotionRequest};
 pub use asset_library::*;
 pub use binding::MachineBinding;
 pub use compute_http::*;
