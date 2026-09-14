@@ -13,6 +13,7 @@ path = "src/main.rs"
 omnicreator-application = { path = "../omnicreator-application" }
 omnicreator-core = { path = "../omnicreator-core" }
 rmcp = { version = "3.3.0", default-features = false, features = ["server", "macros", "transport-io"] }
+schemars = "1.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["io-std", "macros", "rt-multi-thread"] }
