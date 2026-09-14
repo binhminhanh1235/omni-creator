@@ -46,16 +46,6 @@ jobs:
           test = Path('apps/desktop/tests/llm-provider-p3-smoke.mjs')
           if not test.exists():
               test.write_text('''import assert from "node:assert/strict";\nimport { readFileSync } from "node:fs";\n\nconst app = readFileSync(new URL("../dist/app.js", import.meta.url), "utf8");\nconst backend = readFileSync(new URL("../src-tauri/src/application.rs", import.meta.url), "utf8");\nassert.match(app, /value="llm_gateway"/);\nassert.match(app, /value="open_router"/);\nassert.match(app, /value="open_ai_compatible"/);\nassert.match(app, /save_llm_provider_settings_phase18_p3/);\nassert.match(app, /llm_provider_status_phase18_p3/);\nassert.match(app, /Machine environment only · never Data Root/);\nassert.match(app, /Manual Content and Scene Plan takeover remain available/);\nconst start = app.indexOf("function renderLlmGatewayPanel(status)");\nconst end = app.indexOf("function studioPackItems()", start);\nassert.ok(start >= 0 && end > start);\nconst panel = app.slice(start, end);\nassert.doesNotMatch(panel, /call\\("llmgateway_status"\\)/);\nassert.doesNotMatch(panel, /call\\("save_llmgateway_settings"/);\nassert.match(backend, /llm_provider_status_phase18_p3,/);\nassert.match(backend, /save_llm_provider_settings_phase18_p3,/);\n''')
-
-          ci = Path('.github/workflows/ci.yml')
-          text = ci.read_text()
-          marker = '      - name: Desktop LLM Provider P3 regression\n'
-          if marker not in text:
-              anchor = '      - name: Desktop Workflow Step Controls regression\n        run: node apps/desktop/tests/workflow-step-controls-smoke.mjs\n'
-              if anchor not in text:
-                  raise SystemExit('CI regression anchor missing')
-              text = text.replace(anchor, anchor + marker + '        run: node apps/desktop/tests/llm-provider-p3-smoke.mjs\n', 1)
-              ci.write_text(text)
           PY
           node --check apps/desktop/dist/app.js
           node apps/desktop/tests/llm-provider-p3-smoke.mjs
@@ -65,7 +55,7 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add apps/desktop/src-tauri/src/application.rs apps/desktop/dist/app.js apps/desktop/tests/llm-provider-p3-smoke.mjs .github/workflows/ci.yml
+          git add apps/desktop/src-tauri/src/application.rs apps/desktop/dist/app.js apps/desktop/tests/llm-provider-p3-smoke.mjs
           git commit -m "feat(desktop): expose provider-neutral LLM settings"
           git push origin HEAD:${GITHUB_HEAD_REF}
 
@@ -150,6 +140,8 @@ jobs:
         run: node apps/desktop/tests/review-center-p6-smoke.mjs
       - name: Desktop Workflow Step Controls regression
         run: node apps/desktop/tests/workflow-step-controls-smoke.mjs
+      - name: Desktop LLM Provider P3 regression
+        run: node apps/desktop/tests/llm-provider-p3-smoke.mjs
       - name: Desktop clippy
         run: cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets -- -D warnings
       - name: Desktop tests
