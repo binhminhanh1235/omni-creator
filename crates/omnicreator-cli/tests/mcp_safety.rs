@@ -29,7 +29,7 @@ async fn call(
     arguments: Value,
 ) -> CallToolResult {
     client
-        .call_tool(CallToolRequestParams::new(name).with_arguments(object(arguments)))
+        .call_tool(CallToolRequestParams::new(name.to_owned()).with_arguments(object(arguments)))
         .await
         .unwrap()
 }
