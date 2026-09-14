@@ -47,10 +47,7 @@ async fn desktop_style_writer_blocks_cli_and_mcp_until_canonical_lease_is_releas
 
     let mut stdin = Cursor::new(Vec::<u8>::new());
     let cli = run_cli_v1(
-        cli_args(
-            &root,
-            &["project", "create", "--title", "Must be rejected"],
-        ),
+        cli_args(&root, &["project", "create", "--title", "Must be rejected"]),
         &mut stdin,
     );
     assert_eq!(cli.exit_code, 5, "{}", cli.output);
