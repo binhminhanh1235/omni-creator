@@ -82,6 +82,21 @@ pub enum Error {
     ComputeProviderApi { status: u16, message: String },
     #[error("invalid compute provider response: {0}")]
     InvalidComputeProviderResponse(String),
+    #[error("invalid LLM provider configuration: {0}")]
+    InvalidLlmProviderConfig(String),
+    #[error("LLM provider {provider} credential is unavailable in environment variable {env}")]
+    MissingLlmProviderCredential { provider: String, env: String },
+    #[error("LLM provider {provider} transport error: {message}")]
+    LlmProviderTransport { provider: String, message: String },
+    #[error("LLM provider {provider} API error HTTP {status}: {message}")]
+    LlmProviderApi {
+        provider: String,
+        status: u16,
+        code: Option<String>,
+        message: String,
+    },
+    #[error("invalid LLM provider {provider} response: {message}")]
+    InvalidLlmProviderResponse { provider: String, message: String },
     #[error("invalid LLMGateway configuration: {0}")]
     InvalidLlmGatewayConfig(String),
     #[error("LLMGateway credential is unavailable in environment variable {0}")]
