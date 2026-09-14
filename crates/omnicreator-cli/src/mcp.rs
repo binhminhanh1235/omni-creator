@@ -74,6 +74,8 @@ struct ProjectUpdateParamsV1 {
     title: Option<String>,
     #[serde(default)]
     studio_pack_id: Option<String>,
+    #[serde(default)]
+    confirm: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -396,7 +398,7 @@ impl OmniCreatorMcpServerV1 {
     }
 
     #[tool(
-        description = "Rename, bind/clear Studio Pack, or delete a canonical project through the shared application service."
+        description = "Rename, bind/clear Studio Pack, or delete a canonical project through the shared application service. Delete requires confirm=true."
     )]
     async fn project_update(
         &self,
@@ -424,6 +426,12 @@ impl OmniCreatorMcpServerV1 {
                 })?)
             }
             ProjectUpdateActionV1::Delete => {
+                if !params.confirm {
+                    return Err(ControlErrorV1::new(
+                        ControlErrorCodeV1::InvalidInput,
+                        "project delete requires confirm=true",
+                    ));
+                }
                 to_value_v1(service.delete_project_v1(&ProjectIdRequestV1 {
                     project_id: params.project_id,
                 })?)
