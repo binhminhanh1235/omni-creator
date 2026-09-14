@@ -1,0 +1,184 @@
+name: P3 Desktop Provider Helper
+
+on:
+  push:
+    branches:
+      - feat/phase18-p3-llm-provider-openrouter
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+      - name: Patch Desktop provider settings and CI acceptance
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          app_rs = Path('apps/desktop/src-tauri/src/application.rs')
+          text = app_rs.read_text()
+          old = '''            llmgateway_status,\n            save_llmgateway_settings,\n'''
+          new = '''            llm_provider_status_phase18_p3,\n            save_llm_provider_settings_phase18_p3,\n            llmgateway_status,\n            save_llmgateway_settings,\n'''
+          if old not in text:
+              raise SystemExit('invoke handler anchor missing')
+          text = text.replace(old, new, 1)
+          app_rs.write_text(text)
+
+          app_js = Path('apps/desktop/dist/app.js')
+          text = app_js.read_text()
+          text = text.replace(
+              '''    case "needs_api_key":\n      return "NEEDS API KEY";\n''',
+              '''    case "needs_api_key":\n    case "setup_required":\n      return "NEEDS API KEY";\n''',
+              1,
+          )
+          start = text.index('function renderLlmGatewayPanel(status) {')
+          end = text.index('function studioPackItems() {', start)
+          replacement = r'''function llmProviderLabel(kind) {
+            switch (String(kind || "llm_gateway")) {
+              case "open_router":
+                return "OpenRouter";
+              case "open_ai_compatible":
+                return "OpenAI-compatible";
+              default:
+                return "LLMGateway";
+            }
+          }
+
+          function renderLlmGatewayPanel(status) {
+            const panel = document.getElementById("llmgateway-panel");
+            if (!panel) return;
+
+            const state = String(status.state || "offline");
+            const providerKind = String(status.provider_kind || "llm_gateway");
+            const discovered = Array.isArray(status.models) ? status.models.length : 0;
+            const discoveryText = status.model_discovery_supported === false
+              ? "not supported"
+              : String(discovered);
+
+            panel.innerHTML =
+              '<div class="panel-heading">' +
+              '<div><p class="eyebrow">CREATOR INTELLIGENCE</p><h3>LLM Provider</h3></div>' +
+              '<span class="llm-state ' + escapeHtml(state) + '">' +
+              escapeHtml(llmStateLabel(state)) +
+              "</span></div>" +
+              '<p class="muted compact">' + escapeHtml(status.message || "") + "</p>" +
+              '<div class="field compact-field"><label>PROVIDER</label><select id="llm-provider-kind">' +
+              '<option value="llm_gateway"' + (providerKind === "llm_gateway" ? " selected" : "") + '>LLMGateway</option>' +
+              '<option value="open_router"' + (providerKind === "open_router" ? " selected" : "") + '>OpenRouter</option>' +
+              '<option value="open_ai_compatible"' + (providerKind === "open_ai_compatible" ? " selected" : "") + '>OpenAI-compatible</option>' +
+              "</select></div>" +
+              '<div class="field compact-field"><label>ENDPOINT</label><input id="llmgateway-url" value="' +
+              escapeHtml(status.base_url || "") + '" /></div>' +
+              '<div class="field compact-field"><label>API KEY ENVIRONMENT VARIABLE</label><input id="llmgateway-key-env" value="' +
+              escapeHtml(status.api_key_env || "") + '" /></div>' +
+              '<div class="field compact-field"><label>MODEL</label><input id="llmgateway-model" list="llmgateway-model-options" value="' +
+              escapeHtml(status.default_model || "") + '" /><datalist id="llmgateway-model-options">' +
+              llmModelOptions(status) +
+              "</datalist></div>" +
+              '<div class="info-list llm-meta">' +
+              '<div class="info-row"><div class="info-label">ACTIVE PROVIDER</div><div class="info-value">' +
+              escapeHtml(llmProviderLabel(providerKind)) +
+              "</div></div>" +
+              '<div class="info-row"><div class="info-label">DISCOVERED MODELS</div><div class="info-value">' +
+              escapeHtml(discoveryText) +
+              "</div></div>" +
+              '<div class="info-row"><div class="info-label">SECRET STORAGE</div><div class="info-value">Machine environment only · never Data Root</div></div>' +
+              "</div>" +
+              '<p class="muted compact">Manual Content and Scene Plan takeover remain available even when no LLM provider is ready.</p>' +
+              '<div class="actions compact-actions">' +
+              '<button class="btn primary" id="llmgateway-save">Save &amp; Check</button>' +
+              '<button class="btn" id="llmgateway-refresh">Refresh</button>' +
+              "</div>";
+
+            document.getElementById("llmgateway-save").onclick = async function () {
+              const selectedKind = document.getElementById("llm-provider-kind").value;
+              const baseUrl = document.getElementById("llmgateway-url").value.trim();
+              const apiKeyEnv = document.getElementById("llmgateway-key-env").value.trim();
+              const defaultModel = document.getElementById("llmgateway-model").value.trim();
+              const switchingToProfileDefaults =
+                selectedKind !== providerKind && selectedKind !== "open_ai_compatible";
+
+              const updated = await call("save_llm_provider_settings_phase18_p3", {
+                providerKind: selectedKind,
+                baseUrl: switchingToProfileDefaults ? null : baseUrl,
+                apiKeyEnv: switchingToProfileDefaults ? null : apiKeyEnv,
+                defaultModel: switchingToProfileDefaults ? null : defaultModel,
+              });
+              renderLlmGatewayPanel(updated);
+            };
+
+            document.getElementById("llmgateway-refresh").onclick = async function () {
+              renderLlmGatewayPanel(await call("llm_provider_status_phase18_p3"));
+            };
+          }
+
+          async function loadLlmGatewayPanel() {
+            const panel = document.getElementById("llmgateway-panel");
+            if (!panel) return;
+
+            try {
+              renderLlmGatewayPanel(await call("llm_provider_status_phase18_p3"));
+            } catch (_error) {
+              panel.innerHTML =
+                '<p class="eyebrow">CREATOR INTELLIGENCE</p><h3>LLM Provider</h3>' +
+                '<div class="notice">Could not load machine-local LLM provider settings. Manual creator takeover remains available.</div>';
+            }
+          }
+
+
+          '''
+          text = text[:start] + replacement + text[end:]
+          app_js.write_text(text)
+
+          test = Path('apps/desktop/tests/llm-provider-p3-smoke.mjs')
+          test.write_text(r'''import assert from "node:assert/strict";
+          import { readFileSync } from "node:fs";
+
+          const app = readFileSync(new URL("../dist/app.js", import.meta.url), "utf8");
+          const backend = readFileSync(new URL("../src-tauri/src/application.rs", import.meta.url), "utf8");
+
+          assert.match(app, /value="llm_gateway"/);
+          assert.match(app, /value="open_router"/);
+          assert.match(app, /value="open_ai_compatible"/);
+          assert.match(app, /save_llm_provider_settings_phase18_p3/);
+          assert.match(app, /llm_provider_status_phase18_p3/);
+          assert.match(app, /Machine environment only · never Data Root/);
+          assert.match(app, /Manual Content and Scene Plan takeover remain available/);
+
+          const providerPanelStart = app.indexOf("function renderLlmGatewayPanel(status)");
+          const providerPanelEnd = app.indexOf("function studioPackItems()", providerPanelStart);
+          assert.ok(providerPanelStart >= 0 && providerPanelEnd > providerPanelStart);
+          const providerPanel = app.slice(providerPanelStart, providerPanelEnd);
+          assert.doesNotMatch(providerPanel, /call\("llmgateway_status"\)/);
+          assert.doesNotMatch(providerPanel, /call\("save_llmgateway_settings"/);
+
+          assert.match(backend, /llm_provider_status_phase18_p3,/);
+          assert.match(backend, /save_llm_provider_settings_phase18_p3,/);
+          ''')
+
+          ci = Path('.github/workflows/ci.yml')
+          text = ci.read_text()
+          anchor = '''      - name: Desktop Workflow Step Controls regression\n        run: node apps/desktop/tests/workflow-step-controls-smoke.mjs\n'''
+          addition = anchor + '''      - name: Desktop LLM Provider P3 regression\n        run: node apps/desktop/tests/llm-provider-p3-smoke.mjs\n'''
+          if anchor not in text:
+              raise SystemExit('CI desktop anchor missing')
+          text = text.replace(anchor, addition, 1)
+          ci.write_text(text)
+          PY
+          node --check apps/desktop/dist/app.js
+          node apps/desktop/tests/llm-provider-p3-smoke.mjs
+      - name: Commit Desktop provider integration
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/desktop/src-tauri/src/application.rs apps/desktop/dist/app.js apps/desktop/tests/llm-provider-p3-smoke.mjs .github/workflows/ci.yml
+          git commit -m "feat(desktop): expose provider-neutral LLM settings"
+          git push origin HEAD:${GITHUB_REF_NAME}
