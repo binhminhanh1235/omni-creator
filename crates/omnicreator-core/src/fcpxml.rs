@@ -317,7 +317,7 @@ fn render_fcpxml(
 }
 
 fn format_time_ms(milliseconds: u64) -> String {
-    if milliseconds % 1000 == 0 {
+    if milliseconds.is_multiple_of(1000) {
         format!("{}s", milliseconds / 1000)
     } else {
         format!("{milliseconds}/1000s")

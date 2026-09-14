@@ -156,7 +156,7 @@ impl CreatorVisualScenePlanV1 {
                     )
                 })?;
                 if self.routing.route != VisualRouteV1::StockReview
-                    || self.review.as_ref().map_or(true, |review| {
+                    || self.review.as_ref().is_none_or(|review| {
                         !review
                             .candidates
                             .iter()
@@ -169,7 +169,7 @@ impl CreatorVisualScenePlanV1 {
                     || self
                         .execution_target
                         .as_ref()
-                        .map_or(true, |target| !is_stock_target_v1(target))
+                        .is_none_or(|target| !is_stock_target_v1(target))
                 {
                     return Err(Error::InvalidContract(
                         "selected stock execution is inconsistent with the ranked review set"
@@ -184,7 +184,7 @@ impl CreatorVisualScenePlanV1 {
                     || self
                         .execution_target
                         .as_ref()
-                        .map_or(true, |target| !is_generation_target_v1(target))
+                        .is_none_or(|target| !is_generation_target_v1(target))
                 {
                     return Err(Error::InvalidContract(
                         "generated execution requires a generated/stick route target and no stock selection"
@@ -475,7 +475,7 @@ pub fn select_creator_stock_candidate_v1(
             "stock selection is only valid for stock-review routes".to_owned(),
         ));
     }
-    if scene.review.as_ref().map_or(true, |review| {
+    if scene.review.as_ref().is_none_or(|review| {
         !review
             .candidates
             .iter()

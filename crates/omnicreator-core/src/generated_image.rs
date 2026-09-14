@@ -325,7 +325,7 @@ impl GeneratedImagePreparationV1 {
                 ) && requirements
                     .model_group
                     .as_deref()
-                    .map_or(true, |value| value.trim().is_empty())
+                    .is_none_or(|value| value.trim().is_empty())
                 {
                     push_issue(
                         &mut issues,

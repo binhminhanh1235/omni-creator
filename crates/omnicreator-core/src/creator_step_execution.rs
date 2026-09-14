@@ -263,7 +263,7 @@ fn require_creator_project_v1(
     project_id: &str,
 ) -> Result<crate::Project> {
     let project = state_store.get_project(project_id)?;
-    if project.studio_pack.as_deref().map_or(true, str::is_empty) {
+    if project.studio_pack.as_deref().is_none_or(str::is_empty) {
         return Err(Error::InvalidContract(
             "creator step execution requires a Project bound to a Studio Pack".to_owned(),
         ));
