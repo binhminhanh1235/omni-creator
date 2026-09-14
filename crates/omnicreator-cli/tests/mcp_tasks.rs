@@ -185,7 +185,7 @@ async fn tasks_cancel_is_canonical_and_restart_reconciles_interrupted_work_truth
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().join("data-root");
     let workspace = Workspace::create(&root).unwrap();
-    let mut store = StateStore::open(workspace.sqlite_path()).unwrap();
+    let store = StateStore::open(workspace.sqlite_path()).unwrap();
     let project = store.create_project("P5 cancellation and restart").unwrap();
     drop(store);
 
