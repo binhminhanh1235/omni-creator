@@ -1090,12 +1090,41 @@ fn structured_repair_prompt_v1(contract: &str, reason: &str) -> String {
 mod tests {
     use std::{
         io::{Read, Write},
-        net::TcpListener,
+        net::{TcpListener, TcpStream},
         sync::{Arc, Mutex},
         thread,
     };
 
     use super::*;
+
+    fn read_http_request_v1(stream: &mut TcpStream) -> String {
+        let mut bytes = Vec::new();
+        let mut chunk = [0_u8; 4_096];
+        loop {
+            let read = stream.read(&mut chunk).unwrap();
+            if read == 0 {
+                break;
+            }
+            bytes.extend_from_slice(&chunk[..read]);
+            let Some(header_end) = bytes.windows(4).position(|window| window == b"\r\n\r\n") else {
+                continue;
+            };
+            let headers = String::from_utf8_lossy(&bytes[..header_end]);
+            let content_length = headers
+                .lines()
+                .find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.eq_ignore_ascii_case("content-length")
+                        .then(|| value.trim().parse::<usize>().ok())
+                        .flatten()
+                })
+                .unwrap_or(0);
+            if bytes.len() >= header_end + 4 + content_length {
+                break;
+            }
+        }
+        String::from_utf8(bytes).unwrap()
+    }
 
     fn with_env_var<T>(name: &str, value: &str, operation: impl FnOnce() -> T) -> T {
         let previous = env::var(name).ok();
@@ -1149,9 +1178,7 @@ mod tests {
         let server_capture = Arc::clone(&captured);
         let server = thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
-            let mut buffer = vec![0_u8; 16_384];
-            let read = stream.read(&mut buffer).unwrap();
-            *server_capture.lock().unwrap() = String::from_utf8_lossy(&buffer[..read]).into_owned();
+            *server_capture.lock().unwrap() = read_http_request_v1(&mut stream);
             let body = r#"{"id":"chat-1","model":"openrouter/auto","choices":[{"message":{"role":"assistant","content":"Creator script"}}]}"#;
             write!(
                 stream,
