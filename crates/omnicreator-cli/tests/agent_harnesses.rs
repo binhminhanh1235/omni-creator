@@ -14,13 +14,14 @@ use serde_json::Value;
 use tokio::process::Command;
 
 fn repo_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").to_path_buf()
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .to_path_buf()
 }
 
 fn read_repo(path: &str) -> String {
-    fs::read_to_string(repo_root().join(path)).unwrap_or_else(|error| {
-        panic!("failed to read repository fixture {path}: {error}")
-    })
+    fs::read_to_string(repo_root().join(path))
+        .unwrap_or_else(|error| panic!("failed to read repository fixture {path}: {error}"))
 }
 
 fn json_server(path: &str) -> Value {
@@ -31,7 +32,10 @@ fn json_server(path: &str) -> Value {
 fn assert_stdio_server(server: &Value) {
     assert_eq!(server["command"], "omnicreator");
     let args = server["args"].as_array().expect("mcp args");
-    let args = args.iter().map(|value| value.as_str().unwrap()).collect::<Vec<_>>();
+    let args = args
+        .iter()
+        .map(|value| value.as_str().unwrap())
+        .collect::<Vec<_>>();
     assert_eq!(
         args,
         vec![
@@ -96,7 +100,10 @@ fn checked_in_harness_packages_are_safe_and_in_sync() {
     let antigravity = json_server("agent-harness/antigravity/mcp_config.json.example");
     assert_stdio_server(&claude);
     assert_stdio_server(&antigravity);
-    assert_eq!(claude, antigravity, "JSON stdio examples must stay equivalent");
+    assert_eq!(
+        claude, antigravity,
+        "JSON stdio examples must stay equivalent"
+    );
 
     let codex = read_repo("agent-harness/codex/config.toml.example");
     assert!(codex.contains("[mcp_servers.omnicreator]"));
@@ -127,7 +134,8 @@ fn checked_in_harness_packages_are_safe_and_in_sync() {
                 .get(index + 1)
                 .expect("every fixture mutation must be followed by inspection");
             assert_eq!(
-                next["kind"], "inspect",
+                next["kind"],
+                "inspect",
                 "fixture mutation at sequence {} must be followed by inspection",
                 index + 1
             );
