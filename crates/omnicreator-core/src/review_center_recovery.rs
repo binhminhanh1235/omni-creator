@@ -254,7 +254,7 @@ fn eligible_alternative_count_v1(context: &ReviewRecoveryContextV1) -> usize {
                 && context
                     .required_capability
                     .as_deref()
-                    .map_or(true, |required| candidate.capability == required)
+                    .is_none_or(|required| candidate.capability == required)
         })
         .count()
 }

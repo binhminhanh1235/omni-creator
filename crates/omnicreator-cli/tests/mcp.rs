@@ -190,11 +190,7 @@ async fn mcp_stdio_discovers_tools_and_full_manual_flow_matches_application_stat
         .as_array()
         .unwrap()
         .iter()
-        .find(|item| {
-            item["step_id"]
-                .as_str()
-                .is_some_and(|value| value.contains("content"))
-        })
+        .find(|item| item["step"] == "content.prepare")
         .expect("content policy");
     assert_eq!(content_policy["automatic_execution_enabled"], false);
 
@@ -206,7 +202,7 @@ async fn mcp_stdio_discovers_tools_and_full_manual_flow_matches_application_stat
     .await;
     assert_eq!(editor.is_error, Some(false));
     let mut draft: ManualScenePlanDraftV1 =
-        serde_json::from_value(structured(&editor)[2].clone()).unwrap();
+        serde_json::from_value(structured(&editor)["data"][2].clone()).unwrap();
     draft.scenes[0].scene_type = "literal".to_owned();
     draft.scenes[0].purpose = "Prove MCP and application parity".to_owned();
     let scene_request = ManualScenePlanRequestV1 {
