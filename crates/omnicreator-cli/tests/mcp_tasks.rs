@@ -49,10 +49,7 @@ fn tasks_client_info() -> InitializeRequestParams {
 }
 
 async fn create_project(root: &Path, title: &str) -> String {
-    let client = ()
-        .serve(mcp_transport(root, false, "phase18-p5-project-setup"))
-        .await
-        .unwrap();
+    let client = ().serve(mcp_transport(root, false, "phase18-p5-project-setup")).await.unwrap();
     let result = client
         .call_tool(
             CallToolRequestParams::new("project_create").with_arguments(object(json!({
@@ -173,8 +170,7 @@ async fn taskified_creator_result_survives_reconnect_and_data_root_move() {
     let TaskPayload::Completed { result } = recovered.payload else {
         panic!("moved Data Root must retain completed task payload");
     };
-    let recovered_result: CallToolResult =
-        serde_json::from_value(Value::Object(result)).unwrap();
+    let recovered_result: CallToolResult = serde_json::from_value(Value::Object(result)).unwrap();
     assert_eq!(recovered_result.is_error, Some(true));
     let encoded = serde_json::to_string(&recovered_result).unwrap();
     assert!(!encoded.contains(root.to_string_lossy().as_ref()));
@@ -227,7 +223,10 @@ async fn tasks_cancel_is_canonical_and_restart_reconciles_interrupted_work_truth
     let store = StateStore::open_read_only(workspace.sqlite_path()).unwrap();
     let canonical_cancelled = store.get_control_task_v1(&cancel_task_id).unwrap();
     assert_eq!(canonical_cancelled.job.status, StepStatus::Cancelled);
-    assert_eq!(canonical_cancelled.attempts[0].status, StepStatus::Cancelled);
+    assert_eq!(
+        canonical_cancelled.attempts[0].status,
+        StepStatus::Cancelled
+    );
     assert_eq!(
         canonical_cancelled.attempts[0].error_code.as_deref(),
         Some("CONTROL_TASK_CANCELLED")
@@ -261,14 +260,19 @@ async fn tasks_cancel_is_canonical_and_restart_reconciles_interrupted_work_truth
         .task;
     assert_eq!(reconciled.status(), TaskStatus::Failed);
     let TaskPayload::Failed { error } = reconciled.payload else {
-        panic!("interrupted canonical task must be reported as failed after restart reconciliation");
+        panic!(
+            "interrupted canonical task must be reported as failed after restart reconciliation"
+        );
     };
     assert_eq!(error["code"], "canonical_task_interrupted");
 
     let store = StateStore::open_read_only(workspace.sqlite_path()).unwrap();
     let canonical_reconciled = store.get_control_task_v1(&interrupted_task_id).unwrap();
     assert_eq!(canonical_reconciled.job.status, StepStatus::Retryable);
-    assert_eq!(canonical_reconciled.attempts[0].status, StepStatus::Retryable);
+    assert_eq!(
+        canonical_reconciled.attempts[0].status,
+        StepStatus::Retryable
+    );
     assert_eq!(
         canonical_reconciled.attempts[0].error_code.as_deref(),
         Some("LOCAL_RESTART_PENDING_RECONCILIATION")
