@@ -58,7 +58,7 @@ Inspection:
 Mutation/control:
 
 - `project_create`
-- `project_update` for rename, Studio Pack binding/clearing, or delete
+- `project_update` for rename, Studio Pack binding/clearing, or delete; delete is destructive and requires explicit `confirm: true`
 - `workflow_set_step_auto`
 - `creator_start_or_resume`
 - `content_control` for manual provide/import
@@ -92,9 +92,11 @@ Canonical error categories remain `read_only`, `writer_conflict`, `not_found`, `
 
 Responses and error messages sanitize the active Data Root and Bearer markers before crossing the MCP boundary.
 
-## Writer and read-only behavior
+## Writer, destructive actions, and read-only behavior
 
 Writable tool calls acquire the existing `WorkspaceSession` writer lease. MCP never bypasses single-writer semantics.
+
+Project deletion is the destructive P2 project operation and is guarded separately from writer access. `project_update` with `action: "delete"` rejects the request with typed `invalid_input` unless `confirm: true` is supplied. The safety regression verifies that an unconfirmed delete leaves the project intact and that a confirmed delete removes it canonically.
 
 With `--read-only`, inspection uses `Workspace::inspect` + `ApplicationControlService::for_read_only`. Any mutation reaches the same application-layer guard and returns typed `read_only`.
 
@@ -118,10 +120,11 @@ P2 is not DONE / VERIFIED until all of these pass on the exact PR head and again
 2. A full provider-free manual MCP path toggles AUTO OFF, supplies canonical Content/ScenePlan/visual/voice, reads Review Center/recovery, and reaches ProductionPack + Resolve export.
 3. MCP project projection equals the direct Application Control Service projection for the same canonical state.
 4. A read-only MCP process rejects mutation with structured `read_only`.
-5. Creator Start/Resume reports a typed provider blocker without Desktop or a hidden network fallback when LLMGateway is not configured.
-6. MCP results do not leak Data Root/API-key/Bearer markers in the covered projections/errors.
-7. Existing CLI, Rust, Plugins, and Desktop regressions remain green after the Rust 1.88 MSRV bump.
-8. Exact-head CI passes before guarded squash merge.
-9. Post-merge CI passes on the exact merge SHA before #102 is closed DONE / VERIFIED.
+5. Destructive project delete requires explicit confirmation; an unconfirmed request is rejected without changing canonical state.
+6. Creator Start/Resume reports a typed provider blocker without Desktop or a hidden network fallback when LLMGateway is not configured.
+7. MCP results do not leak Data Root/API-key/Bearer markers in the covered projections/errors.
+8. Existing CLI, Rust, Plugins, and Desktop regressions remain green after the Rust 1.88 MSRV bump.
+9. Exact-head CI passes before guarded squash merge.
+10. Post-merge CI passes on the exact merge SHA before #102 is closed DONE / VERIFIED.
 
 P3 provider-neutral LLM/OpenRouter work is outside P2.
