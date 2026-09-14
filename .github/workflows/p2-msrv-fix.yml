@@ -19,45 +19,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      - name: Apply semantics-preserving MSRV and MCP acceptance fixes
+      - name: Apply semantics-preserving fixes
         run: |
-          python - <<'PY'
-          from pathlib import Path
-
-          for name in [
-              'crates/omnicreator-core/src/creator_run_coordinator.rs',
-              'crates/omnicreator-core/src/creator_step_execution.rs',
-              'crates/omnicreator-core/src/creator_visual_orchestration.rs',
-              'crates/omnicreator-core/src/generated_image.rs',
-              'crates/omnicreator-core/src/plugin_lifecycle.rs',
-              'crates/omnicreator-core/src/review_center_recovery.rs',
-          ]:
-              path = Path(name)
-              text = path.read_text()
-              text = text.replace('.map_or(true,', '.is_none_or(')
-              path.write_text(text)
-
-          path = Path('crates/omnicreator-core/src/fcpxml.rs')
-          text = path.read_text().replace('milliseconds % 1000 == 0', 'milliseconds.is_multiple_of(1000)')
-          path.write_text(text)
-
-          path = Path('crates/omnicreator-cli/tests/mcp.rs')
-          text = path.read_text()
-          old = '''        .find(|item| {
-            item["step_id"]
-                .as_str()
-                .is_some_and(|value| value.contains("content"))
-        })'''
-          new = '''        .find(|item| item["step"] == "content.prepare")'''
-          if old not in text:
-              raise SystemExit('expected workflow policy assertion block not found')
-          text = text.replace(old, new)
-          old = 'serde_json::from_value(structured(&editor)[2].clone()).unwrap();'
-          new = 'serde_json::from_value(structured(&editor)["data"][2].clone()).unwrap();'
-          if old not in text:
-              raise SystemExit('expected ScenePlan editor assertion not found')
-          path.write_text(text.replace(old, new))
-          PY
+          sed -i 's/\.map_or(true,/.is_none_or(/g' crates/omnicreator-core/src/creator_run_coordinator.rs crates/omnicreator-core/src/creator_step_execution.rs crates/omnicreator-core/src/creator_visual_orchestration.rs crates/omnicreator-core/src/generated_image.rs crates/omnicreator-core/src/plugin_lifecycle.rs crates/omnicreator-core/src/review_center_recovery.rs
+          sed -i 's/milliseconds % 1000 == 0/milliseconds.is_multiple_of(1000)/' crates/omnicreator-core/src/fcpxml.rs
+          python -c 'from pathlib import Path; p=Path("crates/omnicreator-cli/tests/mcp.rs"); t=p.read_text(); old="        .find(|item| {\n            item[\"step_id\"]\n                .as_str()\n                .is_some_and(|value| value.contains(\"content\"))\n        })"; new="        .find(|item| item[\"step\"] == \"content.prepare\")"; assert old in t; t=t.replace(old,new); old2="serde_json::from_value(structured(&editor)[2].clone()).unwrap();"; new2="serde_json::from_value(structured(&editor)[\"data\"][2].clone()).unwrap();"; assert old2 in t; p.write_text(t.replace(old2,new2))'
           cargo fmt --all
       - name: Commit fixes
         run: |
