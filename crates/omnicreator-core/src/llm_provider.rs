@@ -657,54 +657,90 @@ impl CreatorLlmExecutorV1 for ConfiguredLlmProviderV1 {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct StructuredLlmRequestOptionsV1 {
+    pub contract: String,
+    pub model: Option<String>,
+    pub task: LlmTaskV1,
+    pub temperature: Option<f64>,
+    pub max_tokens: Option<u32>,
+    pub max_attempts: u8,
+}
+
+impl StructuredLlmRequestOptionsV1 {
+    pub fn validate_v1(&self) -> Result<()> {
+        if self.contract.trim().is_empty() {
+            return Err(Error::InvalidLlmProviderConfig(
+                "structured LLM contract must not be empty".to_owned(),
+            ));
+        }
+        if self
+            .model
+            .as_ref()
+            .is_some_and(|model| model.trim().is_empty())
+        {
+            return Err(Error::InvalidLlmProviderConfig(
+                "structured LLM model must not be empty when present".to_owned(),
+            ));
+        }
+        if !(1..=4).contains(&self.max_attempts) {
+            return Err(Error::InvalidLlmProviderConfig(
+                "structured LLM max_attempts must be between 1 and 4".to_owned(),
+            ));
+        }
+        if self.temperature.is_some_and(|value| !value.is_finite()) {
+            return Err(Error::InvalidLlmProviderConfig(
+                "structured LLM temperature must be finite".to_owned(),
+            ));
+        }
+        Ok(())
+    }
+}
+
 pub fn chat_structured_with_provider_v1<T, F>(
     provider: &dyn LlmProviderV1,
     messages: Vec<LlmMessage>,
-    contract: &str,
-    model: Option<String>,
-    task: LlmTaskV1,
-    temperature: Option<f64>,
-    max_tokens: Option<u32>,
-    max_attempts: u8,
+    options: &StructuredLlmRequestOptionsV1,
     validate: F,
 ) -> Result<T>
 where
     T: DeserializeOwned,
     F: Fn(&T) -> Result<()>,
 {
-    if contract.trim().is_empty() || messages.is_empty() || !(1..=4).contains(&max_attempts) {
+    options.validate_v1()?;
+    if messages.is_empty() {
         return Err(Error::InvalidLlmProviderConfig(
-            "structured LLM request requires a contract, messages, and 1..=4 attempts".to_owned(),
+            "structured LLM messages must not be empty".to_owned(),
         ));
     }
     let mut attempt_messages = messages;
     let mut last_reason = "structured output was not attempted".to_owned();
-    for attempt in 1..=max_attempts {
+    for attempt in 1..=options.max_attempts {
         let response = provider.chat_v1(&LlmProviderChatRequestV1 {
-            model: model.clone(),
+            model: options.model.clone(),
             messages: attempt_messages.clone(),
-            task,
-            temperature,
-            max_tokens,
+            task: options.task,
+            temperature: options.temperature,
+            max_tokens: options.max_tokens,
         })?;
         match decode_structured_output_v1::<T, F>(&response.content, &validate) {
             Ok(value) => return Ok(value),
             Err(reason) => {
                 last_reason = reason;
-                if attempt == max_attempts {
+                if attempt == options.max_attempts {
                     break;
                 }
                 attempt_messages.push(LlmMessage::assistant(response.content));
                 attempt_messages.push(LlmMessage::user(structured_repair_prompt_v1(
-                    contract,
+                    &options.contract,
                     &last_reason,
                 )));
             }
         }
     }
     Err(Error::InvalidStructuredOutput {
-        contract: contract.to_owned(),
-        attempts: max_attempts,
+        contract: options.contract.clone(),
+        attempts: options.max_attempts,
         reason: last_reason,
     })
 }
@@ -730,17 +766,15 @@ where
         LlmMessage::system("You are OmniCreator Quality Intelligence. Evaluate only the supplied artifact against the rubric. Remain provider-neutral. Never choose or report LLM providers, accounts, URLs, or routing internals. Return only the JSON object required by the requested contract."),
         LlmMessage::user(format!("Quality contract: {contract}\nRubric:\n{rubric}\n\nCandidate:\n{candidate}\n\nReturn only the JSON value for contract '{contract}'.")),
     ];
-    chat_structured_with_provider_v1(
-        provider,
-        messages,
-        contract,
-        options.model.clone(),
-        LlmTaskV1::Reasoning,
-        Some(0.0),
-        options.max_tokens,
-        options.max_attempts,
-        validate,
-    )
+    let request = StructuredLlmRequestOptionsV1 {
+        contract: contract.to_owned(),
+        model: options.model.clone(),
+        task: LlmTaskV1::Reasoning,
+        temperature: Some(0.0),
+        max_tokens: options.max_tokens,
+        max_attempts: options.max_attempts,
+    };
+    chat_structured_with_provider_v1(provider, messages, &request, validate)
 }
 
 fn create_script_with_provider_v1(
@@ -793,19 +827,17 @@ fn create_scene_with_provider_v1(
         avoid: options.avoid.clone(),
     };
     let messages = build_scene_intent_messages_v1(segment, scene_id, &generation)?;
-    chat_structured_with_provider_v1(
-        provider,
-        messages,
-        &format!("{SCENE_INTENT_SCHEMA}.v{SCENE_INTENT_SCHEMA_VERSION}"),
-        generation.model.clone(),
-        LlmTaskV1::Reasoning,
-        Some(0.2),
-        generation.max_tokens,
-        generation.max_attempts,
-        |scene: &SceneIntentV1| {
-            validate_generated_scene_intent(scene, segment, scene_id, &generation)
-        },
-    )
+    let request = StructuredLlmRequestOptionsV1 {
+        contract: format!("{SCENE_INTENT_SCHEMA}.v{SCENE_INTENT_SCHEMA_VERSION}"),
+        model: generation.model.clone(),
+        task: LlmTaskV1::Reasoning,
+        temperature: Some(0.2),
+        max_tokens: generation.max_tokens,
+        max_attempts: generation.max_attempts,
+    };
+    chat_structured_with_provider_v1(provider, messages, &request, |scene: &SceneIntentV1| {
+        validate_generated_scene_intent(scene, segment, scene_id, &generation)
+    })
 }
 
 fn build_scene_intent_messages_v1(
