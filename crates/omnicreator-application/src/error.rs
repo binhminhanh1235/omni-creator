@@ -80,6 +80,9 @@ impl From<CoreError> for ControlErrorV1 {
             CoreError::MissingComputeProviderCredential(_)
             | CoreError::ComputeProviderTransport(_)
             | CoreError::ComputeProviderApi { .. }
+            | CoreError::MissingLlmProviderCredential { .. }
+            | CoreError::LlmProviderTransport { .. }
+            | CoreError::LlmProviderApi { .. }
             | CoreError::MissingLlmGatewayCredential(_)
             | CoreError::LlmGatewayTransport(_)
             | CoreError::LlmGatewayApi { .. }
@@ -89,6 +92,7 @@ impl From<CoreError> for ControlErrorV1 {
             | CoreError::PluginRuntimeIo { .. } => ControlErrorCodeV1::ProviderUnavailable,
             CoreError::InvalidComputeProviderConfig(_)
             | CoreError::InvalidComputeProviderResponse(_)
+            | CoreError::InvalidLlmProviderResponse { .. }
             | CoreError::PluginProtocol { .. } => ControlErrorCodeV1::CapabilityUnavailable,
             CoreError::InvalidContract(reason) if reason.to_ascii_lowercase().contains("stale") => {
                 ControlErrorCodeV1::StaleInput
@@ -103,6 +107,7 @@ impl From<CoreError> for ControlErrorV1 {
             | CoreError::InvalidLogicalUri(_)
             | CoreError::PathEscape(_)
             | CoreError::InvalidExportPath(_)
+            | CoreError::InvalidLlmProviderConfig(_)
             | CoreError::InvalidLlmGatewayConfig(_)
             | CoreError::InvalidLlmGatewayResponse(_)
             | CoreError::InvalidStructuredOutput { .. }
