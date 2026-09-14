@@ -53,7 +53,8 @@ async fn create_project(root: &Path, title: &str) -> String {
     let result = client
         .call_tool(
             CallToolRequestParams::new("project_create").with_arguments(object(json!({
-                "title": title
+                "title": title,
+                "studio_pack_id": "christian-cinematic"
             }))),
         )
         .await
