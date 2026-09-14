@@ -139,7 +139,10 @@ impl OmniCreatorMcpTaskServerV1 {
         snapshot: &omnicreator_core::ControlTaskSnapshotV1,
     ) -> Result<rmcp::model::TaskPayload, McpError> {
         let artifact = snapshot.selected_artifact.as_ref().ok_or_else(|| {
-            McpError::internal_error("completed control task has no selected result artifact", None)
+            McpError::internal_error(
+                "completed control task has no selected result artifact",
+                None,
+            )
         })?;
         let artifact_store = ArtifactStore::new(&self.inner.config.data_root)
             .map_err(|error| self.protocol_error_v1(ControlErrorV1::from(error)))?;
@@ -155,8 +158,8 @@ impl OmniCreatorMcpTaskServerV1 {
         let path = artifact_store
             .resolve_artifact_path(artifact)
             .map_err(|error| self.protocol_error_v1(ControlErrorV1::from(error)))?;
-        let raw = fs::read(path)
-            .map_err(|error| McpError::internal_error(error.to_string(), None))?;
+        let raw =
+            fs::read(path).map_err(|error| McpError::internal_error(error.to_string(), None))?;
         let value: Value = serde_json::from_slice(&raw)
             .map_err(|error| McpError::internal_error(error.to_string(), None))?;
         let Value::Object(result) = value else {
@@ -211,7 +214,8 @@ impl OmniCreatorMcpTaskServerV1 {
         let workspace = Workspace::open(&config.data_root).map_err(|error| error.to_string())?;
         let session = WorkspaceSession::acquire(workspace, &config.device_id)
             .map_err(|error| error.to_string())?;
-        let mut store = StateStore::open(session.sqlite_path()).map_err(|error| error.to_string())?;
+        let mut store =
+            StateStore::open(session.sqlite_path()).map_err(|error| error.to_string())?;
         let snapshot = store
             .get_control_task_v1(task_id)
             .map_err(|error| error.to_string())?;
@@ -227,16 +231,19 @@ impl OmniCreatorMcpTaskServerV1 {
                 snapshot.job.status.as_str()
             ));
         }
-        let attempt_id = snapshot.job.selected_attempt.clone().ok_or_else(|| {
-            format!("control task {task_id} has no selected running attempt")
-        })?;
+        let attempt_id = snapshot
+            .job
+            .selected_attempt
+            .clone()
+            .ok_or_else(|| format!("control task {task_id} has no selected running attempt"))?;
         let staging_dir = config.data_root.join(".omnicreator/task-staging");
         fs::create_dir_all(&staging_dir).map_err(|error| error.to_string())?;
         let source = staging_dir.join(format!("{task_id}.json"));
         let raw = serde_json::to_vec_pretty(result).map_err(|error| error.to_string())?;
         fs::write(&source, raw).map_err(|error| error.to_string())?;
 
-        let artifact_store = ArtifactStore::new(&config.data_root).map_err(|error| error.to_string())?;
+        let artifact_store =
+            ArtifactStore::new(&config.data_root).map_err(|error| error.to_string())?;
         let promotion = artifact_store.promote_attempt_outputs(
             &mut store,
             omnicreator_core::AttemptPromotionRequest {
@@ -247,7 +254,8 @@ impl OmniCreatorMcpTaskServerV1 {
                     target_uri: omnicreator_core::LogicalUri::Project(format!(
                         "control/tasks/{task_id}.json"
                     )),
-                    artifact_type: omnicreator_core::CONTROL_TASK_RESULT_ARTIFACT_TYPE_V1.to_owned(),
+                    artifact_type: omnicreator_core::CONTROL_TASK_RESULT_ARTIFACT_TYPE_V1
+                        .to_owned(),
                     metadata: json!({
                         "schema": MCP_TASK_RESULT_SCHEMA_V1,
                         "version": MCP_TASK_RESULT_VERSION_V1,
@@ -300,12 +308,8 @@ impl OmniCreatorMcpTaskServerV1 {
                     return;
                 }
             };
-            if OmniCreatorMcpTaskServerV1::persist_task_result_v1(
-                &config,
-                &task_id,
-                &call_result,
-            )
-            .is_err()
+            if OmniCreatorMcpTaskServerV1::persist_task_result_v1(&config, &task_id, &call_result)
+                .is_err()
             {
                 OmniCreatorMcpTaskServerV1::mark_task_internal_failure_v1(
                     &config,
@@ -323,7 +327,8 @@ impl OmniCreatorMcpTaskServerV1 {
         let workspace = Workspace::open(&config.data_root).map_err(|error| error.to_string())?;
         let session = WorkspaceSession::acquire(workspace, &config.device_id)
             .map_err(|error| error.to_string())?;
-        let mut store = StateStore::open(session.sqlite_path()).map_err(|error| error.to_string())?;
+        let mut store =
+            StateStore::open(session.sqlite_path()).map_err(|error| error.to_string())?;
         store
             .reconcile_interrupted_jobs()
             .map_err(|error| error.to_string())?;
@@ -358,12 +363,8 @@ impl rmcp::ServerHandler for OmniCreatorMcpTaskServerV1 {
             ));
         }
 
-        <OmniCreatorMcpServerV1 as rmcp::ServerHandler>::call_tool(
-            &self.inner,
-            request,
-            context,
-        )
-        .await
+        <OmniCreatorMcpServerV1 as rmcp::ServerHandler>::call_tool(&self.inner, request, context)
+            .await
     }
 
     async fn list_tools(
@@ -371,12 +372,8 @@ impl rmcp::ServerHandler for OmniCreatorMcpTaskServerV1 {
         request: Option<rmcp::model::PaginatedRequestParams>,
         context: rmcp::service::RequestContext<rmcp::service::RoleServer>,
     ) -> Result<rmcp::model::ListToolsResult, McpError> {
-        <OmniCreatorMcpServerV1 as rmcp::ServerHandler>::list_tools(
-            &self.inner,
-            request,
-            context,
-        )
-        .await
+        <OmniCreatorMcpServerV1 as rmcp::ServerHandler>::list_tools(&self.inner, request, context)
+            .await
     }
 
     fn get_tool(&self, name: &str) -> Option<rmcp::model::Tool> {
