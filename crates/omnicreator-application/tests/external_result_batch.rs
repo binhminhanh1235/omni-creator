@@ -139,13 +139,13 @@ fn voice_item(
 ) -> ExternalResultBatchItemRequestV1 {
     ExternalResultBatchItemRequestV1::Voice {
         item_id: item_id.to_owned(),
-        result: ExternalVoiceResultRequestV1 {
+        result: Box::new(ExternalVoiceResultRequestV1 {
             request,
             audio_path: audio_path.to_path_buf(),
             timing: derive_manual_voice_timing_v1(segment_id, narration, 1_500).unwrap(),
             source_label: "phase19-test-voice-worker".to_owned(),
             replace_existing,
-        },
+        }),
     }
 }
 
