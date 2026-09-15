@@ -174,7 +174,7 @@ fn parse_phase19_invocation_v1(
     if command.len() < 2 {
         return Err((
             "work.parse".to_owned(),
-            invalid_input_v1("expected work <graph|prepare|commit>"),
+            invalid_input_v1("expected work <graph|qa|prepare|commit>"),
             json,
             data_root,
         ));
@@ -208,6 +208,14 @@ fn execute_phase19_work_v1(
             args.finish()?;
             with_read_only_service_v1(&options.data_root, |service| {
                 value_v1(service.agent_work_graph_v1(&ProjectIdRequestV1 { project_id })?)
+            })
+        }
+        "qa" => {
+            let mut args = Phase19CommandArgsV1::new(options.command_args.clone());
+            let project_id = args.require_value("--project")?;
+            args.finish()?;
+            with_read_only_service_v1(&options.data_root, |service| {
+                value_v1(service.agent_fan_in_qa_v1(&ProjectIdRequestV1 { project_id })?)
             })
         }
         "prepare" => {
@@ -246,8 +254,7 @@ fn execute_phase19_work_v1(
                     value_v1(service.provide_external_result_batch_v1(&request)?)
                 })
             } else {
-                let workspace =
-                    Workspace::open(&options.data_root).map_err(ControlErrorV1::from)?;
+                let workspace = Workspace::open(&options.data_root).map_err(ControlErrorV1::from)?;
                 let session = WorkspaceSession::acquire(workspace, &options.device_id)
                     .map_err(ControlErrorV1::from)?;
                 let mut service = ApplicationControlService::for_writer(&session)?;
@@ -255,7 +262,7 @@ fn execute_phase19_work_v1(
             }
         }
         other => Err(invalid_input_v1(format!(
-            "unsupported work command: {other}; expected graph, prepare, or commit"
+            "unsupported work command: {other}; expected graph, qa, prepare, or commit"
         ))),
     }
 }
