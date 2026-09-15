@@ -56,6 +56,29 @@ omnicreator --data-root <path> --json creator resume --project <project-id>
 
 For Content, ScenePlan, visuals, voice/timing, external handoff, and recovery mutations, use the documented typed payload input (`--stdin` or `--input-file`) rather than editing Data Root files.
 
+### Phase 19 parallel work
+
+Harnesses that want to fan out visual/voice execution should inspect the canonical graph instead of reverse-engineering jobs or keeping their own queue:
+
+```text
+omnicreator --data-root <path> --json work graph --project <project-id>
+omnicreator --data-root <path> --json work prepare --project <project-id> --work <work-id>
+```
+
+Both commands are read-only projections and do not acquire the canonical writer lease. The returned `work_id`, dependency state, input hash, selected artifact IDs, and external descriptor are the authority for dispatch.
+
+Workers may run concurrently outside OmniCreator. Return completed visual/voice results through one canonical batch ingress:
+
+```text
+omnicreator --data-root <path> --json work commit --stdin
+```
+
+or `--input-file <batch.json>`. The commit is serialized through the shared writer lease and preserves stale-input rejection, duplicate/reconnect reuse, per-item failure reporting, and explicit replacement semantics.
+
+MCP clients use the equivalent tools `agent_work_graph`, `agent_work_prepare`, and `agent_work_commit`. Graph/prepare stay read-only even on a writable server. Commit requires mutation access. These bounded operations are synchronous; durable MCP Tasks remain for actually long-running operations such as `creator_start_or_resume`.
+
+A safe worker loop is: inspect graph -> prepare returned work IDs -> fan out externally -> batch commit completed results -> inspect graph again. Do not treat a local worker's completion as canonical success until OmniCreator accepts the result.
+
 ## Safe flow recipes
 
 ### All-auto
