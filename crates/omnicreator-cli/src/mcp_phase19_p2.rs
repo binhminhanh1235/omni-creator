@@ -56,37 +56,53 @@ impl OmniCreatorPhase19P2ToolsV1 {
     }
 
     #[tool(
+        description = "Inspect canonical Phase 19 visual/voice fan-in QA and recovery state without acquiring the writer lease. Combines work readiness with verified/missing/invalid/unselected artifact health."
+    )]
+    async fn agent_fan_in_qa(
+        &self,
+        Parameters(params): Parameters<ProjectIdParamsV1>,
+    ) -> Result<CallToolResult, McpError> {
+        self.inner
+            .render_v1(self.with_read_only_service_v1(|service| {
+                to_value_v1(service.agent_fan_in_qa_v1(&ProjectIdRequestV1 {
+                    project_id: params.project_id,
+                })?)
+            }))
+    }
+
+    #[tool(
         description = "Prepare one externally executable Phase 19 work item by canonical work_id. This is read-only and never claims or mutates the work item."
     )]
     async fn agent_work_prepare(
         &self,
         Parameters(params): Parameters<AgentWorkPrepareParamsV1>,
     ) -> Result<CallToolResult, McpError> {
-        self.inner.render_v1(self.with_read_only_service_v1(|service| {
-            let graph = service.agent_work_graph_v1(&ProjectIdRequestV1 {
-                project_id: params.project_id,
-            })?;
-            let item = graph
-                .items
-                .into_iter()
-                .find(|item| item.work_id == params.work_id)
-                .ok_or_else(|| {
-                    ControlErrorV1::new(
-                        ControlErrorCodeV1::NotFound,
-                        format!("agent work item was not found: {}", params.work_id),
-                    )
+        self.inner
+            .render_v1(self.with_read_only_service_v1(|service| {
+                let graph = service.agent_work_graph_v1(&ProjectIdRequestV1 {
+                    project_id: params.project_id,
                 })?;
-            if item.external.is_none() {
-                return Err(ControlErrorV1::new(
-                    ControlErrorCodeV1::Blocked,
-                    format!(
-                        "agent work item {} has no external work descriptor in current canonical state",
-                        params.work_id
-                    ),
-                ));
-            }
-            to_value_v1(item)
-        }))
+                let item = graph
+                    .items
+                    .into_iter()
+                    .find(|item| item.work_id == params.work_id)
+                    .ok_or_else(|| {
+                        ControlErrorV1::new(
+                            ControlErrorCodeV1::NotFound,
+                            format!("agent work item was not found: {}", params.work_id),
+                        )
+                    })?;
+                if item.external.is_none() {
+                    return Err(ControlErrorV1::new(
+                        ControlErrorCodeV1::Blocked,
+                        format!(
+                            "agent work item {} has no external work descriptor in current canonical state",
+                            params.work_id
+                        ),
+                    ));
+                }
+                to_value_v1(item)
+            }))
     }
 
     #[tool(
@@ -101,9 +117,10 @@ impl OmniCreatorPhase19P2ToolsV1 {
                 Ok(request) => request,
                 Err(error) => return self.inner.render_v1::<Value>(Err(error)),
             };
-        self.inner.render_v1(self.inner.with_service_v1(|service| {
-            to_value_v1(service.provide_external_result_batch_v1(&request)?)
-        }))
+        self.inner
+            .render_v1(self.inner.with_service_v1(|service| {
+                to_value_v1(service.provide_external_result_batch_v1(&request)?)
+            }))
     }
 }
 
@@ -124,7 +141,10 @@ impl OmniCreatorMcpPhase19P2ServerV1 {
     fn is_phase19_tool_v1(name: &str) -> bool {
         matches!(
             name,
-            "agent_work_graph" | "agent_work_prepare" | "agent_work_commit"
+            "agent_work_graph"
+                | "agent_fan_in_qa"
+                | "agent_work_prepare"
+                | "agent_work_commit"
         )
     }
 }
@@ -165,6 +185,7 @@ impl rmcp::ServerHandler for OmniCreatorMcpPhase19P2ServerV1 {
         .await?;
         for name in [
             "agent_work_graph",
+            "agent_fan_in_qa",
             "agent_work_prepare",
             "agent_work_commit",
         ] {
