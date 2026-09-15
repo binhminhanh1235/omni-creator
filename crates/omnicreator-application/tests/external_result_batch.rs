@@ -2,14 +2,14 @@ use std::{fs, path::Path};
 
 use omnicreator_application::{
     ApplicationControlService, ControlErrorCodeV1, ExternalResultBatchItemRequestV1,
-    ExternalResultBatchItemStatusV1, ExternalResultBatchRequestV1,
-    ExternalVisualResultRequestV1, ExternalVoiceResultRequestV1, ManualContentRequestV1,
-    ManualScenePlanRequestV1, ProjectIdRequestV1,
+    ExternalResultBatchItemStatusV1, ExternalResultBatchRequestV1, ExternalVisualResultRequestV1,
+    ExternalVoiceResultRequestV1, ManualContentRequestV1, ManualScenePlanRequestV1,
+    ProjectIdRequestV1,
 };
 use omnicreator_core::{
     derive_manual_voice_timing_v1, initial_studio_pack_catalog_v1,
-    ExternalGeneratedVisualRequestV1, ExternalVoiceRequestV1, ManualResultProvenanceV1,
-    Workspace, WorkspaceSession,
+    ExternalGeneratedVisualRequestV1, ExternalVoiceRequestV1, ManualResultProvenanceV1, Workspace,
+    WorkspaceSession,
 };
 
 fn png(width: u32, height: u32) -> Vec<u8> {
@@ -254,13 +254,17 @@ fn batch_reports_partial_failure_and_requires_explicit_replacement() {
             false,
         ),
     ]);
-    let outcome = service
-        .provide_external_result_batch_v1(&partial)
-        .unwrap();
+    let outcome = service.provide_external_result_batch_v1(&partial).unwrap();
     assert_eq!(outcome.committed, 1);
     assert_eq!(outcome.failed, 1);
-    assert_eq!(outcome.items[0].status, ExternalResultBatchItemStatusV1::Committed);
-    assert_eq!(outcome.items[1].status, ExternalResultBatchItemStatusV1::Failed);
+    assert_eq!(
+        outcome.items[0].status,
+        ExternalResultBatchItemStatusV1::Committed
+    );
+    assert_eq!(
+        outcome.items[1].status,
+        ExternalResultBatchItemStatusV1::Failed
+    );
     assert!(outcome.items[1].error.is_some());
 
     let replacement_path = temp.path().join("scene-b.png");
@@ -271,9 +275,7 @@ fn batch_reports_partial_failure_and_requires_explicit_replacement() {
         &replacement_path,
         false,
     )]);
-    let denied = service
-        .provide_external_result_batch_v1(&denied)
-        .unwrap();
+    let denied = service.provide_external_result_batch_v1(&denied).unwrap();
     assert_eq!(denied.failed, 1);
     assert_eq!(
         denied.items[0].error.as_ref().unwrap().code,
@@ -286,9 +288,7 @@ fn batch_reports_partial_failure_and_requires_explicit_replacement() {
         &replacement_path,
         true,
     )]);
-    let allowed = service
-        .provide_external_result_batch_v1(&allowed)
-        .unwrap();
+    let allowed = service.provide_external_result_batch_v1(&allowed).unwrap();
     assert_eq!(allowed.committed, 1);
     assert_eq!(allowed.failed, 0);
 }
@@ -320,12 +320,7 @@ fn stale_visual_does_not_block_current_voice_result_in_same_batch() {
     fs::write(&visual_path, png(1280, 720)).unwrap();
     fs::write(&audio_path, wav(1_500)).unwrap();
     let batch = ExternalResultBatchRequestV1::new(vec![
-        visual_item(
-            "stale-visual",
-            seeded.visual_request,
-            &visual_path,
-            false,
-        ),
+        visual_item("stale-visual", seeded.visual_request, &visual_path, false),
         voice_item(
             "current-voice",
             seeded.voice_request,
@@ -338,11 +333,17 @@ fn stale_visual_does_not_block_current_voice_result_in_same_batch() {
     let outcome = service.provide_external_result_batch_v1(&batch).unwrap();
     assert_eq!(outcome.committed, 1);
     assert_eq!(outcome.failed, 1);
-    assert_eq!(outcome.items[0].status, ExternalResultBatchItemStatusV1::Failed);
+    assert_eq!(
+        outcome.items[0].status,
+        ExternalResultBatchItemStatusV1::Failed
+    );
     assert_eq!(
         outcome.items[0].error.as_ref().unwrap().code,
         ControlErrorCodeV1::StaleInput
     );
-    assert_eq!(outcome.items[1].status, ExternalResultBatchItemStatusV1::Committed);
+    assert_eq!(
+        outcome.items[1].status,
+        ExternalResultBatchItemStatusV1::Committed
+    );
     assert_eq!(outcome.items[0].canonical_unit, seeded.scene_id);
 }
