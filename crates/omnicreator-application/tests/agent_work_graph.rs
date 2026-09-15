@@ -45,7 +45,10 @@ fn wav(duration_ms: u64) -> Vec<u8> {
     out
 }
 
-fn project_item(graph: &AgentWorkGraphV1, kind: AgentWorkKindV1) -> &omnicreator_application::AgentWorkItemV1 {
+fn project_item(
+    graph: &AgentWorkGraphV1,
+    kind: AgentWorkKindV1,
+) -> &omnicreator_application::AgentWorkItemV1 {
     graph
         .items
         .iter()
@@ -88,7 +91,8 @@ fn agent_work_graph_exposes_parallel_voice_then_visual_without_shadow_state() {
         .iter()
         .any(|item| matches!(item.kind, AgentWorkKindV1::Visual | AgentWorkKindV1::Voice)));
 
-    let script = "A canonical work graph lets independent creator workers execute safely in parallel.";
+    let script =
+        "A canonical work graph lets independent creator workers execute safely in parallel.";
     let content = service
         .provide_manual_content_v1(&ManualContentRequestV1 {
             project_id: project.id.clone(),
@@ -114,7 +118,10 @@ fn agent_work_graph_exposes_parallel_voice_then_visual_without_shadow_state() {
         .find(|item| item.kind == AgentWorkKindV1::Voice)
         .unwrap();
     assert_eq!(voice.state, AgentWorkStateV1::Ready);
-    assert!(voice.input_sha256.as_ref().is_some_and(|value| !value.is_empty()));
+    assert!(voice
+        .input_sha256
+        .as_ref()
+        .is_some_and(|value| !value.is_empty()));
     assert!(matches!(
         &voice.external,
         Some(AgentExternalWorkDescriptorV1::Voice { .. })
@@ -150,13 +157,22 @@ fn agent_work_graph_exposes_parallel_voice_then_visual_without_shadow_state() {
         .find(|item| item.kind == AgentWorkKindV1::Visual)
         .unwrap();
     assert_eq!(visual.state, AgentWorkStateV1::Ready);
-    assert!(visual.input_sha256.as_ref().is_some_and(|value| !value.is_empty()));
+    assert!(visual
+        .input_sha256
+        .as_ref()
+        .is_some_and(|value| !value.is_empty()));
     assert!(matches!(
         &visual.external,
         Some(AgentExternalWorkDescriptorV1::Visual { .. })
     ));
-    assert!(fan_out.ready_work_ids.iter().any(|id| id.starts_with("voice:")));
-    assert!(fan_out.ready_work_ids.iter().any(|id| id.starts_with("visual:")));
+    assert!(fan_out
+        .ready_work_ids
+        .iter()
+        .any(|id| id.starts_with("voice:")));
+    assert!(fan_out
+        .ready_work_ids
+        .iter()
+        .any(|id| id.starts_with("visual:")));
 
     let visual_path = temp.path().join("scene.png");
     fs::write(&visual_path, png()).unwrap();
@@ -206,5 +222,8 @@ fn agent_work_graph_exposes_parallel_voice_then_visual_without_shadow_state() {
     let read_only = ApplicationControlService::for_read_only(&workspace).unwrap();
     let read_only_graph = read_only.agent_work_graph_v1(&request).unwrap();
     assert!(read_only_graph.read_only);
-    assert_eq!(read_only_graph.satisfied_work_ids, fan_in.satisfied_work_ids);
+    assert_eq!(
+        read_only_graph.satisfied_work_ids,
+        fan_in.satisfied_work_ids
+    );
 }
