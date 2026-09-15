@@ -1,6 +1,6 @@
 ---
 name: omnicreator
-description: Safely control an OmniCreator creator project through its canonical MCP or CLI surface, including automatic, mixed manual, recovery, and ProductionPack flows.
+description: Safely control an OmniCreator creator project through its canonical MCP or CLI surface, including automatic, mixed manual, recovery, parallel worker-pool, and ProductionPack flows.
 ---
 
 # OmniCreator agent control
@@ -10,13 +10,13 @@ Use OmniCreator as a control plane over its canonical Project / WorkflowStep / J
 ## Hard rules
 
 1. Inspect before mutating. Start with `workspace_status` / `projects_list` and then `project_get`, `workflow_status`, `creator_state`, `review_list`, or `runtime_status` as needed.
-2. Use project, step, scene, segment, artifact, job, attempt, and recovery identifiers returned by OmniCreator. Never invent canonical IDs.
+2. Use project, step, scene, segment, artifact, job, attempt, recovery, and `work_id` identifiers returned by OmniCreator. Never invent canonical IDs.
 3. After every mutation, re-read the relevant status before choosing the next action.
-4. Honor `read_only`, `writer_conflict`, `blocked`, `provider_unavailable`, and `capability_unavailable`. Do not work around canonical guards.
+4. Honor `read_only`, `writer_conflict`, `blocked`, `provider_unavailable`, `capability_unavailable`, and `stale_input`. Do not work around canonical guards.
 5. Prefer `creator_start_or_resume` or CLI `creator resume` for an existing project. Do not recreate a project just because execution is blocked.
 6. Automatic execution being OFF does not mean SKIPPED or SUCCEEDED. Satisfy the step through the corresponding canonical manual/external control, then re-read workflow state.
 7. Never edit OmniCreator SQLite, Data Root internals, ArtifactStore files, or workflow state directly. Never use a generic filesystem or shell bypass to fabricate state.
-8. Never claim provider, plugin, TTS, GPU, or ComputeProvider success unless OmniCreator reports canonical success/result state.
+8. Never claim provider, plugin, TTS, GPU, ComputeProvider, worker, or external-service success unless OmniCreator reports the accepted canonical result/state.
 9. Keep provider settings machine-local. Never put API keys, bearer tokens, or raw provider credentials in Data Root, project state, prompts, MCP payloads, or checked-in config.
 10. When recovery is required, inspect Review Center/recovery first and invoke only an applicable typed recovery/manual/external action.
 
@@ -30,6 +30,8 @@ Inspection tools:
 - `creator_state`
 - `review_list`
 - `runtime_status`
+- `agent_work_graph`
+- `agent_work_prepare`
 - `visual_control` with `status`
 - `voice_control` with `status`
 - `production_control` with `status` or `recovery`
@@ -43,6 +45,7 @@ Mutation/control tools:
 - `scene_plan_control`
 - `visual_control`
 - `voice_control`
+- `agent_work_commit`
 - `production_control`
 
 Project deletion is destructive. Only request it when explicitly required and use its confirmation contract.
@@ -78,6 +81,20 @@ Keep automatic execution OFF where desired. Supply Content, ScenePlan, visuals, 
 
 Inspect `review_list` and `production_control` recovery/status -> choose only an applicable repair/manual/external action -> verify recovery state -> resume/rebuild -> verify ProductionPack/export.
 
+## Parallel worker pool
+
+Use one harness coordinator for canonical OmniCreator control and bounded workers only for external execution. The coordinator calls `agent_work_graph`, selects current executable units, and calls `agent_work_prepare` immediately before dispatch. A worker receives only canonical `project_id`, `work_id`, the typed `external` descriptor, and its external task.
+
+Workers never call `agent_work_commit`. They never edit SQLite, ArtifactStore, Data Root internals, workflow state, selected artifacts, or completion flags. A worker returns a candidate result plus truthful provenance to the coordinator. Worker completion is not canonical success.
+
+The coordinator may fan out independent scene visual work and voice-segment work concurrently after their canonical dependencies are satisfied. Start with at most 4 workers unless provider/GPU/TTS capacity calls for a smaller local limit. Concurrency is harness-local policy, never persisted workflow truth.
+
+The coordinator alone calls `agent_work_commit`, serializing canonical commit batches through the Data Root writer lease. Immediately run `agent_work_graph` again after every commit batch. Do not infer state from worker transcripts.
+
+On reconnect, rebuild the queue from the current graph. On `stale_input`, discard the candidate and call `agent_work_prepare` again for current work. On duplicate delivery, submit only through canonical commit and trust the canonical idempotency response. On `writer_conflict`, back off and retry through the coordinator rather than opening another writer.
+
+Reference package: `agent-harness/worker-pool/contract.json`, `agent-harness/worker-pool/README.md`, plus vendor recipes under `agent-harness/{codex,claude,antigravity}/WORKER-POOL.md`.
+
 ## Provider selection
 
 LLM execution is optional for manual flows. For automatic Content/Scene intelligence, configure exactly one machine-local provider path:
@@ -97,10 +114,12 @@ omnicreator --data-root <path> --json project show --project <id>
 omnicreator --data-root <path> --json workflow status --project <id>
 omnicreator --data-root <path> --json creator state --project <id>
 omnicreator --data-root <path> --json review list --project <id>
+omnicreator --data-root <path> --json work graph --project <id>
+omnicreator --data-root <path> --json work prepare --project <id> --work <work-id>
 omnicreator --data-root <path> --json creator resume --project <id>
 ```
 
-For complex manual/external mutations, use the documented typed `--stdin` or `--input-file` payload path instead of inventing ad-hoc flags.
+For `work commit` and other complex manual/external mutations, use the documented typed `--stdin` or `--input-file` payload path instead of inventing ad-hoc flags.
 
 ## Completion standard
 
