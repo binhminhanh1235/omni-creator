@@ -47,11 +47,12 @@ impl OmniCreatorPhase19P2ToolsV1 {
         &self,
         Parameters(params): Parameters<ProjectIdParamsV1>,
     ) -> Result<CallToolResult, McpError> {
-        self.inner.render_v1(self.with_read_only_service_v1(|service| {
-            to_value_v1(service.agent_work_graph_v1(&ProjectIdRequestV1 {
-                project_id: params.project_id,
-            })?)
-        }))
+        self.inner
+            .render_v1(self.with_read_only_service_v1(|service| {
+                to_value_v1(service.agent_work_graph_v1(&ProjectIdRequestV1 {
+                    project_id: params.project_id,
+                })?)
+            }))
     }
 
     #[tool(
@@ -156,28 +157,26 @@ impl rmcp::ServerHandler for OmniCreatorMcpPhase19P2ServerV1 {
         request: Option<rmcp::model::PaginatedRequestParams>,
         context: rmcp::service::RequestContext<rmcp::service::RoleServer>,
     ) -> Result<rmcp::model::ListToolsResult, McpError> {
-        let mut result =
-            <OmniCreatorMcpTaskServerV1 as rmcp::ServerHandler>::list_tools(
-                &self.legacy,
-                request,
-                context,
-            )
-            .await?;
+        let mut result = <OmniCreatorMcpTaskServerV1 as rmcp::ServerHandler>::list_tools(
+            &self.legacy,
+            request,
+            context,
+        )
+        .await?;
         for name in [
             "agent_work_graph",
             "agent_work_prepare",
             "agent_work_commit",
         ] {
             if let Some(tool) =
-                <OmniCreatorPhase19P2ToolsV1 as rmcp::ServerHandler>::get_tool(
-                    &self.phase19,
-                    name,
-                )
+                <OmniCreatorPhase19P2ToolsV1 as rmcp::ServerHandler>::get_tool(&self.phase19, name)
             {
                 result.tools.push(tool);
             }
         }
-        result.tools.sort_by(|left, right| left.name.cmp(&right.name));
+        result
+            .tools
+            .sort_by(|left, right| left.name.cmp(&right.name));
         Ok(result)
     }
 
