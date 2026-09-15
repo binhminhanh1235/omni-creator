@@ -1,6 +1,6 @@
 # Recipe sản xuất song song visual + voice
 
-Tracking: Phase 19 P4 #118.
+Tracking: Phase 19 P4 #118 và P5 #119.
 
 Recipe này biến worker-pool của Phase 19 thành luồng sản xuất thực tế nhưng không tạo thêm workflow engine. OmniCreator vẫn là nguồn sự thật cho readiness, artifact canonical được chọn, stale detection, recovery và fan-in cuối cùng.
 
@@ -93,18 +93,64 @@ Cách scheduling hiệu quả là giữ voice workers chạy ngay khi Content s�
 
 **OmniVoiceStudio unavailable:** cung cấp manual audio + timing bundle với provenance đúng.
 
-**Một worker fail, worker khác success:** chỉ commit candidate đã hoàn tất và được chấp nhận, re-inspect rồi redispatch phần còn thiếu vẫn còn current. P5 sẽ harden sâu hơn crash/contention/fan-in; P4 không tạo thêm worker database.
+**Một worker fail, worker khác success:** chỉ commit candidate đã hoàn tất và được chấp nhận, re-inspect rồi redispatch phần còn thiếu vẫn còn current. Harness restart không được làm mất hoặc bắt làm lại artifact canonical đã verified.
 
-## Fan-in gate
+## Fan-in QA và recovery
+
+Dùng `agent_fan_in_qa` sau mỗi wave worker, sau reconnect và ngay trước ProductionPack. Với CLI dùng `work qa --project <id>`.
+
+QA projection ghép hai nguồn canonical:
+
+- `agent_work_graph` cho trạng thái READY/RUNNING/NEEDS_REVIEW/SATISFIED;
+- Production Recovery cho sức khỏe artifact visual/audio/timing đã được chọn tại Data Root hiện tại.
+
+Projection này không tạo worker-status table, claim table, scheduler hay persisted harness state.
+
+Cách đọc:
+
+- `ready_work_ids`: chỉ các visual/voice unit còn READY để dispatch;
+- `needs_review_work_ids`: visual/voice unit có canonical Job state cần review/recovery;
+- `unhealthy_canonical_units`: unit đã SATISFIED nhưng artifact production đã chọn bị missing, invalid hoặc unselected;
+- `fan_in_verified`: mọi visual + voice unit đều SATISFIED và mọi production input đã chọn đều verify vật lý;
+- `production_pack_ready`: canonical ProductionPack có thể assemble;
+- `production_pack_satisfied`: ProductionPack đã canonical success.
+
+Một unit READY chưa có selected artifact là trạng thái pending bình thường, không phải artifact failure. `Unselected` chỉ là recovery issue khi canonical work unit đã tuyên bố SATISFIED.
+
+Mapping recovery được khuyến nghị:
+
+- `dispatch_external`: prepare descriptor hiện tại rồi dispatch;
+- `review`: inspect Review Center và work graph hiện tại trước khi retry/replace;
+- `repair_visual`: inspect `production_control recovery`, sau đó dùng typed visual repair/relink;
+- `repair_voice_bundle`: inspect recovery rồi repair audio + timing qua typed voice bundle path;
+- `assemble_production_pack`: re-check QA rồi dùng canonical ProductionPack controls.
+
+Read-only client vẫn xem được suggested action kể cả khi writer lease đang được giữ. Nó không có quyền mutate. Writer thứ hai phải nhận `writer_conflict`, tuyệt đối không được bypass lease.
+
+## Restart, reconnect và di chuyển Data Root
+
+Sau coordinator crash hoặc reconnect:
+
+1. bỏ toàn bộ claim/in-memory completion của harness;
+2. cold-read `agent_work_graph`;
+3. cold-read `agent_fan_in_qa`;
+4. reuse unit đã SATISFIED và có artifact verified;
+5. chỉ prepare work hiện tại còn READY;
+6. để `stale_input` loại bỏ output đã cũ;
+7. serialize commit mới qua canonical writer lease.
+
+Sau khi move/rebind Data Root, thực hiện lại cold inspection trên root mới. Portable state dùng logical artifact URI nên QA và project truth không được chứa absolute path của root cũ. Production Recovery phải verify file tại binding hiện tại trước khi fan-in được coi là khỏe.
+
+## Gate ProductionPack
 
 Trước ProductionPack:
 
 1. re-inspect `agent_work_graph`;
-2. dùng `visual_control status` và `voice_control status` khi cần chẩn đoán unit còn thiếu;
-3. kiểm tra Review Center/recovery cho failed/stale unit;
-4. yêu cầu canonical visual + voice aggregate đã verified;
-5. chỉ sau đó mới assemble/rebuild/export ProductionPack.
+2. inspect `agent_fan_in_qa`;
+3. yêu cầu `fan_in_verified=true` và không còn unhealthy/review unit;
+4. nếu QA yêu cầu repair/review thì inspect Review Center/production recovery và xử lý trước;
+5. chỉ sau đó mới assemble/rebuild/export ProductionPack và Resolve interchange.
 
-Worker completion, Pexels download hay OmniVoiceStudio audio file chỉ là bằng chứng external execution. Canonical acceptance của OmniCreator mới là production truth.
+Worker completion, Pexels download hay OmniVoiceStudio audio file chỉ là bằng chứng external execution. Canonical acceptance và artifact verification của OmniCreator mới là production truth.
 
-Machine-readable rules nằm ở `agent-harness/parallel-production/contract.json`.
+Machine-readable production rules nằm ở `agent-harness/parallel-production/contract.json`. Worker-pool rules vẫn ở `agent-harness/worker-pool/contract.json`.
