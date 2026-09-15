@@ -53,7 +53,7 @@ pub enum AgentExternalWorkDescriptorV1 {
         request: Box<ExternalGeneratedVisualRequestV1>,
     },
     Voice {
-        request: ExternalVoiceRequestV1,
+        request: Box<ExternalVoiceRequestV1>,
     },
 }
 
@@ -190,7 +190,7 @@ pub fn derive_agent_work_graph_v1(
                     None
                 } else {
                     Some(AgentExternalWorkDescriptorV1::Voice {
-                        request: external_request,
+                        request: Box::new(external_request),
                     })
                 },
                 message: message_v1(AgentWorkKindV1::Voice, work_state),
