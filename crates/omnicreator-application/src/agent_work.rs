@@ -50,7 +50,7 @@ pub enum AgentWorkActionV1 {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum AgentExternalWorkDescriptorV1 {
     Visual {
-        request: ExternalGeneratedVisualRequestV1,
+        request: Box<ExternalGeneratedVisualRequestV1>,
     },
     Voice {
         request: ExternalVoiceRequestV1,
@@ -236,7 +236,7 @@ pub fn derive_agent_work_graph_v1(
                     None
                 } else {
                     Some(AgentExternalWorkDescriptorV1::Visual {
-                        request: external_request,
+                        request: Box::new(external_request),
                     })
                 },
                 message: message_v1(AgentWorkKindV1::Visual, work_state),
