@@ -54,7 +54,7 @@ fn seed_content(root: &std::path::Path) -> (String, String) {
 }
 
 #[test]
-fn work_graph_and_prepare_are_read_only_and_commit_has_typed_rejection() {
+fn work_graph_qa_and_prepare_are_read_only_and_commit_has_typed_rejection() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().join("data-root");
     let (project_id, work_id) = seed_content(&root);
@@ -76,6 +76,17 @@ fn work_graph_and_prepare_are_read_only_and_commit_has_typed_rejection() {
         .unwrap()
         .iter()
         .any(|item| item["work_id"] == work_id));
+
+    let qa = run(&root, &["work", "qa", "--project", project_id.as_str()]);
+    assert!(qa.status.success());
+    let qa: Value = serde_json::from_slice(&qa.stdout).unwrap();
+    assert_eq!(qa["ok"], true);
+    assert_eq!(qa["operation"], "work.qa");
+    assert_eq!(qa["data"]["schema"], "omnicreator.agent-fan-in-qa");
+    assert_eq!(qa["data"]["project_id"], project_id);
+    assert_eq!(qa["data"]["read_only"], true);
+    assert_eq!(qa["data"]["fan_in_verified"], false);
+    assert!(!qa["data"]["voice_units"].as_array().unwrap().is_empty());
 
     let prepared = run(
         &root,
