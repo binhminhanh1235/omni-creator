@@ -1,6 +1,8 @@
 use std::{path::Path, process::Stdio};
 
-use omnicreator_application::{ApplicationControlService, ManualContentRequestV1, ProjectIdRequestV1};
+use omnicreator_application::{
+    ApplicationControlService, ManualContentRequestV1, ProjectIdRequestV1,
+};
 use omnicreator_core::{
     initial_studio_pack_catalog_v1, ManualResultProvenanceV1, Workspace, WorkspaceSession,
 };
@@ -71,8 +73,9 @@ fn seed_content(root: &Path) -> (String, String) {
     service
         .provide_manual_content_v1(&ManualContentRequestV1 {
             project_id: project.id.clone(),
-            script: "MCP harnesses should inspect canonical work without becoming canonical writers."
-                .to_owned(),
+            script:
+                "MCP harnesses should inspect canonical work without becoming canonical writers."
+                    .to_owned(),
             provenance: ManualResultProvenanceV1::manual_editor(),
         })
         .unwrap();
@@ -112,7 +115,10 @@ async fn real_stdio_client_discovers_phase19_tools_and_preserves_read_only_seman
         "agent_work_commit",
         "creator_start_or_resume",
     ] {
-        assert!(names.contains(&required), "missing MCP tool {required}: {names:?}");
+        assert!(
+            names.contains(&required),
+            "missing MCP tool {required}: {names:?}"
+        );
     }
 
     let graph = call(
