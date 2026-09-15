@@ -76,10 +76,7 @@ fn worker_pool_package_preserves_single_canonical_writer_contract() {
         contract["concurrency"]["persisted_as_workflow_truth"],
         false
     );
-    assert_eq!(
-        contract["coordinator"]["serialize_canonical_commits"],
-        true
-    );
+    assert_eq!(contract["coordinator"]["serialize_canonical_commits"], true);
     assert_eq!(
         contract["coordinator"]["reinspect_after_every_commit"],
         true
