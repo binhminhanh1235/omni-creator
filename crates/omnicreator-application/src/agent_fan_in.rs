@@ -74,10 +74,9 @@ fn derive_agent_fan_in_qa_v1(
     request: &ProjectIdRequestV1,
     graph: AgentWorkGraphV1,
 ) -> ControlResultV1<AgentFanInQaV1> {
-    let scene_plan_satisfied = graph
-        .items
-        .iter()
-        .any(|item| item.kind == AgentWorkKindV1::ScenePlan && item.state == AgentWorkStateV1::Satisfied);
+    let scene_plan_satisfied = graph.items.iter().any(|item| {
+        item.kind == AgentWorkKindV1::ScenePlan && item.state == AgentWorkStateV1::Satisfied
+    });
 
     let (recovery_items, recovery_ready_for_rebuild) = if scene_plan_satisfied {
         let recovery = service.production_recovery_v1(request)?.data.recovery;
@@ -103,14 +102,28 @@ fn derive_agent_fan_in_qa_v1(
         .iter()
         .chain(&voice_units)
         .filter(|unit| {
-            unit.recovery_items.iter().any(|item| {
-                item.state != ProductionRecoveryArtifactStateV1::Verified
-            })
+            unit.state == AgentWorkStateV1::Satisfied
+                && unit.recovery_items.iter().any(|item| {
+                    item.state != ProductionRecoveryArtifactStateV1::Verified
+                })
         })
         .map(|unit| unit.canonical_unit.clone())
         .collect::<Vec<_>>();
     unhealthy_canonical_units.sort();
     unhealthy_canonical_units.dedup();
+
+    let ready_work_ids = visual_units
+        .iter()
+        .chain(&voice_units)
+        .filter(|unit| unit.state == AgentWorkStateV1::Ready)
+        .map(|unit| unit.work_id.clone())
+        .collect::<Vec<_>>();
+    let needs_review_work_ids = visual_units
+        .iter()
+        .chain(&voice_units)
+        .filter(|unit| unit.state == AgentWorkStateV1::NeedsReview)
+        .map(|unit| unit.work_id.clone())
+        .collect::<Vec<_>>();
 
     let fan_in_verified = !visual_units.is_empty()
         && !voice_units.is_empty()
@@ -128,13 +141,13 @@ fn derive_agent_fan_in_qa_v1(
     let production_pack_ready = production.state == AgentWorkStateV1::Ready;
     let production_pack_satisfied = production.state == AgentWorkStateV1::Satisfied;
 
-    let suggested_action = if graph.read_only {
-        AgentFanInRecoveryActionV1::None
-    } else if !graph.needs_review_work_ids.is_empty() || !unhealthy_canonical_units.is_empty() {
+    let suggested_action = if !needs_review_work_ids.is_empty()
+        || !unhealthy_canonical_units.is_empty()
+    {
         AgentFanInRecoveryActionV1::Review
     } else if production_pack_ready {
         AgentFanInRecoveryActionV1::AssembleProductionPack
-    } else if !graph.ready_work_ids.is_empty() {
+    } else if !ready_work_ids.is_empty() {
         AgentFanInRecoveryActionV1::DispatchExternal
     } else {
         AgentFanInRecoveryActionV1::Wait
@@ -147,8 +160,8 @@ fn derive_agent_fan_in_qa_v1(
         read_only: graph.read_only,
         visual_units,
         voice_units,
-        ready_work_ids: graph.ready_work_ids,
-        needs_review_work_ids: graph.needs_review_work_ids,
+        ready_work_ids,
+        needs_review_work_ids,
         unhealthy_canonical_units,
         recovery_ready_for_rebuild,
         fan_in_verified,
@@ -209,11 +222,13 @@ fn fan_in_unit_v1(
             .count();
         if unhealthy == 0 {
             format!("{} Canonical artifacts are verified.", item.message)
-        } else {
+        } else if item.state == AgentWorkStateV1::Satisfied {
             format!(
-                "{} {unhealthy} canonical recovery artifact(s) require attention.",
+                "{} {unhealthy} canonical recovery artifact(s) require repair.",
                 item.message
             )
+        } else {
+            item.message.clone()
         }
     };
 
