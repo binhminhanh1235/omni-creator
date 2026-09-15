@@ -27,7 +27,7 @@ pub enum ExternalResultBatchItemRequestV1 {
     },
     Voice {
         item_id: String,
-        result: ExternalVoiceResultRequestV1,
+        result: Box<ExternalVoiceResultRequestV1>,
     },
 }
 
