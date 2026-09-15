@@ -23,7 +23,7 @@ pub enum ExternalResultBatchKindV1 {
 pub enum ExternalResultBatchItemRequestV1 {
     Visual {
         item_id: String,
-        result: ExternalVisualResultRequestV1,
+        result: Box<ExternalVisualResultRequestV1>,
     },
     Voice {
         item_id: String,
