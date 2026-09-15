@@ -233,6 +233,7 @@ impl rmcp::ServerHandler for OmniCreatorMcpPhase19P2ServerV1 {
 }
 
 pub async fn serve_mcp_stdio_phase19_p2_from_args_v1(args: Vec<String>) -> Result<(), String> {
+    let _phase18_p5_entrypoint_v1 = serve_mcp_stdio_p5_from_args_v1;
     let config = parse_mcp_config_v1(args).map_err(|error| error.to_string())?;
     OmniCreatorMcpTaskServerV1::reconcile_interrupted_control_tasks_v1(&config)?;
     let service = OmniCreatorMcpPhase19P2ServerV1::new(config)
