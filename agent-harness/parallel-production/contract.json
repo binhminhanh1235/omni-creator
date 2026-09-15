@@ -1,0 +1,84 @@
+{
+  "schema": "omnicreator.agent-parallel-production",
+  "version": 1,
+  "authority": {
+    "readiness": "OmniCreator agent work graph and canonical workflow state",
+    "visual_route": "canonical Studio Pack route plus available plugin/runtime capability",
+    "canonical_writer": "OmniCreator Application Control Service"
+  },
+  "visual": {
+    "stock": {
+      "example_provider": "pexels",
+      "required_capabilities": [
+        "stock_video",
+        "stock_image",
+        "preview_first_search",
+        "selected_asset_download"
+      ],
+      "search_operation": "visual.resolve",
+      "fetch_operation": "visual.fetch_selected",
+      "search_policy": "metadata_and_preview_first",
+      "full_media_policy": "download_only_after_selection",
+      "canonical_paths": [
+        "machine-local OmniCreator plugin/runtime execution",
+        "visual_control provide_manual with truthful EXTERNAL_RESULT_IMPORT provenance for externally fetched image/video fallback"
+      ],
+      "forbidden_paths": [
+        "treating an ExternalGeneratedVisualRequestV1 descriptor as a Pexels stock request",
+        "committing stock video through the generated-still external result contract",
+        "downloading every search result before selection"
+      ]
+    },
+    "generated": {
+      "work_kind": "visual",
+      "operation": "visual.generate",
+      "prepare": "agent_work_prepare",
+      "commit": "agent_work_commit",
+      "accepted_media": ["image/png", "image/jpeg", "image/webp"],
+      "rule": "use only when the prepared external descriptor is the generated-still contract"
+    },
+    "manual": {
+      "tool": "visual_control",
+      "action": "provide_manual",
+      "accepted_media_kinds": ["image", "video"],
+      "rule": "manual/external takeover remains valid when provider capability is unavailable"
+    }
+  },
+  "voice": {
+    "omnivoice_studio": {
+      "work_kind": "voice",
+      "operation": "tts.generate",
+      "prepare": "agent_work_prepare",
+      "commit": "agent_work_commit",
+      "source_label": "omnivoice-studio",
+      "accepted_audio": ["audio/wav", "audio/mpeg"],
+      "timing_required": true,
+      "accepted_timing": ["srt", "voice-timing-json"],
+      "rule": "OmniVoiceStudio is an external renderer; canonical success exists only after OmniCreator accepts the result"
+    },
+    "manual": {
+      "tool": "voice_control",
+      "action": "provide_manual",
+      "rule": "manual audio plus timing remains valid when OmniVoiceStudio or compute is unavailable"
+    }
+  },
+  "concurrency": {
+    "scope": "machine-local or harness-local only",
+    "persisted_as_project_truth": false,
+    "pexels": "use bounded search/fetch workers and honor retry_after_seconds on provider rate limits",
+    "omnivoice_studio": "bound workers to the configured local/remote runtime capacity",
+    "canonical_commit": "serialize through the coordinator and Data Root writer lease"
+  },
+  "provenance": {
+    "stock_external_fallback": "EXTERNAL_RESULT_IMPORT with provider source_label such as pexels",
+    "voice_external": "EXTERNAL_RESULT_IMPORT with source_label omnivoice-studio and prepared request_sha256",
+    "generated_external": "EXTERNAL_RESULT_IMPORT with the prepared generated-visual request_sha256",
+    "never": "convert provider failure or worker completion into canonical success"
+  },
+  "mixed_fallback": [
+    "stock provider unavailable -> generated still when canonical route/approval permits, otherwise manual visual",
+    "generated provider unavailable -> manual/external supported still image",
+    "OmniVoiceStudio unavailable -> manual voice bundle with timing",
+    "rate limited -> preserve retryable failure, honor provider retry guidance, or choose an explicit fallback"
+  ]
+}
