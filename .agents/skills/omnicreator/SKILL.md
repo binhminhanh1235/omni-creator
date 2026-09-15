@@ -95,6 +95,20 @@ On reconnect, rebuild the queue from the current graph. On `stale_input`, discar
 
 Reference package: `agent-harness/worker-pool/contract.json`, `agent-harness/worker-pool/README.md`, plus vendor recipes under `agent-harness/{codex,claude,antigravity}/WORKER-POOL.md`.
 
+## Parallel production recipes
+
+Parallel execution, serialized canonical commits. Workers may render/search/fetch concurrently, but only the coordinator may commit accepted results into OmniCreator.
+
+For stock visual work, follow the canonical Studio Pack route and actual runtime capability. Pexels is preview-first: run `visual.resolve`, inspect metadata/previews and select a candidate, then fetch only that selection with `visual.fetch_selected`. Never speculatively download every search result. A Pexels image/video is stock media, not an `ExternalGeneratedVisualRequestV1`; do not submit stock video through the generated-still external contract.
+
+For generated stills, use only the current prepared `visual.generate` descriptor from `agent_work_prepare`, preserve its `request_sha256`, and commit the supported still result through `agent_work_commit`. On `stale_input`, discard the obsolete candidate and prepare again.
+
+For READY voice work, prepare the canonical `tts.generate` descriptor and pass it to OmniVoiceStudio as an external renderer. OmniVoiceStudio must return supported audio plus timing for the same segment. Commit with truthful source label `omnivoice-studio`; renderer completion is not canonical success until OmniCreator accepts it.
+
+Provider concurrency, retry/rate-limit state, credentials, paths and GPU/TTS capacity are machine-local or harness-local. They are never portable Project truth. If Pexels, a generated provider, OmniVoiceStudio, or compute is unavailable, use the canonical manual/external fallback without rewriting the failed provider Attempt into success.
+
+Reference package: `agent-harness/parallel-production/contract.json`, `agent-harness/parallel-production/README.md`, and `agent-harness/parallel-production/README.vi.md`.
+
 ## Provider selection
 
 LLM execution is optional for manual flows. For automatic Content/Scene intelligence, configure exactly one machine-local provider path:
