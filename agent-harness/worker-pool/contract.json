@@ -1,0 +1,47 @@
+{
+  "schema": "omnicreator.agent-worker-pool",
+  "version": 1,
+  "ownership": {
+    "coordinator": "agent harness process that owns canonical inspection and commit sequencing",
+    "worker": "bounded external executor that receives one prepared descriptor and returns a candidate result",
+    "canonical_state_owner": "OmniCreator Application Control Service"
+  },
+  "coordinator": {
+    "inspect_tool": "agent_work_graph",
+    "prepare_tool": "agent_work_prepare",
+    "commit_tool": "agent_work_commit",
+    "reinspect_after_every_commit": true,
+    "serialize_canonical_commits": true
+  },
+  "worker": {
+    "canonical_mutation": false,
+    "may_edit_data_root": false,
+    "may_invent_ids": false,
+    "input_fields": ["project_id", "work_id", "external"],
+    "output": "candidate external result returned to coordinator"
+  },
+  "concurrency": {
+    "default_max_workers": 4,
+    "scope": "harness-local only",
+    "persisted_as_workflow_truth": false
+  },
+  "retry": {
+    "worker_failure": "retry only while the descriptor remains current",
+    "reconnect": "reinspect graph before redispatch or commit",
+    "stale_input": "discard candidate result and prepare current work again",
+    "duplicate_delivery": "resubmit only through canonical commit and trust idempotency response",
+    "writer_conflict": "back off and retry commit through the coordinator; never bypass the lease"
+  },
+  "flow": [
+    "commit Script/Content canonically",
+    "commit ScenePlan/storyboard canonically",
+    "inspect work graph",
+    "prepare independent visual and voice work items",
+    "fan out bounded workers",
+    "collect candidate results",
+    "serialize commit batches through the coordinator",
+    "reinspect canonical state after every commit batch",
+    "run QA/recovery for missing, failed, or stale units",
+    "assemble ProductionPack and Resolve export only after canonical fan-in"
+  ]
+}
