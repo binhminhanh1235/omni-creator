@@ -1,8 +1,8 @@
 use omnicreator_core::{
     ExternalGeneratedVisualRequestV1, ExternalVoiceRequestV1, Job, StepStatus, WorkflowStep,
-    CREATOR_STEP_CONTENT_PREPARE_V1, CREATOR_STEP_PRODUCTION_PACK_V1,
-    CREATOR_STEP_SCENE_PLAN_V1, CREATOR_STEP_VISUAL_PREPARE_V1,
-    CREATOR_STEP_VOICE_PREPARE_V1, CREATOR_TTS_STEP_V1, CREATOR_WORKFLOW_UNIT_PROJECT_V1,
+    CREATOR_STEP_CONTENT_PREPARE_V1, CREATOR_STEP_PRODUCTION_PACK_V1, CREATOR_STEP_SCENE_PLAN_V1,
+    CREATOR_STEP_VISUAL_PREPARE_V1, CREATOR_STEP_VOICE_PREPARE_V1, CREATOR_TTS_STEP_V1,
+    CREATOR_WORKFLOW_UNIT_PROJECT_V1,
 };
 use serde::{Deserialize, Serialize};
 
@@ -136,10 +136,7 @@ pub fn derive_agent_work_graph_v1(
     let content_satisfied = content_state == AgentWorkStateV1::Satisfied;
     let scene_state = state_from_step_v1(scene_step, content_satisfied);
     items.push(AgentWorkItemV1 {
-        work_id: work_id_v1(
-            AgentWorkKindV1::ScenePlan,
-            CREATOR_WORKFLOW_UNIT_PROJECT_V1,
-        ),
+        work_id: work_id_v1(AgentWorkKindV1::ScenePlan, CREATOR_WORKFLOW_UNIT_PROJECT_V1),
         kind: AgentWorkKindV1::ScenePlan,
         canonical_step: CREATOR_STEP_SCENE_PLAN_V1.to_owned(),
         canonical_unit: CREATOR_WORKFLOW_UNIT_PROJECT_V1.to_owned(),
@@ -167,12 +164,7 @@ pub fn derive_agent_work_graph_v1(
             let work_state = if state.verified {
                 AgentWorkStateV1::Satisfied
             } else {
-                state_from_jobs_v1(
-                    &snapshot.jobs,
-                    CREATOR_TTS_STEP_V1,
-                    &state.segment_id,
-                    true,
-                )
+                state_from_jobs_v1(&snapshot.jobs, CREATOR_TTS_STEP_V1, &state.segment_id, true)
             };
             let mut selected_artifact_ids = Vec::new();
             if let Some(audio) = state.audio.as_ref() {
@@ -447,7 +439,9 @@ fn message_v1(kind: AgentWorkKindV1, state: AgentWorkStateV1) -> String {
         AgentWorkStateV1::Blocked => format!("{noun} is blocked by canonical dependencies"),
         AgentWorkStateV1::Ready => format!("{noun} is ready for canonical or external execution"),
         AgentWorkStateV1::Running => format!("{noun} has canonical work in progress"),
-        AgentWorkStateV1::NeedsReview => format!("{noun} needs review or recovery before continuing"),
+        AgentWorkStateV1::NeedsReview => {
+            format!("{noun} needs review or recovery before continuing")
+        }
         AgentWorkStateV1::Satisfied => format!("{noun} is satisfied by verified canonical state"),
     }
 }
