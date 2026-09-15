@@ -16,7 +16,7 @@ Use OmniCreator as a control plane over its canonical Project / WorkflowStep / J
 5. Prefer `creator_start_or_resume` or CLI `creator resume` for an existing project. Do not recreate a project just because execution is blocked.
 6. Automatic execution being OFF does not mean SKIPPED or SUCCEEDED. Satisfy the step through the corresponding canonical manual/external control, then re-read workflow state.
 7. Never edit OmniCreator SQLite, Data Root internals, ArtifactStore files, or workflow state directly. Never use a generic filesystem or shell bypass to fabricate state.
-8. Never claim provider, plugin, TTS, GPU, ComputeProvider, worker, or external-service success unless OmniCreator reports the accepted canonical result/state.
+8. Never claim provider, plugin, TTS, GPU, or ComputeProvider success unless OmniCreator reports canonical success/result state. Likewise, never claim worker or external-service success until OmniCreator accepts the corresponding canonical result.
 9. Keep provider settings machine-local. Never put API keys, bearer tokens, or raw provider credentials in Data Root, project state, prompts, MCP payloads, or checked-in config.
 10. When recovery is required, inspect Review Center/recovery first and invoke only an applicable typed recovery/manual/external action.
 
