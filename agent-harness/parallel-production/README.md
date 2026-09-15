@@ -1,6 +1,6 @@
 # Parallel visual + voice production recipe
 
-Tracking: Phase 19 P4 #118.
+Tracking: Phase 19 P4 #118 and P5 #119.
 
 This recipe turns the Phase 19 worker-pool contract into a practical visual/voice split without creating a second workflow engine. OmniCreator remains the authority for readiness, selected canonical artifacts, stale detection, recovery, and final fan-in.
 
@@ -93,18 +93,64 @@ A useful scheduling shape is to keep voice workers running continuously once Con
 
 **OmniVoiceStudio unavailable:** provide a manually rendered audio + timing bundle and keep provenance truthful.
 
-**One worker fails while others succeed:** commit only accepted completed candidates, re-inspect, and redispatch the still-current missing work. P5 adds deeper crash/contention/fan-in hardening; P4 does not invent a second worker database.
+**One worker fails while others succeed:** commit only accepted completed candidates, re-inspect, and redispatch the still-current missing work. A harness restart must not cause already verified canonical work to be repeated.
 
-## Fan-in gate
+## Fan-in QA and recovery
+
+Use `agent_fan_in_qa` after a worker wave, after reconnect, and immediately before ProductionPack. CLI clients use `work qa --project <id>`.
+
+The QA projection combines two canonical views:
+
+- `agent_work_graph` for READY/RUNNING/NEEDS_REVIEW/SATISFIED work state;
+- Production Recovery for selected visual/audio/timing artifact health at the active Data Root.
+
+It does not create a worker status table, claim table, scheduler, or persistent harness state.
+
+Interpret the projection as follows:
+
+- `ready_work_ids`: only visual/voice units still ready for dispatch;
+- `needs_review_work_ids`: visual/voice units whose canonical Job state needs review/recovery;
+- `unhealthy_canonical_units`: units already marked SATISFIED whose selected production artifact has become missing, invalid, or unselected;
+- `fan_in_verified`: every visual + voice unit is SATISFIED and all selected production inputs physically verify;
+- `production_pack_ready`: canonical ProductionPack may now be assembled;
+- `production_pack_satisfied`: ProductionPack has already succeeded.
+
+A normal READY unit with no selected artifact is pending work, not an artifact failure. `Unselected` becomes a recovery concern only when the canonical work unit otherwise claims SATISFIED.
+
+Recommended recovery mapping:
+
+- `dispatch_external`: prepare the current work descriptor and dispatch it;
+- `review`: inspect Review Center/current graph before retry or replacement;
+- `repair_visual`: inspect `production_control recovery`, then use the typed visual repair/relink path;
+- `repair_voice_bundle`: inspect recovery, then repair audio + timing through the typed voice bundle path;
+- `assemble_production_pack`: re-check QA and use canonical ProductionPack controls.
+
+Read-only clients can inspect the same suggested action while an active writer lease exists. They still cannot mutate canonical state. A second writer must receive `writer_conflict`, not silently bypass the lease.
+
+## Restart, reconnect and Data Root move
+
+After a coordinator crash or reconnect:
+
+1. discard in-memory worker claims;
+2. cold-read `agent_work_graph`;
+3. cold-read `agent_fan_in_qa`;
+4. reuse units already SATISFIED with verified artifacts;
+5. prepare only still-current READY work;
+6. reject obsolete outputs through existing `stale_input` validation;
+7. serialize new commits through the canonical writer lease.
+
+After a Data Root move/rebind, perform the same cold inspection against the new root. Portable state uses logical artifact URIs, so old absolute paths must not appear in QA or project truth. Production Recovery must verify the files under the active binding before fan-in can be considered healthy.
+
+## ProductionPack gate
 
 Before ProductionPack:
 
 1. re-inspect `agent_work_graph`;
-2. inspect `visual_control status` and `voice_control status` when diagnosing per-unit gaps;
-3. inspect Review Center/recovery for failed/stale units;
-4. require verified canonical visual + voice aggregate completion;
-5. only then assemble/rebuild/export ProductionPack.
+2. inspect `agent_fan_in_qa`;
+3. require `fan_in_verified=true` and no unresolved unhealthy/review units;
+4. inspect Review Center/production recovery if QA requests repair/review;
+5. only then assemble/rebuild/export ProductionPack and Resolve interchange.
 
-Worker completion, a Pexels download, or an OmniVoiceStudio audio file is evidence of external execution only. Canonical acceptance by OmniCreator is the production truth.
+Worker completion, a Pexels download, or an OmniVoiceStudio audio file is evidence of external execution only. Canonical acceptance and artifact verification by OmniCreator are the production truth.
 
-Machine-readable rules are in `agent-harness/parallel-production/contract.json`.
+Machine-readable production rules are in `agent-harness/parallel-production/contract.json`. Worker-pool rules remain in `agent-harness/worker-pool/contract.json`.
