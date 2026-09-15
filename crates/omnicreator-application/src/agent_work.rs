@@ -305,7 +305,7 @@ pub fn derive_agent_work_graph_v1(
         schema: AGENT_WORK_GRAPH_SCHEMA_V1.to_owned(),
         version: AGENT_WORK_GRAPH_VERSION_V1,
         project_id: request.project_id.clone(),
-        read_only: snapshot.review_center.read_only,
+        read_only: service.access_v1().is_read_only(),
         items,
         ready_work_ids,
         running_work_ids,
