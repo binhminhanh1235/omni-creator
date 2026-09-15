@@ -25,7 +25,10 @@ fn read_repo(path: &str) -> String {
 }
 
 fn contract() -> Value {
-    serde_json::from_str(&read_repo("agent-harness/parallel-production/contract.json")).unwrap()
+    serde_json::from_str(&read_repo(
+        "agent-harness/parallel-production/contract.json",
+    ))
+    .unwrap()
 }
 
 fn mcp_transport(root: &Path) -> TokioChildProcess {
@@ -49,10 +52,7 @@ fn parallel_production_package_keeps_stock_generated_and_voice_lanes_truthful() 
     let contract = contract();
     assert_eq!(contract["schema"], "omnicreator.agent-parallel-production");
     assert_eq!(contract["version"], 1);
-    assert_eq!(
-        contract["concurrency"]["persisted_as_project_truth"],
-        false
-    );
+    assert_eq!(contract["concurrency"]["persisted_as_project_truth"], false);
     assert_eq!(
         contract["concurrency"]["canonical_commit"],
         "serialize through the coordinator and Data Root writer lease"
@@ -77,7 +77,10 @@ fn parallel_production_package_keeps_stock_generated_and_voice_lanes_truthful() 
         "preview_first_search",
         "selected_asset_download",
     ] {
-        assert!(capabilities.contains(expected), "missing stock capability {expected}");
+        assert!(
+            capabilities.contains(expected),
+            "missing stock capability {expected}"
+        );
     }
 
     let pexels_manifest = read_repo("plugins/pexels/plugin.yaml");
