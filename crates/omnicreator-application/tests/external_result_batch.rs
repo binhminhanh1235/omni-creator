@@ -120,12 +120,12 @@ fn visual_item(
 ) -> ExternalResultBatchItemRequestV1 {
     ExternalResultBatchItemRequestV1::Visual {
         item_id: item_id.to_owned(),
-        result: ExternalVisualResultRequestV1 {
+        result: Box::new(ExternalVisualResultRequestV1 {
             request,
             source_path: source_path.to_path_buf(),
             source_label: "phase19-test-visual-worker".to_owned(),
             replace_existing,
-        },
+        }),
     }
 }
 
