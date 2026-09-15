@@ -59,11 +59,12 @@ fn work_graph_and_prepare_are_read_only_and_commit_has_typed_rejection() {
     let root = temp.path().join("data-root");
     let (project_id, work_id) = seed_content(&root);
 
-    let graph = run(
-        &root,
-        &["work", "graph", "--project", project_id.as_str()],
+    let graph = run(&root, &["work", "graph", "--project", project_id.as_str()]);
+    assert!(
+        graph.status.success(),
+        "{}",
+        str::from_utf8(&graph.stderr).unwrap()
     );
-    assert!(graph.status.success(), "{}", str::from_utf8(&graph.stderr).unwrap());
     let graph: Value = serde_json::from_slice(&graph.stdout).unwrap();
     assert_eq!(graph["ok"], true);
     assert_eq!(graph["operation"], "work.graph");
