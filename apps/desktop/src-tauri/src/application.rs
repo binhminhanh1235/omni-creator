@@ -647,7 +647,29 @@ fn set_plugin_runtime_credential(
     let report = plugin_inventory_report_v1(&app)?;
     validate_plugin_runtime_credential_target_v1(&report, plugin_id, credential_env)?;
     set_persisted_plugin_credential_v1(&app, &state, credential_env, value)?;
-    plugin_inventory_view_v1(&app, &state)
+    let view = plugin_inventory_view_v1(&app, &state)?;
+    let readiness = view
+        .readiness
+        .iter()
+        .find(|item| item.plugin_id == plugin_id)
+        .ok_or_else(|| format!("Plugin {plugin_id} readiness was not projected after saving its API key."))?;
+    let credential = readiness
+        .credentials
+        .iter()
+        .find(|item| item.env_name == credential_env)
+        .ok_or_else(|| format!("Plugin {plugin_id} credential {credential_env} was not projected after save."))?;
+    if credential.source != "saved" {
+        return Err(format!(
+            "Plugin {plugin_id} credential {credential_env} did not become the saved credential source."
+        ));
+    }
+    let missing_reason = format!("CREDENTIAL_ENV_MISSING:{credential_env}");
+    if readiness.reason_code.as_deref() == Some(missing_reason.as_str()) {
+        return Err(format!(
+            "Plugin {plugin_id} still reports {missing_reason} after saving the credential."
+        ));
+    }
+    Ok(view)
 }
 
 #[tauri::command]
@@ -3360,9 +3382,12 @@ fn studio_pack_runtime_snapshot_v1(
     state: &State<'_, DesktopState>,
     registry: &PluginRegistry,
 ) -> Result<StudioPackRuntimeSnapshotV1, String> {
-    hydrate_persisted_plugin_credentials_v1(app, state)?;
+    let mut runtime_credentials = runtime_plugin_credentials_snapshot_v1(state)?;
+    if runtime_credentials.is_empty() {
+        hydrate_persisted_plugin_credentials_v1(app, state)?;
+        runtime_credentials = runtime_plugin_credentials_snapshot_v1(state)?;
+    }
     let lifecycle = load_plugin_lifecycle_v1(app)?;
-    let runtime_credentials = runtime_plugin_credentials_snapshot_v1(state)?;
     let mut runtime = StudioPackRuntimeSnapshotV1::default();
     for plugin in registry.plugins() {
         if !lifecycle.is_enabled_v1(&plugin.manifest.id) {
