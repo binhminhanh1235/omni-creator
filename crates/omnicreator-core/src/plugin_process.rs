@@ -111,12 +111,21 @@ pub struct PluginProcess {
 
 impl PluginProcess {
     pub fn spawn(plugin: &DiscoveredPlugin, options: PluginProcessOptions) -> Result<Self> {
+        Self::spawn_with_env(plugin, options, &BTreeMap::new())
+    }
+
+    pub fn spawn_with_env(
+        plugin: &DiscoveredPlugin,
+        options: PluginProcessOptions,
+        environment: &BTreeMap<String, String>,
+    ) -> Result<Self> {
         plugin.manifest.validate_v1()?;
         options.validate()?;
 
         let mut command = Command::new(&plugin.manifest.entrypoint.command);
         command
             .args(&plugin.manifest.entrypoint.args)
+            .envs(environment)
             .current_dir(&plugin.directory)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -608,6 +617,7 @@ mod tests {
         fs::write(
             &script_path,
             r#"import json
+import os
 import sys
 import time
 
@@ -638,6 +648,8 @@ for raw in sys.stdin:
         print("health diagnostic", file=sys.stderr, flush=True)
 
     result = {"method": method, "params": request.get("params")}
+    if method == "fixture.env":
+        result["runtime_key"] = os.environ.get("OMNICREATOR_TEST_RUNTIME_KEY")
     print(json.dumps({
         "api_version": 1,
         "request_id": request_id,
@@ -708,6 +720,29 @@ for raw in sys.stdin:
 
         process.shutdown().unwrap();
         assert!(!process.is_running().unwrap());
+    }
+
+    #[test]
+    fn explicit_runtime_environment_is_scoped_to_plugin_child() {
+        let Some((_temp, plugin)) = fixture_plugin() else {
+            return;
+        };
+        let environment = BTreeMap::from([(
+            "OMNICREATOR_TEST_RUNTIME_KEY".to_owned(),
+            "runtime-secret".to_owned(),
+        )]);
+        let process =
+            PluginProcess::spawn_with_env(&plugin, process_options(), &environment).unwrap();
+
+        let result = process.call("fixture.env", Value::Null).unwrap();
+        match result.response {
+            PluginResponse::Success { result, .. } => {
+                assert_eq!(result["runtime_key"], "runtime-secret");
+            }
+            PluginResponse::Failure { .. } => panic!("fixture returned failure"),
+        }
+
+        process.shutdown().unwrap();
     }
 
     #[test]
