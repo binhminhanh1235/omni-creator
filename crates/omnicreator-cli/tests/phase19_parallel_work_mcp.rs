@@ -144,7 +144,10 @@ async fn real_stdio_client_discovers_phase19_tools_and_preserves_read_only_seman
     assert_eq!(structured(&qa)["project_id"], project_id);
     assert_eq!(structured(&qa)["read_only"], true);
     assert_eq!(structured(&qa)["fan_in_verified"], false);
-    assert!(structured(&qa)["voice_units"].as_array().unwrap().len() >= 1);
+    assert!(!structured(&qa)["voice_units"]
+        .as_array()
+        .unwrap()
+        .is_empty());
 
     let prepared = call(
         &client,
