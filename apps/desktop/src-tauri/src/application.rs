@@ -3065,16 +3065,48 @@ fn save_studio_pack_catalog_v1(
 }
 
 fn plugin_built_in_roots_v1(app: &AppHandle) -> Vec<PathBuf> {
+    let source_roots = plugin_source_roots_v1();
+    let bundled_root = app
+        .path()
+        .resource_dir()
+        .ok()
+        .map(|resources| resources.join("plugins"));
+    select_plugin_built_in_roots_v1(bundled_root, source_roots)
+}
+
+fn plugin_source_roots_v1() -> Vec<PathBuf> {
     let mut roots = BTreeSet::new();
     if let Ok(current) = env::current_dir() {
         roots.insert(current.join("plugins"));
         roots.insert(current.join("../plugins"));
         roots.insert(current.join("../../plugins"));
     }
-    if let Ok(resources) = app.path().resource_dir() {
-        roots.insert(resources.join("plugins"));
-    }
     roots.into_iter().collect()
+}
+
+fn plugin_root_has_manifest_v1(root: &Path) -> bool {
+    let Ok(entries) = fs::read_dir(root) else {
+        return false;
+    };
+
+    entries.filter_map(Result::ok).any(|entry| {
+        entry
+            .file_type()
+            .is_ok_and(|file_type| file_type.is_dir())
+            && ["plugin.json", "plugin.yaml", "plugin.yml"]
+                .iter()
+                .any(|manifest| entry.path().join(manifest).is_file())
+    })
+}
+
+fn select_plugin_built_in_roots_v1(
+    bundled_root: Option<PathBuf>,
+    source_roots: Vec<PathBuf>,
+) -> Vec<PathBuf> {
+    if let Some(root) = bundled_root.filter(|root| plugin_root_has_manifest_v1(root)) {
+        return vec![root];
+    }
+    source_roots
 }
 
 fn plugin_user_root_v1(app: &AppHandle) -> Result<PathBuf, String> {
@@ -3982,6 +4014,51 @@ fn main() {
 #[cfg(test)]
 mod desktop_tests {
     use super::*;
+
+    fn plugin_root_fixture_v1(label: &str) -> PathBuf {
+    let root = env::temp_dir().join(format!(
+        "omnicreator-plugin-root-{label}-{}",
+        Uuid::new_v4().simple()
+    ));
+    let plugin = root.join("demo");
+    fs::create_dir_all(&plugin).unwrap();
+    fs::write(plugin.join("plugin.yaml"), "id: demo\n").unwrap();
+    root
+}
+
+    #[test]
+    fn bundled_plugin_root_wins_over_source_fallback() {
+        let bundled = plugin_root_fixture_v1("bundled");
+        let source = plugin_root_fixture_v1("source");
+
+        let selected = select_plugin_built_in_roots_v1(
+            Some(bundled.clone()),
+            vec![source.clone()],
+        );
+
+        assert_eq!(selected, vec![bundled.clone()]);
+        fs::remove_dir_all(bundled).unwrap();
+        fs::remove_dir_all(source).unwrap();
+    }
+
+    #[test]
+    fn source_plugin_roots_are_used_when_bundle_is_not_materialized() {
+        let bundled = env::temp_dir().join(format!(
+            "omnicreator-empty-bundle-{}",
+            Uuid::new_v4().simple()
+        ));
+        fs::create_dir_all(&bundled).unwrap();
+        let source = plugin_root_fixture_v1("fallback");
+
+        let selected = select_plugin_built_in_roots_v1(
+            Some(bundled.clone()),
+            vec![source.clone()],
+        );
+
+        assert_eq!(selected, vec![source.clone()]);
+        fs::remove_dir_all(bundled).unwrap();
+        fs::remove_dir_all(source).unwrap();
+    }
 
     #[test]
     fn compute_provider_defaults_keep_secrets_out_of_machine_config() {
