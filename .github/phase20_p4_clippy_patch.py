@@ -32,6 +32,45 @@ if text.count(old) != 1:
     raise SystemExit(f"declared credential filter match count: {text.count(old)}")
 text = text.replace(old, new, 1)
 
+old = '''fn creator_visual_plan_for_desktop_v1(
+    app: &AppHandle,
+    state: &State<'_, DesktopState>,
+    store: &StateStore,
+    artifacts: &ArtifactStore,
+    project_id: &str,
+) -> Result<
+    (
+        CreatorContentSceneOutcomeV1,
+        CreatorVisualPlanV1,
+        PluginInventoryReportV1,
+        StudioPackRuntimeSnapshotV1,
+        PathBuf,
+        BTreeMap<String, String>,
+    ),
+    String,
+> {
+'''
+new = '''type CreatorVisualPlanDesktopV1 = (
+    CreatorContentSceneOutcomeV1,
+    CreatorVisualPlanV1,
+    PluginInventoryReportV1,
+    StudioPackRuntimeSnapshotV1,
+    PathBuf,
+    BTreeMap<String, String>,
+);
+
+fn creator_visual_plan_for_desktop_v1(
+    app: &AppHandle,
+    state: &State<'_, DesktopState>,
+    store: &StateStore,
+    artifacts: &ArtifactStore,
+    project_id: &str,
+) -> Result<CreatorVisualPlanDesktopV1, String> {
+'''
+if text.count(old) != 1:
+    raise SystemExit(f"creator visual plan signature match count: {text.count(old)}")
+text = text.replace(old, new, 1)
+
 app_path.write_text(text)
 
 phase17_path = Path("apps/desktop/src-tauri/src/phase17.rs")
