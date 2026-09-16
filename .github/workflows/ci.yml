@@ -95,6 +95,8 @@ jobs:
         run: node apps/desktop/tests/omnivoice-studio-runtime-smoke.mjs
       - name: Desktop Phase 20 unified Settings regression
         run: node apps/desktop/tests/unified-settings-p20-smoke.mjs
+      - name: Desktop runtime plugin credential regression
+        run: node apps/desktop/tests/plugin-runtime-credentials-smoke.mjs
       - name: Desktop clippy
         run: cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets -- -D warnings
       - name: Desktop tests
