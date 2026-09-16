@@ -16,7 +16,7 @@ Phần này chứa cấu hình LLM Provider và OmniVoiceStudio runtime hiện c
 
 LLM Provider giữ nguyên cơ chế endpoint, model và tên environment variable chứa API key. OmniVoiceStudio giữ nguyên cơ chế chuẩn hóa runtime URL, kiểm tra health/capability và tên environment variable chứa bearer token.
 
-Giá trị credential vẫn chỉ nằm trên máy. OmniCreator chỉ lưu tên environment variable và runtime setting machine-local; secret value không được ghi vào Data Root hoặc canonical project artifact.
+Giá trị credential vẫn chỉ nằm trên máy và không đi vào Data Root/canonical project artifact. API key nhập trực tiếp ở card plugin được lưu trong credential file machine-local của Desktop để dùng lại sau khi restart; UI không đọc ngược secret ra input. Nhập key mới sẽ thay key đã lưu; Clear xóa key đã lưu và quay về environment variable nếu có.
 
 Các action `Configure LLM` trong Review Center sẽ mở thẳng đúng phần Settings này.
 

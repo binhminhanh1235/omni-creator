@@ -3242,17 +3242,17 @@ function pluginRuntimeCredentialMarkup(readiness, plugin) {
       .map(function (credential) {
         const source = credential.source || "missing";
         const sourceLabel =
-          source === "runtime"
-            ? "Runtime key active"
+          source === "saved"
+            ? "Saved key active"
             : source === "environment"
               ? "OS environment active"
               : "Key required";
         const placeholder =
-          source === "runtime"
-            ? "Paste a replacement key for this session"
+          source === "saved"
+            ? "Paste a replacement API key"
             : source === "environment"
-              ? "Paste a temporary override for this session"
-              : "Paste API key for this OmniCreator session";
+              ? "Paste a saved override for this device"
+              : "Paste API key to save on this device";
         return (
           '<div class="plugin-runtime-credential" data-plugin-id="' +
           escapeHtml(plugin.id) +
@@ -3266,13 +3266,15 @@ function pluginRuntimeCredentialMarkup(readiness, plugin) {
           escapeHtml(sourceLabel) +
           '</span></div><div class="plugin-runtime-credential-form"><input class="plugin-runtime-key-input" type="password" autocomplete="off" spellcheck="false" placeholder="' +
           escapeHtml(placeholder) +
-          '" aria-label="Runtime API key for ' +
+          '" aria-label="API key for ' +
           escapeHtml(credential.env_name) +
-          '" /><button class="btn primary plugin-runtime-key-set" type="button">Set runtime key</button>' +
-          (source === "runtime"
-            ? '<button class="btn plugin-runtime-key-clear" type="button">Clear runtime key</button>'
+          '" /><button class="btn primary plugin-runtime-key-set" type="button">' +
+          (source === "saved" ? "Replace saved key" : "Save API key") +
+          '</button>' +
+          (source === "saved"
+            ? '<button class="btn plugin-runtime-key-clear" type="button">Clear saved key</button>'
             : "") +
-          '</div><small>Memory only. Cleared when OmniCreator exits. The key is never written to the Data Root.</small></div>'
+          '</div><small>Saved on this device outside the Data Root. The key is never written to project data or shown again.</small></div>'
         );
       })
       .join("") +
@@ -3474,15 +3476,16 @@ function renderPluginManager(view, projects, readOnly) {
       }
       button.disabled = true;
       try {
-        const next = await call("set_plugin_runtime_credential", {
+        await call("set_plugin_runtime_credential", {
           pluginId: row.dataset.pluginId,
           credentialEnv: row.dataset.credentialEnv,
           value: value,
         });
+        const next = await call("plugin_inventory");
         const readiness = pluginReadiness(next, row.dataset.pluginId);
         pluginManagerState.tab = readiness.status === "ready" ? "enabled" : "needs_attention";
         await refreshPluginManagerAfterMutation(next);
-        showToast("Runtime API key applied for this OmniCreator session.");
+        showToast("API key saved on this device and readiness refreshed.");
       } finally {
         if (input) input.value = "";
       }
@@ -3494,16 +3497,17 @@ function renderPluginManager(view, projects, readOnly) {
       const row = button.closest(".plugin-runtime-credential");
       if (!row) return;
       button.disabled = true;
-      const next = await call("clear_plugin_runtime_credential", {
+      await call("clear_plugin_runtime_credential", {
         pluginId: row.dataset.pluginId,
         credentialEnv: row.dataset.credentialEnv,
       });
+      const next = await call("plugin_inventory");
       const plugin = (next.plugins || []).find(function (item) {
         return item.id === row.dataset.pluginId;
       });
       pluginManagerState.tab = plugin ? pluginManagerBucket(next, plugin) : "needs_attention";
       await refreshPluginManagerAfterMutation(next);
-      showToast("Runtime API key cleared. Environment fallback was re-evaluated.");
+      showToast("Saved API key cleared. Environment fallback was re-evaluated.");
     };
   });
 
