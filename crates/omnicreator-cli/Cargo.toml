@@ -12,7 +12,11 @@ path = "src/main.rs"
 [dependencies]
 omnicreator-application = { path = "../omnicreator-application" }
 omnicreator-core = { path = "../omnicreator-core" }
+# Keep the runtime and proc-macro crates on the same model API version. The
+# workspace has no committed root Cargo.lock, so a floating macro version can
+# otherwise generate code for a newer rmcp model API during CI.
 rmcp = { version = "=3.3.0", default-features = false, features = ["server", "macros", "transport-io"] }
+rmcp-macros = "=3.3.0"
 schemars = "1.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
