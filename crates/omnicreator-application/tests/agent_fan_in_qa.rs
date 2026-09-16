@@ -132,8 +132,8 @@ fn fan_in_qa_survives_reconnect_and_data_root_move_then_exports() {
         .data;
     let visual_path = temp.path().join("scene.png");
     fs::write(&visual_path, png(1280, 720)).unwrap();
-    let visual_batch = ExternalResultBatchRequestV1::new(vec![
-        ExternalResultBatchItemRequestV1::Visual {
+    let visual_batch =
+        ExternalResultBatchRequestV1::new(vec![ExternalResultBatchItemRequestV1::Visual {
             item_id: "visual-worker-result".to_owned(),
             result: Box::new(ExternalVisualResultRequestV1 {
                 request: visual_request,
@@ -141,15 +141,17 @@ fn fan_in_qa_survives_reconnect_and_data_root_move_then_exports() {
                 source_label: "phase19-p5-visual-worker".to_owned(),
                 replace_existing: false,
             }),
-        },
-    ]);
+        }]);
     let visual_result = service
         .provide_external_result_batch_v1(&visual_batch)
         .unwrap();
     assert_eq!(visual_result.committed, 1);
 
     let after_visual = service.agent_fan_in_qa_v1(&project).unwrap();
-    assert_eq!(after_visual.visual_units[0].state, AgentWorkStateV1::Satisfied);
+    assert_eq!(
+        after_visual.visual_units[0].state,
+        AgentWorkStateV1::Satisfied
+    );
     assert_eq!(after_visual.voice_units[0].state, AgentWorkStateV1::Ready);
     let visual_artifact_ids = after_visual.visual_units[0].selected_artifact_ids.clone();
     assert!(!visual_artifact_ids.is_empty());
@@ -161,9 +163,15 @@ fn fan_in_qa_survives_reconnect_and_data_root_move_then_exports() {
     let read_only = ApplicationControlService::for_read_only(&inspected).unwrap();
     let reconnected = read_only.agent_fan_in_qa_v1(&project).unwrap();
     assert!(reconnected.read_only);
-    assert_eq!(reconnected.visual_units[0].state, AgentWorkStateV1::Satisfied);
+    assert_eq!(
+        reconnected.visual_units[0].state,
+        AgentWorkStateV1::Satisfied
+    );
     assert_eq!(reconnected.voice_units[0].state, AgentWorkStateV1::Ready);
-    assert_eq!(reconnected.visual_units[0].selected_artifact_ids, visual_artifact_ids);
+    assert_eq!(
+        reconnected.visual_units[0].selected_artifact_ids,
+        visual_artifact_ids
+    );
     drop(read_only);
     drop(inspected);
 
@@ -176,23 +184,18 @@ fn fan_in_qa_survives_reconnect_and_data_root_move_then_exports() {
         .data;
     let audio_path = temp.path().join("segment.wav");
     fs::write(&audio_path, wav(1_500)).unwrap();
-    let voice_batch = ExternalResultBatchRequestV1::new(vec![
-        ExternalResultBatchItemRequestV1::Voice {
+    let voice_batch =
+        ExternalResultBatchRequestV1::new(vec![ExternalResultBatchItemRequestV1::Voice {
             item_id: "voice-worker-result".to_owned(),
             result: Box::new(ExternalVoiceResultRequestV1 {
                 request: voice_request,
                 audio_path,
-                timing: derive_manual_voice_timing_v1(
-                    &seeded.segment_id,
-                    &seeded.narration,
-                    1_500,
-                )
-                .unwrap(),
+                timing: derive_manual_voice_timing_v1(&seeded.segment_id, &seeded.narration, 1_500)
+                    .unwrap(),
                 source_label: "omnivoice-studio".to_owned(),
                 replace_existing: false,
             }),
-        },
-    ]);
+        }]);
     let voice_result = service
         .provide_external_result_batch_v1(&voice_batch)
         .unwrap();
@@ -207,7 +210,10 @@ fn fan_in_qa_survives_reconnect_and_data_root_move_then_exports() {
         AgentFanInRecoveryActionV1::AssembleProductionPack
     );
 
-    let rebuilt = service.rebuild_and_export_production_v1(&project).unwrap().data;
+    let rebuilt = service
+        .rebuild_and_export_production_v1(&project)
+        .unwrap()
+        .data;
     assert!(!rebuilt.export.artifacts.is_empty());
     let complete = service.agent_fan_in_qa_v1(&project).unwrap();
     assert!(complete.fan_in_verified);
@@ -224,7 +230,10 @@ fn fan_in_qa_survives_reconnect_and_data_root_move_then_exports() {
     assert!(moved.fan_in_verified);
     assert!(moved.recovery_ready_for_rebuild);
     assert!(moved.production_pack_satisfied);
-    assert_eq!(moved.visual_units[0].selected_artifact_ids, visual_artifact_ids);
+    assert_eq!(
+        moved.visual_units[0].selected_artifact_ids,
+        visual_artifact_ids
+    );
 
     let serialized = serde_json::to_string(&moved).unwrap();
     assert!(!serialized.contains(data_root.to_string_lossy().as_ref()));
@@ -252,17 +261,15 @@ fn fan_in_qa_surfaces_missing_verified_artifact_as_repair_work() {
         .data;
     let visual_path = temp.path().join("scene.png");
     fs::write(&visual_path, png(1280, 720)).unwrap();
-    let batch = ExternalResultBatchRequestV1::new(vec![
-        ExternalResultBatchItemRequestV1::Visual {
-            item_id: "visual-worker-result".to_owned(),
-            result: Box::new(ExternalVisualResultRequestV1 {
-                request,
-                source_path: visual_path,
-                source_label: "phase19-p5-visual-worker".to_owned(),
-                replace_existing: false,
-            }),
-        },
-    ]);
+    let batch = ExternalResultBatchRequestV1::new(vec![ExternalResultBatchItemRequestV1::Visual {
+        item_id: "visual-worker-result".to_owned(),
+        result: Box::new(ExternalVisualResultRequestV1 {
+            request,
+            source_path: visual_path,
+            source_label: "phase19-p5-visual-worker".to_owned(),
+            replace_existing: false,
+        }),
+    }]);
     service.provide_external_result_batch_v1(&batch).unwrap();
     let healthy = service.agent_fan_in_qa_v1(&project).unwrap();
     let artifact_id = healthy.visual_units[0].selected_artifact_ids[0].clone();
