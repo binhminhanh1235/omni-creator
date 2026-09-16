@@ -33,7 +33,7 @@ Harnesses own creative reasoning, delegation, provider-local concurrency and ext
 - P2 — CLI + MCP parallel-work control surface — #116 — DONE / VERIFIED
 - P3 — harness worker-pool packages for Codex, Claude Code and Antigravity — #117 — DONE / VERIFIED
 - P4 — Pexels/visual + OmniVoiceStudio parallel production recipes — #118 — DONE / VERIFIED
-- P5 — fan-in QA/recovery + crash/reconnect/contention/portability E2E hardening — #119 — IN PROGRESS, verification pending
+- P5 — fan-in QA/recovery + crash/reconnect/contention/portability E2E hardening — #119 — implementation complete; verification authority is #119/#113
 
 Verified P4 baseline before P5:
 
@@ -297,4 +297,4 @@ The harness remains replaceable. A project started with Claude Code can be resum
 
 ## Status
 
-P0 through P4 are DONE / VERIFIED. P5 #119 is implemented on `feat/phase19-p5-fan-in-hardening` and remains IN PROGRESS until the final branch head passes exact-head CI, guarded squash merge preserves the verified tree, and post-merge CI on `main` passes. Only then may #119 and umbrella #113 be marked DONE / VERIFIED.
+P0 through P4 are DONE / VERIFIED. P5 #119 completes the implementation described here. Exact verification status, branch SHA/tree, exact-head CI, guarded merge and post-merge CI evidence are authoritative in #119 and umbrella #113. P5 is DONE / VERIFIED only when those gates are all PASS.
