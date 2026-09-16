@@ -266,7 +266,8 @@ fn recovery_is_unhealthy_v1(
         AgentWorkStateV1::NeedsReview => recovery_items.iter().any(|item| {
             matches!(
                 item.state,
-                ProductionRecoveryArtifactStateV1::Missing | ProductionRecoveryArtifactStateV1::Invalid
+                ProductionRecoveryArtifactStateV1::Missing
+                    | ProductionRecoveryArtifactStateV1::Invalid
             )
         }),
         AgentWorkStateV1::Blocked | AgentWorkStateV1::Ready | AgentWorkStateV1::Running => false,
