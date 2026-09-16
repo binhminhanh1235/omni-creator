@@ -288,11 +288,12 @@ fn fan_in_qa_surfaces_missing_verified_artifact_as_repair_work() {
     let workspace = Workspace::inspect(&data_root).unwrap();
     let service = ApplicationControlService::for_read_only(&workspace).unwrap();
     let qa = service.agent_fan_in_qa_v1(&project).unwrap();
-    assert_eq!(qa.visual_units[0].state, AgentWorkStateV1::Satisfied);
+    assert_eq!(qa.visual_units[0].state, AgentWorkStateV1::NeedsReview);
     assert_eq!(
         qa.visual_units[0].recovery_action,
         AgentFanInRecoveryActionV1::RepairVisual
     );
+    assert!(qa.needs_review_work_ids.contains(&qa.visual_units[0].work_id));
     assert_eq!(qa.unhealthy_canonical_units, vec![seeded.scene_id]);
     assert!(!qa.recovery_ready_for_rebuild);
     assert!(!qa.fan_in_verified);
