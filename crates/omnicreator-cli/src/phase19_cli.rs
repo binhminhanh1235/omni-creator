@@ -254,7 +254,8 @@ fn execute_phase19_work_v1(
                     value_v1(service.provide_external_result_batch_v1(&request)?)
                 })
             } else {
-                let workspace = Workspace::open(&options.data_root).map_err(ControlErrorV1::from)?;
+                let workspace =
+                    Workspace::open(&options.data_root).map_err(ControlErrorV1::from)?;
                 let session = WorkspaceSession::acquire(workspace, &options.device_id)
                     .map_err(ControlErrorV1::from)?;
                 let mut service = ApplicationControlService::for_writer(&session)?;
