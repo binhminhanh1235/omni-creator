@@ -53,3 +53,8 @@ The following remain machine-local and are not copied by moving the Data Root:
 - user-installed plugin binaries/directories
 
 Portable Project, WorkflowStep, Job, Attempt, ArtifactStore and Studio Pack state is unchanged.
+
+
+## Persisted plugin API keys
+
+Plugin API keys entered on plugin cards are saved in a machine-local Desktop credential file outside the Data Root, reloaded after restart, and never projected back to the UI. Setting a key again replaces the saved value; clearing it removes the saved value and re-evaluates the OS environment fallback.

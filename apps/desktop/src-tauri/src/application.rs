@@ -528,7 +528,7 @@ fn runtime_credential_source_v1(
         .get(env_name)
         .is_some_and(|value| !value.trim().is_empty())
     {
-        "runtime"
+        "saved"
     } else if env::var(env_name).is_ok_and(|value| !value.trim().is_empty()) {
         "environment"
     } else {
@@ -646,11 +646,7 @@ fn set_plugin_runtime_credential(
     }
     let report = plugin_inventory_report_v1(&app)?;
     validate_plugin_runtime_credential_target_v1(&report, plugin_id, credential_env)?;
-    state
-        .runtime_plugin_credentials
-        .lock()
-        .map_err(lock_error)?
-        .insert(credential_env.to_owned(), value);
+    set_persisted_plugin_credential_v1(&app, &state, credential_env, value)?;
     plugin_inventory_view_v1(&app, &state)
 }
 
@@ -668,11 +664,7 @@ fn clear_plugin_runtime_credential(
     }
     let report = plugin_inventory_report_v1(&app)?;
     validate_plugin_runtime_credential_target_v1(&report, plugin_id, credential_env)?;
-    state
-        .runtime_plugin_credentials
-        .lock()
-        .map_err(lock_error)?
-        .remove(credential_env);
+    clear_persisted_plugin_credential_v1(&app, &state, credential_env)?;
     plugin_inventory_view_v1(&app, &state)
 }
 
@@ -3368,6 +3360,7 @@ fn studio_pack_runtime_snapshot_v1(
     state: &State<'_, DesktopState>,
     registry: &PluginRegistry,
 ) -> Result<StudioPackRuntimeSnapshotV1, String> {
+    hydrate_persisted_plugin_credentials_v1(app, state)?;
     let lifecycle = load_plugin_lifecycle_v1(app)?;
     let runtime_credentials = runtime_plugin_credentials_snapshot_v1(state)?;
     let mut runtime = StudioPackRuntimeSnapshotV1::default();
