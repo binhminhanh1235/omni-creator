@@ -23,6 +23,9 @@
     }
   },
   "bundle": {
-    "active": false
+    "active": true,
+    "resources": {
+      "../../../plugins/": "plugins/"
+    }
   }
 }
