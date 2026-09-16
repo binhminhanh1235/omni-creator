@@ -101,13 +101,7 @@ fn derive_agent_fan_in_qa_v1(
     let mut unhealthy_canonical_units = visual_units
         .iter()
         .chain(&voice_units)
-        .filter(|unit| {
-            unit.state == AgentWorkStateV1::Satisfied
-                && unit
-                    .recovery_items
-                    .iter()
-                    .any(|item| item.state != ProductionRecoveryArtifactStateV1::Verified)
-        })
+        .filter(|unit| recovery_is_unhealthy_v1(unit.state, &unit.recovery_items))
         .map(|unit| unit.canonical_unit.clone())
         .collect::<Vec<_>>();
     unhealthy_canonical_units.sort();
@@ -198,9 +192,26 @@ fn fan_in_unit_v1(
         && matching_recovery
             .iter()
             .all(|recovery| recovery.state == ProductionRecoveryArtifactStateV1::Verified);
+    let artifacts_require_repair = matching_recovery.iter().any(|recovery| {
+        matches!(
+            recovery.state,
+            ProductionRecoveryArtifactStateV1::Missing
+                | ProductionRecoveryArtifactStateV1::Invalid
+        )
+    });
     let recovery_action = match item.state {
         AgentWorkStateV1::Blocked | AgentWorkStateV1::Running => AgentFanInRecoveryActionV1::Wait,
         AgentWorkStateV1::Ready => AgentFanInRecoveryActionV1::DispatchExternal,
+        AgentWorkStateV1::NeedsReview
+            if artifacts_require_repair && item.kind == AgentWorkKindV1::Visual =>
+        {
+            AgentFanInRecoveryActionV1::RepairVisual
+        }
+        AgentWorkStateV1::NeedsReview
+            if artifacts_require_repair && item.kind == AgentWorkKindV1::Voice =>
+        {
+            AgentFanInRecoveryActionV1::RepairVoiceBundle
+        }
         AgentWorkStateV1::NeedsReview => AgentFanInRecoveryActionV1::Review,
         AgentWorkStateV1::Satisfied if artifacts_healthy => AgentFanInRecoveryActionV1::None,
         AgentWorkStateV1::Satisfied if item.kind == AgentWorkKindV1::Visual => {
@@ -221,7 +232,9 @@ fn fan_in_unit_v1(
             .count();
         if unhealthy == 0 {
             format!("{} Canonical artifacts are verified.", item.message)
-        } else if item.state == AgentWorkStateV1::Satisfied {
+        } else if recovery_action == AgentFanInRecoveryActionV1::RepairVisual
+            || recovery_action == AgentFanInRecoveryActionV1::RepairVoiceBundle
+        {
             format!(
                 "{} {unhealthy} canonical recovery artifact(s) require repair.",
                 item.message
@@ -240,5 +253,24 @@ fn fan_in_unit_v1(
         recovery_items: matching_recovery,
         recovery_action,
         detail,
+    }
+}
+
+fn recovery_is_unhealthy_v1(
+    state: AgentWorkStateV1,
+    recovery_items: &[ProductionRecoveryItemV1],
+) -> bool {
+    match state {
+        AgentWorkStateV1::Satisfied => recovery_items
+            .iter()
+            .any(|item| item.state != ProductionRecoveryArtifactStateV1::Verified),
+        AgentWorkStateV1::NeedsReview => recovery_items.iter().any(|item| {
+            matches!(
+                item.state,
+                ProductionRecoveryArtifactStateV1::Missing
+                    | ProductionRecoveryArtifactStateV1::Invalid
+            )
+        }),
+        AgentWorkStateV1::Blocked | AgentWorkStateV1::Ready | AgentWorkStateV1::Running => false,
     }
 }
