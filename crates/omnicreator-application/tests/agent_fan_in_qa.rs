@@ -293,7 +293,9 @@ fn fan_in_qa_surfaces_missing_verified_artifact_as_repair_work() {
         qa.visual_units[0].recovery_action,
         AgentFanInRecoveryActionV1::RepairVisual
     );
-    assert!(qa.needs_review_work_ids.contains(&qa.visual_units[0].work_id));
+    assert!(qa
+        .needs_review_work_ids
+        .contains(&qa.visual_units[0].work_id));
     assert_eq!(qa.unhealthy_canonical_units, vec![seeded.scene_id]);
     assert!(!qa.recovery_ready_for_rebuild);
     assert!(!qa.fan_in_verified);
