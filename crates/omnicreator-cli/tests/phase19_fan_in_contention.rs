@@ -39,7 +39,12 @@ fn fan_in_qa_remains_readable_while_canonical_commit_respects_writer_lease() {
     let holder = WorkspaceSession::acquire(workspace, "phase19-p5-active-writer").unwrap();
 
     let qa = run(&root, &["work", "qa", "--project", project.id.as_str()]);
-    assert_eq!(qa.status.code(), Some(0), "{}", String::from_utf8_lossy(&qa.stdout));
+    assert_eq!(
+        qa.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&qa.stdout)
+    );
     let qa_json: Value = serde_json::from_slice(&qa.stdout).unwrap();
     assert_eq!(qa_json["ok"], true);
     assert_eq!(qa_json["operation"], "work.qa");
