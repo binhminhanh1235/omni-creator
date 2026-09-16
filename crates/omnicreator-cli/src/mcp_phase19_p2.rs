@@ -117,10 +117,9 @@ impl OmniCreatorPhase19P2ToolsV1 {
                 Ok(request) => request,
                 Err(error) => return self.inner.render_v1::<Value>(Err(error)),
             };
-        self.inner
-            .render_v1(self.inner.with_service_v1(|service| {
-                to_value_v1(service.provide_external_result_batch_v1(&request)?)
-            }))
+        self.inner.render_v1(self.inner.with_service_v1(|service| {
+            to_value_v1(service.provide_external_result_batch_v1(&request)?)
+        }))
     }
 }
 
@@ -141,10 +140,7 @@ impl OmniCreatorMcpPhase19P2ServerV1 {
     fn is_phase19_tool_v1(name: &str) -> bool {
         matches!(
             name,
-            "agent_work_graph"
-                | "agent_fan_in_qa"
-                | "agent_work_prepare"
-                | "agent_work_commit"
+            "agent_work_graph" | "agent_fan_in_qa" | "agent_work_prepare" | "agent_work_commit"
         )
     }
 }
