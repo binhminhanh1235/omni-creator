@@ -3470,24 +3470,44 @@ function renderPluginManager(view, projects, readOnly) {
       const input = row && row.querySelector(".plugin-runtime-key-input");
       const value = input ? input.value : "";
       if (!row || !value.trim()) {
-        showToast("Paste an API key before setting the runtime credential.");
+        showToast("Paste an API key before saving the credential.");
         if (input) input.focus();
         return;
       }
+
+      const originalLabel = button.textContent;
+      let succeeded = false;
       button.disabled = true;
+      button.textContent = "Saving…";
       try {
-        await call("set_plugin_runtime_credential", {
+        const next = await call("set_plugin_runtime_credential", {
           pluginId: row.dataset.pluginId,
           credentialEnv: row.dataset.credentialEnv,
           value: value,
         });
-        const next = await call("plugin_inventory");
         const readiness = pluginReadiness(next, row.dataset.pluginId);
+        const credential = (readiness.credentials || []).find(function (item) {
+          return item.env_name === row.dataset.credentialEnv;
+        });
+        const missingReason = "CREDENTIAL_ENV_MISSING:" + row.dataset.credentialEnv;
+        if (!credential || credential.source !== "saved" || readiness.reason_code === missingReason) {
+          throw new Error(
+            "The credential was written but did not become active in plugin readiness. Please retry or use Refresh.",
+          );
+        }
         pluginManagerState.tab = readiness.status === "ready" ? "enabled" : "needs_attention";
+        succeeded = true;
         await refreshPluginManagerAfterMutation(next);
         showToast("API key saved on this device and readiness refreshed.");
+      } catch (error) {
+        showToast("API key save failed: " + String(error));
+        if (input) input.focus();
       } finally {
-        if (input) input.value = "";
+        if (succeeded && input) input.value = "";
+        if (button.isConnected) {
+          button.disabled = false;
+          button.textContent = originalLabel;
+        }
       }
     };
   });
@@ -3496,18 +3516,28 @@ function renderPluginManager(view, projects, readOnly) {
     button.onclick = async function () {
       const row = button.closest(".plugin-runtime-credential");
       if (!row) return;
+      const originalLabel = button.textContent;
       button.disabled = true;
-      await call("clear_plugin_runtime_credential", {
-        pluginId: row.dataset.pluginId,
-        credentialEnv: row.dataset.credentialEnv,
-      });
-      const next = await call("plugin_inventory");
-      const plugin = (next.plugins || []).find(function (item) {
-        return item.id === row.dataset.pluginId;
-      });
-      pluginManagerState.tab = plugin ? pluginManagerBucket(next, plugin) : "needs_attention";
-      await refreshPluginManagerAfterMutation(next);
-      showToast("Saved API key cleared. Environment fallback was re-evaluated.");
+      button.textContent = "Clearing…";
+      try {
+        const next = await call("clear_plugin_runtime_credential", {
+          pluginId: row.dataset.pluginId,
+          credentialEnv: row.dataset.credentialEnv,
+        });
+        const plugin = (next.plugins || []).find(function (item) {
+          return item.id === row.dataset.pluginId;
+        });
+        pluginManagerState.tab = plugin ? pluginManagerBucket(next, plugin) : "needs_attention";
+        await refreshPluginManagerAfterMutation(next);
+        showToast("Saved API key cleared. Environment fallback was re-evaluated.");
+      } catch (error) {
+        showToast("Clearing the saved API key failed: " + String(error));
+      } finally {
+        if (button.isConnected) {
+          button.disabled = false;
+          button.textContent = originalLabel;
+        }
+      }
     };
   });
 
