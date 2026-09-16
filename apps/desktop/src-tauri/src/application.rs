@@ -516,11 +516,8 @@ fn plugin_credential_env_names_v1(plugin: &DiscoveredPlugin) -> Vec<String> {
 fn runtime_plugin_credentials_snapshot_v1(
     state: &State<'_, DesktopState>,
 ) -> Result<BTreeMap<String, String>, String> {
-    state
-        .runtime_plugin_credentials
-        .lock()
-        .map_err(lock_error)
-        .map(|guard| guard.clone())
+    let guard = state.runtime_plugin_credentials.lock().map_err(lock_error)?;
+    Ok(guard.clone())
 }
 
 fn runtime_credential_source_v1(
@@ -1109,7 +1106,7 @@ impl DesktopVisualRuntimeV1<'_> {
         let environment = self
             .runtime_credentials
             .iter()
-            .filter(|(name, value)| declared.contains(*name) && !value.trim().is_empty())
+            .filter(|(name, value)| declared.contains(name.as_str()) && !value.trim().is_empty())
             .map(|(name, value)| (name.clone(), value.clone()))
             .collect::<BTreeMap<_, _>>();
         PluginProcess::spawn_with_env(plugin, PluginProcessOptions::default(), &environment)
@@ -1465,23 +1462,22 @@ impl CreatorVisualAssetExecutorV1 for DesktopVisualRuntimeV1<'_> {
     }
 }
 
+type CreatorVisualPlanDesktopV1 = (
+    CreatorContentSceneOutcomeV1,
+    CreatorVisualPlanV1,
+    PluginInventoryReportV1,
+    StudioPackRuntimeSnapshotV1,
+    PathBuf,
+    BTreeMap<String, String>,
+);
+
 fn creator_visual_plan_for_desktop_v1(
     app: &AppHandle,
     state: &State<'_, DesktopState>,
     store: &StateStore,
     artifacts: &ArtifactStore,
     project_id: &str,
-) -> Result<
-    (
-        CreatorContentSceneOutcomeV1,
-        CreatorVisualPlanV1,
-        PluginInventoryReportV1,
-        StudioPackRuntimeSnapshotV1,
-        PathBuf,
-        BTreeMap<String, String>,
-    ),
-    String,
-> {
+) -> Result<CreatorVisualPlanDesktopV1, String> {
     let project = store.get_project(project_id).map_err(error_string)?;
     let pack_id = project
         .studio_pack

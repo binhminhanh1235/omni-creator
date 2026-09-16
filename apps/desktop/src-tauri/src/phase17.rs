@@ -153,14 +153,18 @@ impl omnicreator_application::CreatorRunRuntimeV1 for DesktopCreatorRunRuntimeV1
         creator: &CreatorContentSceneOutcomeV1,
     ) -> omnicreator_application::ControlResultV1<bool> {
         let inventory = plugin_inventory_report_v1(self.app).map_err(Self::capability_error_v1)?;
-        let plugin_runtime = studio_pack_runtime_snapshot_v1(self.app, &inventory.registry)
-            .map_err(Self::capability_error_v1)?;
+        let plugin_runtime =
+            studio_pack_runtime_snapshot_v1(self.app, self.state, &inventory.registry)
+                .map_err(Self::capability_error_v1)?;
         let runtime_root =
             creator_plugin_runtime_root_v1(self.app).map_err(Self::internal_error_v1)?;
+        let runtime_credentials =
+            runtime_plugin_credentials_snapshot_v1(self.state).map_err(Self::internal_error_v1)?;
         let visual_runtime = DesktopVisualRuntimeV1 {
             registry: &inventory.registry,
             runtime: &plugin_runtime,
             runtime_root,
+            runtime_credentials,
         };
         let visual_plan = plan_creator_visuals_v1(
             project,
@@ -320,6 +324,8 @@ pub(super) fn run_phase17() {
             create_project_from_studio_pack,
             update_project_studio_pack,
             plugin_inventory,
+            set_plugin_runtime_credential,
+            clear_plugin_runtime_credential,
             set_plugin_enabled,
             install_plugin_from_folder,
             uninstall_plugin,
