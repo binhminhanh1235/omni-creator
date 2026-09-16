@@ -103,9 +103,10 @@ fn derive_agent_fan_in_qa_v1(
         .chain(&voice_units)
         .filter(|unit| {
             unit.state == AgentWorkStateV1::Satisfied
-                && unit.recovery_items.iter().any(|item| {
-                    item.state != ProductionRecoveryArtifactStateV1::Verified
-                })
+                && unit
+                    .recovery_items
+                    .iter()
+                    .any(|item| item.state != ProductionRecoveryArtifactStateV1::Verified)
         })
         .map(|unit| unit.canonical_unit.clone())
         .collect::<Vec<_>>();
@@ -141,17 +142,16 @@ fn derive_agent_fan_in_qa_v1(
     let production_pack_ready = production.state == AgentWorkStateV1::Ready;
     let production_pack_satisfied = production.state == AgentWorkStateV1::Satisfied;
 
-    let suggested_action = if !needs_review_work_ids.is_empty()
-        || !unhealthy_canonical_units.is_empty()
-    {
-        AgentFanInRecoveryActionV1::Review
-    } else if production_pack_ready {
-        AgentFanInRecoveryActionV1::AssembleProductionPack
-    } else if !ready_work_ids.is_empty() {
-        AgentFanInRecoveryActionV1::DispatchExternal
-    } else {
-        AgentFanInRecoveryActionV1::Wait
-    };
+    let suggested_action =
+        if !needs_review_work_ids.is_empty() || !unhealthy_canonical_units.is_empty() {
+            AgentFanInRecoveryActionV1::Review
+        } else if production_pack_ready {
+            AgentFanInRecoveryActionV1::AssembleProductionPack
+        } else if !ready_work_ids.is_empty() {
+            AgentFanInRecoveryActionV1::DispatchExternal
+        } else {
+            AgentFanInRecoveryActionV1::Wait
+        };
 
     Ok(AgentFanInQaV1 {
         schema: AGENT_FAN_IN_QA_SCHEMA_V1.to_owned(),
@@ -182,8 +182,7 @@ fn fan_in_unit_v1(
             AgentWorkKindV1::Visual => recovery.kind == ProductionRecoveryArtifactKindV1::Visual,
             AgentWorkKindV1::Voice => matches!(
                 recovery.kind,
-                ProductionRecoveryArtifactKindV1::Audio
-                    | ProductionRecoveryArtifactKindV1::Timing
+                ProductionRecoveryArtifactKindV1::Audio | ProductionRecoveryArtifactKindV1::Timing
             ),
             _ => false,
         })
