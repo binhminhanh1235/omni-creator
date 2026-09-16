@@ -32,8 +32,16 @@ Harnesses own creative reasoning, delegation, provider-local concurrency and ext
 - P1 — batch external result ingress + serialized canonical commit — #115 — DONE / VERIFIED
 - P2 — CLI + MCP parallel-work control surface — #116 — DONE / VERIFIED
 - P3 — harness worker-pool packages for Codex, Claude Code and Antigravity — #117 — DONE / VERIFIED
-- P4 — Pexels/visual + OmniVoiceStudio parallel production recipes — #118 — IN PROGRESS
-- P5 — fan-in QA/recovery + crash/reconnect/portability E2E hardening — #119 — NOT STARTED
+- P4 — Pexels/visual + OmniVoiceStudio parallel production recipes — #118 — DONE / VERIFIED
+- P5 — fan-in QA/recovery + crash/reconnect/contention/portability E2E hardening — #119 — IN PROGRESS, verification pending
+
+Verified P4 baseline before P5:
+
+- exact P4 branch head `9df5022f5fa5133c9d0f0c1c6e4967b4409c6636`
+- exact-head tree `49ea2c4c36f281599d6ff87b71046ac0542cdafa`
+- exact-head CI #618 / run `34953103640`: PASS
+- guarded squash merge/current baseline `eea466ec1b4c8f564774c8aa2daa90f46f9ea0ed`
+- post-merge CI #619 / run `34953558152`: PASS across Rust / Plugins / Desktop
 
 ## P0 — Agent work graph
 
@@ -42,6 +50,7 @@ P0 adds a read-only projection in `omnicreator-application`. It does not create 
 The versioned contract is `omnicreator.agent-work-graph` v1.
 
 Work kinds:
+
 - `content`
 - `scene_plan`
 - `visual` per canonical scene
@@ -49,6 +58,7 @@ Work kinds:
 - `production_pack`
 
 Work states:
+
 - `BLOCKED`
 - `READY`
 - `RUNNING`
@@ -78,7 +88,7 @@ The work graph exposes deterministic input identity and typed external descripto
 
 P1 adds typed batch result ingress for generated visual and voice external workers.
 
-The coordinator may receive worker outputs concurrently, but canonical mutation remains ordered and serialized through one writable Application Control Service session. Per-item outcomes stay truthful: one rejected/stale item does not fabricate failure or success for sibling items.
+The coordinator may receive worker outputs concurrently, but canonical mutation remains ordered and serialized through one writable Application Control Service session. Per-item outcomes stay truthful: one rejected or stale item does not fabricate failure or success for sibling items.
 
 The batch layer reuses core stale validation based on `request_sha256`, preserves explicit replacement semantics, and relies on canonical result hashing/cache behavior for replay-safe duplicate delivery. It does not add an agent-specific delivery database.
 
@@ -99,6 +109,7 @@ These transports do not own workflow truth. They are façades over the same Appl
 P3 adds a shared worker-pool contract plus harness recipes for Codex, Claude Code and Google Antigravity.
 
 Coordinator responsibilities:
+
 - inspect `agent_work_graph`;
 - prepare current work immediately before dispatch;
 - fan out only independent READY work;
@@ -108,14 +119,16 @@ Coordinator responsibilities:
 - rebuild the queue from canonical state after reconnect.
 
 Worker responsibilities:
+
 - execute only the provided external task;
 - never call `agent_work_commit`;
 - never edit SQLite, ArtifactStore, Data Root internals, selected artifacts or completion flags;
-- return candidate result + truthful provenance only.
+- return candidate result plus truthful provenance only.
 
 Concurrency is harness-local policy, not persisted workflow state.
 
 Reference package:
+
 - `agent-harness/worker-pool/contract.json`
 - `agent-harness/worker-pool/README.md`
 - `agent-harness/{codex,claude,antigravity}/WORKER-POOL.md`
@@ -129,6 +142,7 @@ P4 makes the most common real production split explicit: stock/generated/manual 
 Stock, generated and manual visual paths are intentionally distinct.
 
 For Pexels stock work:
+
 1. canonical Studio Pack intent and available runtime capability must allow stock;
 2. use `visual.resolve` for preview-first metadata discovery;
 3. inspect candidate metadata/previews and select one candidate;
@@ -144,6 +158,7 @@ Generated still work uses the current prepared `visual.generate` descriptor and 
 ### OmniVoiceStudio lane
 
 For every READY voice unit:
+
 1. coordinator calls `agent_work_prepare`;
 2. external worker receives the canonical `tts.generate` descriptor;
 3. OmniVoiceStudio renders WAV/MP3 plus required timing for the same segment;
@@ -153,18 +168,91 @@ For every READY voice unit:
 
 If Content changes while rendering, the old request hash is stale and must be rejected. If OmniVoiceStudio/compute is unavailable, a canonical manual voice bundle with timing is the supported fallback.
 
-### Runtime boundary
+The P4 package lives at:
 
-Current MCP execution intentionally does not pretend to own machine-local visual plugin or voice/compute runtime. MCP can coordinate canonical external/manual handoff while Desktop or another machine-local runtime performs plugin/compute execution.
-
-Provider concurrency, retry state, credentials, machine paths, device IDs, Pexels rate limits and OmniVoiceStudio/GPU capacity stay machine-local or harness-local. They are never portable Project truth.
-
-The P4 machine-readable package lives at:
 - `agent-harness/parallel-production/contract.json`
 - `agent-harness/parallel-production/README.md`
 - `agent-harness/parallel-production/README.vi.md`
 
-Executable verification lives in `crates/omnicreator-cli/tests/phase19_parallel_production_recipes.rs`. It checks contract drift, Pexels manifest capability alignment, skill parity, secret-like markers, and the real MCP tool surface.
+Executable verification lives in `crates/omnicreator-cli/tests/phase19_parallel_production_recipes.rs`.
+
+## P5 — Fan-in QA and recovery
+
+P5 adds a second read-only projection, `omnicreator.agent-fan-in-qa` v1. It does not replace `agent_work_graph`. The two views answer different questions:
+
+- `agent_work_graph`: what canonical work is executable, running, blocked, reviewable or satisfied?
+- `agent_fan_in_qa`: are the selected canonical visual/audio/timing artifacts physically healthy enough for final fan-in and recovery?
+
+The projection combines only existing canonical sources:
+
+1. `agent_work_graph` for per-unit work state;
+2. Production Recovery for selected visual/audio/timing artifact verification at the active Data Root binding.
+
+No worker-status database, harness claim table, retry scheduler or parallel-work persistence is introduced.
+
+### P5 contract
+
+`agent_fan_in_qa` returns:
+
+- visual and voice units with canonical state;
+- selected artifact IDs;
+- matching Production Recovery items;
+- per-unit recovery guidance;
+- `ready_work_ids`;
+- `needs_review_work_ids`;
+- `unhealthy_canonical_units`;
+- `recovery_ready_for_rebuild`;
+- `fan_in_verified`;
+- `production_pack_ready`;
+- `production_pack_satisfied`.
+
+A READY unit with no selected artifact is normal pending work and is not an artifact failure. A unit enters `unhealthy_canonical_units` only when its canonical work is already SATISFIED but its selected production artifact is missing, invalid or unexpectedly unselected.
+
+Recovery guidance maps to existing typed paths only:
+
+- `dispatch_external`: prepare current work and dispatch it;
+- `review`: inspect Review Center/current graph before retry or replacement;
+- `repair_visual`: use canonical production recovery/relink controls;
+- `repair_voice_bundle`: repair audio plus timing through the existing canonical voice path;
+- `assemble_production_pack`: only after the verified fan-in gate.
+
+MCP exposes `agent_fan_in_qa`. CLI exposes `work qa --project <id>`. Both are inspection-only and do not acquire the writer lease.
+
+### Reconnect and worker loss
+
+After coordinator crash or reconnect:
+
+1. discard harness-local claims/completion memory;
+2. cold-read `agent_work_graph`;
+3. cold-read `agent_fan_in_qa`;
+4. reuse SATISFIED units whose selected artifacts still verify;
+5. prepare only current READY work;
+6. let `stale_input` reject obsolete worker output;
+7. serialize new commits through the existing writer lease.
+
+A verified visual committed before a coordinator restart remains selected and reusable after reconnect. P5 E2E covers this exact split by committing one lane, reopening read-only state, then completing the remaining lane.
+
+### Writer contention
+
+Read-only graph and QA inspection must remain available while another process holds the Data Root writer lease. A second mutating `work commit` must receive typed `writer_conflict`; it may not bypass the canonical lease or create a shadow writer.
+
+### Data Root portability
+
+After Data Root move/rebind, cold inspection is performed against the new root. Durable project/artifact references remain logical and path-independent. `agent_fan_in_qa` verifies artifacts at the current binding and must not serialize old/new absolute Data Root paths, credentials or bearer secrets.
+
+### End-to-end fan-in gate
+
+Before ProductionPack/Resolve export:
+
+1. re-inspect `agent_work_graph`;
+2. inspect `agent_fan_in_qa`;
+3. require `fan_in_verified=true` and no unresolved unhealthy/review unit relevant to the production inputs;
+4. repair/review through existing typed controls if required;
+5. assemble or rebuild ProductionPack through the canonical production service;
+6. regenerate Resolve/DaVinci interchange through the existing exporter;
+7. cold-inspect final canonical state before reporting completion.
+
+The E2E test `crates/omnicreator-application/tests/agent_fan_in_qa.rs` covers reconnect, artifact reuse, visual/voice fan-in, ProductionPack/Resolve export, Data Root move, path/secret sanitization and physical artifact loss after canonical success. CLI/MCP transport tests cover the real binary surface, and Phase 19 contention coverage keeps the single-writer rule explicit.
 
 ## Canonical writer rule
 
@@ -178,18 +266,10 @@ worker C ---- result ----/
 
 No worker may edit SQLite, ArtifactStore files, workflow rows, selected-artifact fields, or completion flags directly.
 
-## Idempotency, stale work and reconnect
-
-Phase 19 builds on canonical Job/Attempt/input-hash and external request-hash semantics rather than inventing agent-specific identity.
-
-- stale result: reject and prepare current work again;
-- duplicate/reconnect delivery: use canonical ingress/idempotency behavior;
-- writer conflict: do not open another writer, back off and retry through the coordinator;
-- reconnect: reconstruct work solely from current canonical graph/state.
-
 ## Safety and portability
 
 Portable project truth must not contain:
+
 - API keys, bearer tokens, cookies or credentials;
 - provider-private sessions;
 - worker/device-specific secrets;
@@ -197,23 +277,24 @@ Portable project truth must not contain:
 - harness-specific scheduler state;
 - rate-limit counters or machine-local concurrency settings.
 
-Read-only Workspace sessions may inspect the work graph but cannot mutate canonical state.
+Read-only Workspace sessions may inspect graph and fan-in QA state but cannot mutate canonical state.
 
 ## Target harness workflow
 
-1. inspect project/work graph;
+1. inspect project and `agent_work_graph`;
 2. satisfy or generate Content;
-3. re-inspect;
-4. delegate ScenePlan and all READY voice units concurrently;
-5. after ScenePlan is committed, re-inspect and delegate READY visual units;
-6. collect worker outputs outside canonical storage;
-7. submit accepted outputs through typed OmniCreator result ingress;
-8. re-inspect after each mutation/batch;
-9. route `NEEDS_REVIEW` units to Review Center/recovery;
-10. assemble ProductionPack only after verified canonical visual + voice fan-in.
+3. delegate READY voice units while ScenePlan is produced;
+4. after ScenePlan commits, delegate READY visual units;
+5. collect worker outputs outside canonical storage;
+6. serialize accepted outputs through `agent_work_commit`;
+7. re-inspect graph plus `agent_fan_in_qa` after each commit wave;
+8. on reconnect, rebuild pending work only from current canonical projections;
+9. route `NEEDS_REVIEW` or unhealthy satisfied units to typed Review Center/production recovery;
+10. assemble ProductionPack only after verified canonical visual plus voice fan-in;
+11. verify ProductionPack/Resolve output from canonical state before reporting completion.
 
 The harness remains replaceable. A project started with Claude Code can be resumed through Codex, Antigravity, Desktop, CLI, or another MCP client because durable truth remains OmniCreator state.
 
 ## Status
 
-P0–P3 are DONE / VERIFIED. P4 #118 is being implemented on `feat/phase19-p4-parallel-production-recipes`. It must not be marked DONE / VERIFIED until exact-head CI passes, guarded merge completes, merge tree is checked, and post-merge CI on `main` passes.
+P0 through P4 are DONE / VERIFIED. P5 #119 is implemented on `feat/phase19-p5-fan-in-hardening` and remains IN PROGRESS until the final branch head passes exact-head CI, guarded squash merge preserves the verified tree, and post-merge CI on `main` passes. Only then may #119 and umbrella #113 be marked DONE / VERIFIED.
