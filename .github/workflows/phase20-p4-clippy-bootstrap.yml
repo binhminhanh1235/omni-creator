@@ -1,0 +1,32 @@
+name: Phase 20 P4 clippy correction
+
+on:
+  push:
+    branches:
+      - feat/phase20-p4-runtime-plugin-credentials
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Apply clippy corrective patch
+        run: python3 .github/phase20_p4_clippy_patch.py
+      - name: Format Desktop Rust
+        run: cargo fmt --manifest-path apps/desktop/src-tauri/Cargo.toml
+      - name: Desktop clippy
+        run: cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets -- -D warnings
+      - name: Commit corrective patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/desktop/src-tauri/src/application.rs
+          git commit -m "fix: satisfy runtime credential desktop clippy"
+          git push
