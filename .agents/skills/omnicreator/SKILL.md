@@ -18,7 +18,7 @@ Use OmniCreator as a control plane over its canonical Project / WorkflowStep / J
 7. Never edit OmniCreator SQLite, Data Root internals, ArtifactStore files, or workflow state directly. Never use a generic filesystem or shell bypass to fabricate state.
 8. Never claim provider, plugin, TTS, GPU, or ComputeProvider success unless OmniCreator reports canonical success/result state. Likewise, never claim worker or external-service success until OmniCreator accepts the corresponding canonical result.
 9. Keep provider settings machine-local. Never put API keys, bearer tokens, or raw provider credentials in Data Root, project state, prompts, MCP payloads, or checked-in config.
-10. When recovery is required, inspect fan-in QA / Review Center / production recovery first and invoke only an applicable typed recovery/manual/external action.
+10. When recovery is required, inspect fan-in QA and Review Center/recovery first, then production recovery as needed, and invoke only an applicable typed recovery/manual/external action.
 
 ## MCP tool selection
 
@@ -92,7 +92,7 @@ The coordinator may fan out independent scene visual work and voice-segment work
 
 The coordinator alone calls `agent_work_commit`, serializing canonical commit batches through the Data Root writer lease. Immediately run `agent_work_graph` again after every commit batch. Use `agent_fan_in_qa` after a wave completes and before ProductionPack. Do not infer state from worker transcripts.
 
-On reconnect, rebuild the queue from the current graph. Already verified canonical artifacts remain satisfied and must not be recomputed just because the harness restarted. On `stale_input`, discard the candidate and call `agent_work_prepare` again for current work. On duplicate delivery, submit only through canonical commit and trust the canonical idempotency response. On `writer_conflict`, back off and retry through the coordinator rather than opening another writer.
+On reconnect, rebuild the queue from the current graph. Already verified canonical artifacts that still verify at the active Data Root remain reusable and must not be recomputed just because the harness restarted. On `stale_input`, discard the candidate and call `agent_work_prepare` again for current work. On duplicate delivery, submit only through canonical commit and trust the canonical idempotency response. On `writer_conflict`, back off and retry through the coordinator rather than opening another writer.
 
 Reference package: `agent-harness/worker-pool/contract.json`, `agent-harness/worker-pool/README.md`, plus vendor recipes under `agent-harness/{codex,claude,antigravity}/WORKER-POOL.md`.
 
@@ -117,7 +117,7 @@ Use `agent_fan_in_qa` as the canonical pre-ProductionPack health projection. It 
 Interpretation:
 - `ready_work_ids`: visual/voice units that can still be dispatched;
 - `needs_review_work_ids`: canonical visual/voice work whose Job state needs review/recovery;
-- `unhealthy_canonical_units`: work that is canonically SATISFIED but whose selected visual/audio/timing artifact is now missing, invalid or unselected;
+- `unhealthy_canonical_units`: units with a physical selected-artifact defect, including `NEEDS_REVIEW` caused by missing/invalid artifacts and the defensive case of `SATISFIED` with a non-verified recovery artifact;
 - `fan_in_verified`: every discovered visual + voice unit is SATISFIED and every selected production input verifies at the current Data Root;
 - `production_pack_ready`: canonical fan-in is complete and ProductionPack can be assembled;
 - `production_pack_satisfied`: ProductionPack is already canonical success.
