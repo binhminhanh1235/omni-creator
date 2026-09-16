@@ -244,7 +244,7 @@ impl rmcp::ServerHandler for OmniCreatorMcpPhase19P2ServerV1 {
         .await
     }
 
-    fn get_info(&self) -> rmcp::model::ServerConfig {
+    fn get_info(&self) -> rmcp::model::InitializeResult {
         <OmniCreatorMcpTaskServerV1 as rmcp::ServerHandler>::get_info(&self.legacy)
     }
 }
