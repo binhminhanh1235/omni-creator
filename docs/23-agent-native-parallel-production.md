@@ -206,7 +206,7 @@ No worker-status database, harness claim table, retry scheduler or parallel-work
 - `production_pack_ready`;
 - `production_pack_satisfied`.
 
-A READY unit with no selected artifact is normal pending work and is not an artifact failure. A unit enters `unhealthy_canonical_units` only when its canonical work is already SATISFIED but its selected production artifact is missing, invalid or unexpectedly unselected.
+A READY unit with no selected artifact is normal pending work and is not an artifact failure. If a previously accepted selected artifact later becomes missing or invalid, the canonical work graph may degrade that unit to `NEEDS_REVIEW`; fan-in QA preserves that state and maps the physical artifact defect to the applicable typed repair action. `unhealthy_canonical_units` includes these degraded units and also catches the defensive case where a SATISFIED unit has a non-verified recovery artifact.
 
 Recovery guidance maps to existing typed paths only:
 
@@ -289,7 +289,7 @@ Read-only Workspace sessions may inspect graph and fan-in QA state but cannot mu
 6. serialize accepted outputs through `agent_work_commit`;
 7. re-inspect graph plus `agent_fan_in_qa` after each commit wave;
 8. on reconnect, rebuild pending work only from current canonical projections;
-9. route `NEEDS_REVIEW` or unhealthy satisfied units to typed Review Center/production recovery;
+9. route `NEEDS_REVIEW` and unhealthy units to typed Review Center/production recovery;
 10. assemble ProductionPack only after verified canonical visual plus voice fan-in;
 11. verify ProductionPack/Resolve output from canonical state before reporting completion.
 
