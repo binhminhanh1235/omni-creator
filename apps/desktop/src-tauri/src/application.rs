@@ -67,6 +67,7 @@ use uuid::Uuid;
 struct DesktopState {
     active: Mutex<Option<ActiveWorkspace>>,
     compute: Mutex<Option<ComputeProviderRuntime<HttpComputeProvider>>>,
+    runtime_plugin_credentials: Mutex<BTreeMap<String, String>>,
 }
 
 enum ActiveWorkspace {
@@ -129,6 +130,13 @@ struct PluginRuntimeReadinessDesktopViewV1 {
     plugin_id: String,
     status: String,
     reason_code: Option<String>,
+    credentials: Vec<PluginRuntimeCredentialDesktopViewV1>,
+}
+
+#[derive(Debug, Serialize)]
+struct PluginRuntimeCredentialDesktopViewV1 {
+    env_name: String,
+    source: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -481,10 +489,96 @@ fn delete_project(
     snapshot_from_active(&state)
 }
 
-#[tauri::command]
-fn plugin_inventory(app: AppHandle) -> Result<PluginInventoryDesktopViewV1, String> {
-    let report = plugin_inventory_report_v1(&app)?;
-    let runtime = studio_pack_runtime_snapshot_v1(&app, &report.registry)?;
+fn plugin_credential_env_names_v1(plugin: &DiscoveredPlugin) -> Vec<String> {
+    let report = load_plugin_settings_ui(plugin);
+    if !report.diagnostics.is_empty() {
+        return Vec::new();
+    }
+    let mut names = report
+        .ui
+        .as_ref()
+        .map(|ui| {
+            ui.fields
+                .iter()
+                .filter(|field| field.key.ends_with("_env"))
+                .filter_map(|field| field.default.as_ref()?.as_str())
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+                .map(str::to_owned)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    names.sort();
+    names.dedup();
+    names
+}
+
+fn runtime_plugin_credentials_snapshot_v1(
+    state: &State<'_, DesktopState>,
+) -> Result<BTreeMap<String, String>, String> {
+    state
+        .runtime_plugin_credentials
+        .lock()
+        .map_err(lock_error)
+        .map(|guard| guard.clone())
+}
+
+fn runtime_credential_source_v1(
+    runtime_credentials: &BTreeMap<String, String>,
+    env_name: &str,
+) -> &'static str {
+    if runtime_credentials
+        .get(env_name)
+        .is_some_and(|value| !value.trim().is_empty())
+    {
+        "runtime"
+    } else if env::var(env_name).is_ok_and(|value| !value.trim().is_empty()) {
+        "environment"
+    } else {
+        "missing"
+    }
+}
+
+fn plugin_runtime_credential_views_v1(
+    plugin: &DiscoveredPlugin,
+    runtime_credentials: &BTreeMap<String, String>,
+) -> Vec<PluginRuntimeCredentialDesktopViewV1> {
+    plugin_credential_env_names_v1(plugin)
+        .into_iter()
+        .map(|env_name| PluginRuntimeCredentialDesktopViewV1 {
+            source: runtime_credential_source_v1(runtime_credentials, &env_name).to_owned(),
+            env_name,
+        })
+        .collect()
+}
+
+fn validate_plugin_runtime_credential_target_v1(
+    report: &PluginInventoryReportV1,
+    plugin_id: &str,
+    credential_env: &str,
+) -> Result<(), String> {
+    let plugin = report
+        .registry
+        .get(plugin_id)
+        .ok_or_else(|| format!("Plugin {plugin_id} is not installed on this machine."))?;
+    if !plugin_credential_env_names_v1(plugin)
+        .iter()
+        .any(|name| name == credential_env)
+    {
+        return Err(format!(
+            "Plugin {plugin_id} does not declare runtime credential {credential_env}."
+        ));
+    }
+    Ok(())
+}
+
+fn plugin_inventory_view_v1(
+    app: &AppHandle,
+    state: &State<'_, DesktopState>,
+) -> Result<PluginInventoryDesktopViewV1, String> {
+    let report = plugin_inventory_report_v1(app)?;
+    let runtime = studio_pack_runtime_snapshot_v1(app, state, &report.registry)?;
+    let runtime_credentials = runtime_plugin_credentials_snapshot_v1(state)?;
     let readiness = report
         .inventory
         .iter()
@@ -498,10 +592,18 @@ fn plugin_inventory(app: AppHandle) -> Result<PluginInventoryDesktopViewV1, Stri
                     ("unavailable".to_owned(), Some(reason_code))
                 }
             };
+            let credentials = report
+                .registry
+                .get(&plugin.id)
+                .map(|discovered| {
+                    plugin_runtime_credential_views_v1(discovered, &runtime_credentials)
+                })
+                .unwrap_or_default();
             PluginRuntimeReadinessDesktopViewV1 {
                 plugin_id: plugin.id.clone(),
                 status,
                 reason_code,
+                credentials,
             }
         })
         .collect();
@@ -522,8 +624,65 @@ fn plugin_inventory(app: AppHandle) -> Result<PluginInventoryDesktopViewV1, Stri
 }
 
 #[tauri::command]
+fn plugin_inventory(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+) -> Result<PluginInventoryDesktopViewV1, String> {
+    plugin_inventory_view_v1(&app, &state)
+}
+
+#[tauri::command]
+fn set_plugin_runtime_credential(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    plugin_id: String,
+    credential_env: String,
+    value: String,
+) -> Result<PluginInventoryDesktopViewV1, String> {
+    let plugin_id = plugin_id.trim();
+    let credential_env = credential_env.trim();
+    if plugin_id.is_empty() || credential_env.is_empty() {
+        return Err("Plugin id and credential environment name must not be empty.".to_owned());
+    }
+    if value.trim().is_empty() {
+        return Err("Runtime API key must not be empty.".to_owned());
+    }
+    let report = plugin_inventory_report_v1(&app)?;
+    validate_plugin_runtime_credential_target_v1(&report, plugin_id, credential_env)?;
+    state
+        .runtime_plugin_credentials
+        .lock()
+        .map_err(lock_error)?
+        .insert(credential_env.to_owned(), value);
+    plugin_inventory_view_v1(&app, &state)
+}
+
+#[tauri::command]
+fn clear_plugin_runtime_credential(
+    app: AppHandle,
+    state: State<'_, DesktopState>,
+    plugin_id: String,
+    credential_env: String,
+) -> Result<PluginInventoryDesktopViewV1, String> {
+    let plugin_id = plugin_id.trim();
+    let credential_env = credential_env.trim();
+    if plugin_id.is_empty() || credential_env.is_empty() {
+        return Err("Plugin id and credential environment name must not be empty.".to_owned());
+    }
+    let report = plugin_inventory_report_v1(&app)?;
+    validate_plugin_runtime_credential_target_v1(&report, plugin_id, credential_env)?;
+    state
+        .runtime_plugin_credentials
+        .lock()
+        .map_err(lock_error)?
+        .remove(credential_env);
+    plugin_inventory_view_v1(&app, &state)
+}
+
+#[tauri::command]
 fn set_plugin_enabled(
     app: AppHandle,
+    state: State<'_, DesktopState>,
     plugin_id: String,
     enabled: bool,
 ) -> Result<PluginInventoryDesktopViewV1, String> {
@@ -545,12 +704,13 @@ fn set_plugin_enabled(
         .set_enabled_v1(plugin_id, enabled)
         .map_err(error_string)?;
     lifecycle.save_v1(path).map_err(error_string)?;
-    plugin_inventory(app)
+    plugin_inventory_view_v1(&app, &state)
 }
 
 #[tauri::command]
 fn install_plugin_from_folder(
     app: AppHandle,
+    state: State<'_, DesktopState>,
     source_path: String,
 ) -> Result<PluginInventoryDesktopViewV1, String> {
     let source_path = source_path.trim();
@@ -562,12 +722,13 @@ fn install_plugin_from_folder(
     let user_root = plugin_user_root_v1(&app)?;
     install_local_plugin_folder_v1(Path::new(source_path), &built_in_roots, &user_root)
         .map_err(error_string)?;
-    plugin_inventory(app)
+    plugin_inventory_view_v1(&app, &state)
 }
 
 #[tauri::command]
 fn uninstall_plugin(
     app: AppHandle,
+    state: State<'_, DesktopState>,
     plugin_id: String,
 ) -> Result<PluginInventoryDesktopViewV1, String> {
     let plugin_id = plugin_id.trim();
@@ -578,7 +739,7 @@ fn uninstall_plugin(
     let built_in_roots = plugin_built_in_roots_v1(&app);
     let user_root = plugin_user_root_v1(&app)?;
     uninstall_user_plugin_v1(plugin_id, &built_in_roots, &user_root).map_err(error_string)?;
-    plugin_inventory(app)
+    plugin_inventory_view_v1(&app, &state)
 }
 
 #[tauri::command]
@@ -610,6 +771,7 @@ fn inspect_plugin_update(
 #[tauri::command]
 fn apply_plugin_update(
     app: AppHandle,
+    state: State<'_, DesktopState>,
     plugin_id: String,
     source_path: String,
 ) -> Result<PluginInventoryDesktopViewV1, String> {
@@ -631,7 +793,7 @@ fn apply_plugin_update(
         &user_root,
     )
     .map_err(error_string)?;
-    plugin_inventory(app)
+    plugin_inventory_view_v1(&app, &state)
 }
 
 #[tauri::command]
@@ -719,7 +881,7 @@ fn create_project_from_studio_pack(
     validate_desktop_studio_pack_overrides_v1(&catalog, &pack_id, &overrides)?;
 
     let registry = studio_pack_plugin_registry_v1(&app)?;
-    let runtime = studio_pack_runtime_snapshot_v1(&app, &registry)?;
+    let runtime = studio_pack_runtime_snapshot_v1(&app, &state, &registry)?;
     let selected_id = if overrides == StudioPackOverridesV1::default() {
         pack_id.clone()
     } else {
@@ -829,7 +991,7 @@ fn update_project_studio_pack(
     };
 
     let registry = studio_pack_plugin_registry_v1(&app)?;
-    let runtime = studio_pack_runtime_snapshot_v1(&app, &registry)?;
+    let runtime = studio_pack_runtime_snapshot_v1(&app, &state, &registry)?;
     let availability = catalog
         .evaluate_availability_v1(&selected_id, &registry, &runtime)
         .map_err(error_string)?;
@@ -887,6 +1049,7 @@ struct DesktopVisualRuntimeV1<'a> {
     registry: &'a PluginRegistry,
     runtime: &'a StudioPackRuntimeSnapshotV1,
     runtime_root: PathBuf,
+    runtime_credentials: BTreeMap<String, String>,
 }
 
 impl DesktopVisualRuntimeV1<'_> {
@@ -937,6 +1100,19 @@ impl DesktopVisualRuntimeV1<'_> {
                     target.capability
                 ))
             })
+    }
+
+    fn spawn_plugin_v1(&self, plugin: &DiscoveredPlugin) -> CoreResult<PluginProcess> {
+        let declared = plugin_credential_env_names_v1(plugin)
+            .into_iter()
+            .collect::<BTreeSet<_>>();
+        let environment = self
+            .runtime_credentials
+            .iter()
+            .filter(|(name, value)| declared.contains(*name) && !value.trim().is_empty())
+            .map(|(name, value)| (name.clone(), value.clone()))
+            .collect::<BTreeMap<_, _>>();
+        PluginProcess::spawn_with_env(plugin, PluginProcessOptions::default(), &environment)
     }
 
     fn process_result_v1(
@@ -1028,7 +1204,7 @@ impl CreatorVisualDiscoveryExecutorV1 for DesktopVisualRuntimeV1<'_> {
             };
             any_runtime_ready = true;
 
-            let process = match PluginProcess::spawn(plugin, PluginProcessOptions::default()) {
+            let process = match self.spawn_plugin_v1(plugin) {
                 Ok(process) => process,
                 Err(_) => continue,
             };
@@ -1114,7 +1290,7 @@ impl CreatorVisualAssetExecutorV1 for DesktopVisualRuntimeV1<'_> {
             Some(request.candidate.source_provider.as_str()),
         )?;
         let workspace = PluginJobWorkspace::create(&self.runtime_root, request.job_id)?;
-        let process = PluginProcess::spawn(plugin, PluginProcessOptions::default())?;
+        let process = self.spawn_plugin_v1(plugin)?;
         let initialize = process.initialize(workspace.initialization_context(plugin)?)?;
         Self::process_result_v1(plugin, initialize.response, "plugin.initialize")?;
 
@@ -1200,7 +1376,7 @@ impl CreatorVisualAssetExecutorV1 for DesktopVisualRuntimeV1<'_> {
     ) -> CoreResult<Artifact> {
         let plugin = self.resolve_plugin_v1(request.target, request.target.plugin_id.as_deref())?;
         let workspace = PluginJobWorkspace::create(&self.runtime_root, request.job_id)?;
-        let process = PluginProcess::spawn(plugin, PluginProcessOptions::default())?;
+        let process = self.spawn_plugin_v1(plugin)?;
         let initialize = process.initialize(workspace.initialization_context(plugin)?)?;
         Self::process_result_v1(plugin, initialize.response, "plugin.initialize")?;
 
@@ -1291,6 +1467,7 @@ impl CreatorVisualAssetExecutorV1 for DesktopVisualRuntimeV1<'_> {
 
 fn creator_visual_plan_for_desktop_v1(
     app: &AppHandle,
+    state: &State<'_, DesktopState>,
     store: &StateStore,
     artifacts: &ArtifactStore,
     project_id: &str,
@@ -1301,6 +1478,7 @@ fn creator_visual_plan_for_desktop_v1(
         PluginInventoryReportV1,
         StudioPackRuntimeSnapshotV1,
         PathBuf,
+        BTreeMap<String, String>,
     ),
     String,
 > {
@@ -1315,12 +1493,14 @@ fn creator_visual_plan_for_desktop_v1(
         .map_err(error_string)?
         .ok_or_else(|| "Content + SceneIntent must be prepared before visual review.".to_owned())?;
     let inventory = plugin_inventory_report_v1(app)?;
-    let runtime = studio_pack_runtime_snapshot_v1(app, &inventory.registry)?;
+    let runtime = studio_pack_runtime_snapshot_v1(app, state, &inventory.registry)?;
     let runtime_root = creator_plugin_runtime_root_v1(app)?;
+    let runtime_credentials = runtime_plugin_credentials_snapshot_v1(state)?;
     let visual_runtime = DesktopVisualRuntimeV1 {
         registry: &inventory.registry,
         runtime: &runtime,
         runtime_root: runtime_root.clone(),
+        runtime_credentials: runtime_credentials.clone(),
     };
     let plan = plan_creator_visuals_v1(
         &project,
@@ -1332,7 +1512,14 @@ fn creator_visual_plan_for_desktop_v1(
         &CreatorVisualPlanningOptionsV1::default(),
     )
     .map_err(error_string)?;
-    Ok((creator, plan, inventory, runtime, runtime_root))
+    Ok((
+        creator,
+        plan,
+        inventory,
+        runtime,
+        runtime_root,
+        runtime_credentials,
+    ))
 }
 
 fn creator_visual_review_view_v1(
@@ -1388,8 +1575,8 @@ fn creator_visual_review_status(
     let data_root = active_data_root(&state)?;
     let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
     let store = readable_store(&state)?;
-    let (creator, plan, _, _, _) =
-        creator_visual_plan_for_desktop_v1(&app, &store, &artifacts, &project_id)?;
+    let (creator, plan, _, _, _, _) =
+        creator_visual_plan_for_desktop_v1(&app, &state, &store, &artifacts, &project_id)?;
     creator_visual_review_view_v1(&creator, &plan)
 }
 
@@ -1404,13 +1591,14 @@ fn select_creator_visual_candidate(
     let data_root = active_data_root(&state)?;
     let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
     let mut store = writable_store(&state)?;
-    let (creator, mut plan, inventory, runtime, runtime_root) =
-        creator_visual_plan_for_desktop_v1(&app, &store, &artifacts, &project_id)?;
+    let (creator, mut plan, inventory, runtime, runtime_root, runtime_credentials) =
+        creator_visual_plan_for_desktop_v1(&app, &state, &store, &artifacts, &project_id)?;
     select_creator_stock_candidate_v1(&mut plan, &scene_id, &candidate_id).map_err(error_string)?;
     let visual_runtime = DesktopVisualRuntimeV1 {
         registry: &inventory.registry,
         runtime: &runtime,
         runtime_root,
+        runtime_credentials,
     };
     execute_creator_visual_plan_v1(
         &mut store,
@@ -1434,13 +1622,14 @@ fn approve_creator_generated_visual(
     let data_root = active_data_root(&state)?;
     let artifacts = ArtifactStore::new(data_root).map_err(error_string)?;
     let mut store = writable_store(&state)?;
-    let (creator, mut plan, inventory, runtime, runtime_root) =
-        creator_visual_plan_for_desktop_v1(&app, &store, &artifacts, &project_id)?;
+    let (creator, mut plan, inventory, runtime, runtime_root, runtime_credentials) =
+        creator_visual_plan_for_desktop_v1(&app, &state, &store, &artifacts, &project_id)?;
     approve_creator_generated_visual_v1(&mut plan, &scene_id).map_err(error_string)?;
     let visual_runtime = DesktopVisualRuntimeV1 {
         registry: &inventory.registry,
         runtime: &runtime,
         runtime_root,
+        runtime_credentials,
     };
     execute_creator_visual_plan_v1(
         &mut store,
@@ -2322,7 +2511,7 @@ fn start_creator_production(
     let artifacts = ArtifactStore::new(&data_root).map_err(error_string)?;
     let catalog = load_studio_pack_catalog_v1(&data_root)?;
     let inventory = plugin_inventory_report_v1(&app)?;
-    let plugin_runtime = studio_pack_runtime_snapshot_v1(&app, &inventory.registry)?;
+    let plugin_runtime = studio_pack_runtime_snapshot_v1(&app, &state, &inventory.registry)?;
     let runtime_root = creator_plugin_runtime_root_v1(&app)?;
 
     let mut store = writable_store(&state)?;
@@ -2385,6 +2574,7 @@ fn start_creator_production(
             registry: &inventory.registry,
             runtime: &plugin_runtime,
             runtime_root,
+            runtime_credentials: runtime_plugin_credentials_snapshot_v1(&state)?,
         };
         let visual_plan = plan_creator_visuals_v1(
             &project,
@@ -3179,9 +3369,11 @@ fn studio_pack_plugin_registry_v1(app: &AppHandle) -> Result<PluginRegistry, Str
 
 fn studio_pack_runtime_snapshot_v1(
     app: &AppHandle,
+    state: &State<'_, DesktopState>,
     registry: &PluginRegistry,
 ) -> Result<StudioPackRuntimeSnapshotV1, String> {
     let lifecycle = load_plugin_lifecycle_v1(app)?;
+    let runtime_credentials = runtime_plugin_credentials_snapshot_v1(state)?;
     let mut runtime = StudioPackRuntimeSnapshotV1::default();
     for plugin in registry.plugins() {
         if !lifecycle.is_enabled_v1(&plugin.manifest.id) {
@@ -3214,9 +3406,8 @@ fn studio_pack_runtime_snapshot_v1(
                     if name.is_empty() {
                         return None;
                     }
-                    let present = env::var(name)
-                        .map(|value| !value.trim().is_empty())
-                        .unwrap_or(false);
+                    let present =
+                        runtime_credential_source_v1(&runtime_credentials, name) != "missing";
                     (!present).then(|| name.to_owned())
                 })
         });
@@ -3245,7 +3436,7 @@ fn studio_pack_catalog_view_v1(
         .map(|pack| pack.id.clone())
         .collect::<BTreeSet<_>>();
     let registry = studio_pack_plugin_registry_v1(app)?;
-    let runtime = studio_pack_runtime_snapshot_v1(app, &registry)?;
+    let runtime = studio_pack_runtime_snapshot_v1(app, state, &registry)?;
 
     let mut packs = Vec::new();
     for definition in catalog.list_definitions_v1().map_err(error_string)? {
@@ -3329,7 +3520,7 @@ fn studio_review_center_view_v1(
     let store = readable_store(state)?;
     let catalog = load_studio_pack_catalog_v1(&data_root)?;
     let registry = studio_pack_plugin_registry_v1(app)?;
-    let runtime = studio_pack_runtime_snapshot_v1(app, &registry)?;
+    let runtime = studio_pack_runtime_snapshot_v1(app, state, &registry)?;
     let mut projects = Vec::new();
 
     for project in store.list_projects().map_err(error_string)? {
@@ -3943,6 +4134,8 @@ fn main() {
             create_project_from_studio_pack,
             update_project_studio_pack,
             plugin_inventory,
+            set_plugin_runtime_credential,
+            clear_plugin_runtime_credential,
             set_plugin_enabled,
             install_plugin_from_folder,
             uninstall_plugin,

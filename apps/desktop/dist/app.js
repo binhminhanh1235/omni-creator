@@ -3231,6 +3231,55 @@ function pluginDiagnosticMarkup(diagnostic) {
   );
 }
 
+function pluginRuntimeCredentialMarkup(readiness, plugin) {
+  const credentials = Array.isArray(readiness && readiness.credentials)
+    ? readiness.credentials
+    : [];
+  if (!credentials.length) return "";
+  return (
+    '<div class="plugin-runtime-credentials"><span class="plugin-runtime-credentials-title">RUNTIME API KEYS</span>' +
+    credentials
+      .map(function (credential) {
+        const source = credential.source || "missing";
+        const sourceLabel =
+          source === "runtime"
+            ? "Runtime key active"
+            : source === "environment"
+              ? "OS environment active"
+              : "Key required";
+        const placeholder =
+          source === "runtime"
+            ? "Paste a replacement key for this session"
+            : source === "environment"
+              ? "Paste a temporary override for this session"
+              : "Paste API key for this OmniCreator session";
+        return (
+          '<div class="plugin-runtime-credential" data-plugin-id="' +
+          escapeHtml(plugin.id) +
+          '" data-credential-env="' +
+          escapeHtml(credential.env_name) +
+          '"><div class="plugin-runtime-credential-head"><code>' +
+          escapeHtml(credential.env_name) +
+          '</code><span class="plugin-credential-source ' +
+          escapeHtml(source) +
+          '">' +
+          escapeHtml(sourceLabel) +
+          '</span></div><div class="plugin-runtime-credential-form"><input class="plugin-runtime-key-input" type="password" autocomplete="off" spellcheck="false" placeholder="' +
+          escapeHtml(placeholder) +
+          '" aria-label="Runtime API key for ' +
+          escapeHtml(credential.env_name) +
+          '" /><button class="btn primary plugin-runtime-key-set" type="button">Set runtime key</button>' +
+          (source === "runtime"
+            ? '<button class="btn plugin-runtime-key-clear" type="button">Clear runtime key</button>'
+            : "") +
+          '</div><small>Memory only. Cleared when OmniCreator exits. The key is never written to the Data Root.</small></div>'
+        );
+      })
+      .join("") +
+    "</div>"
+  );
+}
+
 function pluginCardMarkup(view, plugin) {
   const readiness = pluginReadiness(view, plugin.id);
   const source = plugin.source || "built_in";
@@ -3292,6 +3341,7 @@ function pluginCardMarkup(view, plugin) {
         escapeHtml(readiness.reason_code) +
         "</div>"
       : "") +
+    pluginRuntimeCredentialMarkup(readiness, plugin) +
     '<div class="plugin-contract-section"><span>Types</span>' +
     pluginTokenList(plugin.types) +
     "</div>" +
@@ -3409,6 +3459,51 @@ function renderPluginManager(view, projects, readOnly) {
       pluginManagerState.tab = "enabled";
       await refreshPluginManagerAfterMutation(next);
       showToast("Plugin enabled and Studio Pack availability refreshed.");
+    };
+  });
+
+  document.querySelectorAll(".plugin-runtime-key-set").forEach(function (button) {
+    button.onclick = async function () {
+      const row = button.closest(".plugin-runtime-credential");
+      const input = row && row.querySelector(".plugin-runtime-key-input");
+      const value = input ? input.value : "";
+      if (!row || !value.trim()) {
+        showToast("Paste an API key before setting the runtime credential.");
+        if (input) input.focus();
+        return;
+      }
+      button.disabled = true;
+      try {
+        const next = await call("set_plugin_runtime_credential", {
+          pluginId: row.dataset.pluginId,
+          credentialEnv: row.dataset.credentialEnv,
+          value: value,
+        });
+        const readiness = pluginReadiness(next, row.dataset.pluginId);
+        pluginManagerState.tab = readiness.status === "ready" ? "enabled" : "needs_attention";
+        await refreshPluginManagerAfterMutation(next);
+        showToast("Runtime API key applied for this OmniCreator session.");
+      } finally {
+        if (input) input.value = "";
+      }
+    };
+  });
+
+  document.querySelectorAll(".plugin-runtime-key-clear").forEach(function (button) {
+    button.onclick = async function () {
+      const row = button.closest(".plugin-runtime-credential");
+      if (!row) return;
+      button.disabled = true;
+      const next = await call("clear_plugin_runtime_credential", {
+        pluginId: row.dataset.pluginId,
+        credentialEnv: row.dataset.credentialEnv,
+      });
+      const plugin = (next.plugins || []).find(function (item) {
+        return item.id === row.dataset.pluginId;
+      });
+      pluginManagerState.tab = plugin ? pluginManagerBucket(next, plugin) : "needs_attention";
+      await refreshPluginManagerAfterMutation(next);
+      showToast("Runtime API key cleared. Environment fallback was re-evaluated.");
     };
   });
 
