@@ -18,7 +18,7 @@ Use OmniCreator as a control plane over its canonical Project / WorkflowStep / J
 7. Never edit OmniCreator SQLite, Data Root internals, ArtifactStore files, or workflow state directly. Never use a generic filesystem or shell bypass to fabricate state.
 8. Never claim provider, plugin, TTS, GPU, or ComputeProvider success unless OmniCreator reports canonical success/result state. Likewise, never claim worker or external-service success until OmniCreator accepts the corresponding canonical result.
 9. Keep provider settings machine-local. Never put API keys, bearer tokens, or raw provider credentials in Data Root, project state, prompts, MCP payloads, or checked-in config.
-10. When recovery is required, inspect Review Center/recovery first and invoke only an applicable typed recovery/manual/external action.
+10. When recovery is required, inspect fan-in QA and Review Center/recovery first, then production recovery as needed, and invoke only an applicable typed recovery/manual/external action.
 
 ## MCP tool selection
 
@@ -31,6 +31,7 @@ Inspection tools:
 - `review_list`
 - `runtime_status`
 - `agent_work_graph`
+- `agent_fan_in_qa`
 - `agent_work_prepare`
 - `visual_control` with `status`
 - `voice_control` with `status`
@@ -57,10 +58,10 @@ Project deletion is destructive. Only request it when explicitly required and us
 3. Inspect project + workflow + creator state.
 4. Start/resume creator execution.
 5. If execution succeeds, inspect state again and continue/resume until the next canonical boundary.
-6. If execution is blocked, inspect `review_list`, workflow state, and the stage-specific status/recovery view.
+6. If execution is blocked, inspect `agent_fan_in_qa`, `review_list`, workflow state, and the stage-specific status/recovery view.
 7. If AUTO is OFF or a runtime capability is unavailable, use the matching manual/external control rather than enabling a hidden fallback.
 8. Re-read status after the mutation.
-9. Assemble/rebuild ProductionPack only when prerequisites are canonically satisfied.
+9. Before ProductionPack, inspect `agent_fan_in_qa`; assemble/rebuild only when canonical fan-in is verified.
 10. Verify production/export status before reporting completion.
 
 ## Flow patterns
@@ -79,7 +80,7 @@ Keep automatic execution OFF where desired. Supply Content, ScenePlan, visuals, 
 
 ### Recovery
 
-Inspect `review_list` and `production_control` recovery/status -> choose only an applicable repair/manual/external action -> verify recovery state -> resume/rebuild -> verify ProductionPack/export.
+Inspect `agent_fan_in_qa`, `review_list` and `production_control` recovery/status -> choose only an applicable repair/manual/external action -> verify recovery state -> resume/rebuild -> verify ProductionPack/export.
 
 ## Parallel worker pool
 
@@ -89,9 +90,9 @@ Workers never call `agent_work_commit`. They never edit SQLite, ArtifactStore, D
 
 The coordinator may fan out independent scene visual work and voice-segment work concurrently after their canonical dependencies are satisfied. Start with at most 4 workers unless provider/GPU/TTS capacity calls for a smaller local limit. Concurrency is harness-local policy, never persisted workflow truth.
 
-The coordinator alone calls `agent_work_commit`, serializing canonical commit batches through the Data Root writer lease. Immediately run `agent_work_graph` again after every commit batch. Do not infer state from worker transcripts.
+The coordinator alone calls `agent_work_commit`, serializing canonical commit batches through the Data Root writer lease. Immediately run `agent_work_graph` again after every commit batch. Use `agent_fan_in_qa` after a wave completes and before ProductionPack. Do not infer state from worker transcripts.
 
-On reconnect, rebuild the queue from the current graph. On `stale_input`, discard the candidate and call `agent_work_prepare` again for current work. On duplicate delivery, submit only through canonical commit and trust the canonical idempotency response. On `writer_conflict`, back off and retry through the coordinator rather than opening another writer.
+On reconnect, rebuild the queue from the current graph. Already verified canonical artifacts that still verify at the active Data Root remain reusable and must not be recomputed just because the harness restarted. On `stale_input`, discard the candidate and call `agent_work_prepare` again for current work. On duplicate delivery, submit only through canonical commit and trust the canonical idempotency response. On `writer_conflict`, back off and retry through the coordinator rather than opening another writer.
 
 Reference package: `agent-harness/worker-pool/contract.json`, `agent-harness/worker-pool/README.md`, plus vendor recipes under `agent-harness/{codex,claude,antigravity}/WORKER-POOL.md`.
 
@@ -108,6 +109,24 @@ For READY voice work, prepare the canonical `tts.generate` descriptor and pass i
 Provider concurrency, retry/rate-limit state, credentials, paths and GPU/TTS capacity are machine-local or harness-local. They are never portable Project truth. If Pexels, a generated provider, OmniVoiceStudio, or compute is unavailable, use the canonical manual/external fallback without rewriting the failed provider Attempt into success.
 
 Reference package: `agent-harness/parallel-production/contract.json`, `agent-harness/parallel-production/README.md`, and `agent-harness/parallel-production/README.vi.md`.
+
+## Fan-in QA and recovery
+
+Use `agent_fan_in_qa` as the canonical pre-ProductionPack health projection. It combines visual/voice work state with Production Recovery artifact verification without creating a worker-status database.
+
+Interpretation:
+- `ready_work_ids`: visual/voice units that can still be dispatched;
+- `needs_review_work_ids`: canonical visual/voice work whose Job state needs review/recovery;
+- `unhealthy_canonical_units`: units with a physical selected-artifact defect, including `NEEDS_REVIEW` caused by missing/invalid artifacts and the defensive case of `SATISFIED` with a non-verified recovery artifact;
+- `fan_in_verified`: every discovered visual + voice unit is SATISFIED and every selected production input verifies at the current Data Root;
+- `production_pack_ready`: canonical fan-in is complete and ProductionPack can be assembled;
+- `production_pack_satisfied`: ProductionPack is already canonical success.
+
+`read_only=true` is an access flag, not a reason to hide the recommended next action. A read-only agent may inspect the same QA/recovery guidance, but mutation still has to go through an authorized writer.
+
+For `repair_visual` or `repair_voice_bundle`, inspect `production_control` recovery and use the matching typed repair path. For `review`, inspect Review Center and current work graph before retrying or replacing. For `dispatch_external`, prepare current work again immediately before dispatch. For `assemble_production_pack`, re-check QA and then use canonical ProductionPack controls.
+
+After Data Root move/rebind or process restart, cold-inspect `agent_work_graph` and `agent_fan_in_qa`. Never carry absolute old paths, worker claims, or in-memory completion state across the restart.
 
 ## Provider selection
 
@@ -129,6 +148,7 @@ omnicreator --data-root <path> --json workflow status --project <id>
 omnicreator --data-root <path> --json creator state --project <id>
 omnicreator --data-root <path> --json review list --project <id>
 omnicreator --data-root <path> --json work graph --project <id>
+omnicreator --data-root <path> --json work qa --project <id>
 omnicreator --data-root <path> --json work prepare --project <id> --work <work-id>
 omnicreator --data-root <path> --json creator resume --project <id>
 ```
@@ -137,4 +157,4 @@ For `work commit` and other complex manual/external mutations, use the documente
 
 ## Completion standard
 
-Do not report a flow complete from an agent transcript alone. Completion requires the latest OmniCreator inspection to show the intended canonical result, such as a valid ProductionPack/export state, with no unresolved blocker relevant to the requested outcome.
+Do not report a flow complete from an agent transcript alone. Completion requires the latest OmniCreator inspection to show the intended canonical result, such as `fan_in_verified=true` followed by a valid ProductionPack/export state, with no unresolved blocker relevant to the requested outcome.

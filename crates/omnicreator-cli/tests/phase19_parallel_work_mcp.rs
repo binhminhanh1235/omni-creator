@@ -111,6 +111,7 @@ async fn real_stdio_client_discovers_phase19_tools_and_preserves_read_only_seman
         .collect::<Vec<_>>();
     for required in [
         "agent_work_graph",
+        "agent_fan_in_qa",
         "agent_work_prepare",
         "agent_work_commit",
         "creator_start_or_resume",
@@ -131,6 +132,22 @@ async fn real_stdio_client_discovers_phase19_tools_and_preserves_read_only_seman
     assert_eq!(structured(&graph)["schema"], "omnicreator.agent-work-graph");
     assert_eq!(structured(&graph)["project_id"], project_id);
     assert_eq!(structured(&graph)["read_only"], true);
+
+    let qa = call(
+        &client,
+        "agent_fan_in_qa",
+        json!({"project_id": project_id}),
+    )
+    .await;
+    assert_eq!(qa.is_error, Some(false));
+    assert_eq!(structured(&qa)["schema"], "omnicreator.agent-fan-in-qa");
+    assert_eq!(structured(&qa)["project_id"], project_id);
+    assert_eq!(structured(&qa)["read_only"], true);
+    assert_eq!(structured(&qa)["fan_in_verified"], false);
+    assert!(!structured(&qa)["voice_units"]
+        .as_array()
+        .unwrap()
+        .is_empty());
 
     let prepared = call(
         &client,

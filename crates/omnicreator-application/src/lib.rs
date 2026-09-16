@@ -1,3 +1,4 @@
+mod agent_fan_in;
 mod agent_work;
 mod contracts;
 mod creator_run;
@@ -7,6 +8,7 @@ mod llm_runtime_service;
 mod runtime;
 mod service;
 
+pub use agent_fan_in::*;
 pub use agent_work::*;
 pub use contracts::*;
 pub use creator_run::*;
