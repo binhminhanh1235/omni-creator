@@ -425,7 +425,7 @@ impl rmcp::ServerHandler for OmniCreatorMcpTaskServerV1 {
         Ok(())
     }
 
-    fn get_info(&self) -> rmcp::model::ServerConfig {
+    fn get_info(&self) -> rmcp::model::InitializeResult {
         let mut info = <OmniCreatorMcpServerV1 as rmcp::ServerHandler>::get_info(&self.inner);
         info.capabilities = rmcp::model::ServerCapabilities::builder()
             .enable_tools()
